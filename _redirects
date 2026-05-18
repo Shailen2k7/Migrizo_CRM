@@ -1,0 +1,12 @@
+# Clean URL redirects
+/dashboard      /index.html       200
+/leads          /leads.html       200
+/followups      /followups.html   200
+/payments       /payments.html    200
+/calendar       /calendar.html    200
+/reports        /reports.html     200
+/ai-coo         /ai-coo.html      200
+/settings       /settings.html    200
+
+# SPA-style fallback (keeps deep links working)
+/*              /index.html       200

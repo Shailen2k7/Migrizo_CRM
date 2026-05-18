@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Migrizo CRM — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  .charts-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 1100px) { .charts-grid, .charts-row-2 { grid-template-columns: 1fr; } }
+  .donut-legend { display: flex; flex-direction: column; gap: 10px; }
+  .donut-row { display: flex; align-items: center; gap: 10px; }
+  .donut-dot { width: 10px; height: 10px; border-radius: 3px; }
+  .donut-row-label { font-size: 12.5px; color: var(--text-2); font-weight: 500; flex: 1; }
+  .donut-row-value { font-size: 13px; font-weight: 700; color: var(--text-1); }
+  .donut-row-pct { font-size: 11.5px; color: var(--text-3); margin-left: 6px; }
+  .donut-layout { display: flex; align-items: center; gap: 16px; }
+  .donut-layout .chart-container { flex: 1; max-width: 200px; height: 200px; }
+  .donut-layout .donut-legend { flex: 1; }
+</style>
+</head>
+<body>
+
+  <aside class="sidebar">
+    <div class="logo"><div class="logo-mark">M</div><div class="logo-text">Migrizo</div></div>
+    <nav class="nav">
+      <a class="nav-item active" href="index.html"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
+      <a class="nav-item" href="leads.html"><i data-lucide="users"></i><span>Leads</span></a>
+      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span><span class="nav-badge">18</span></a>
+      <a class="nav-item" href="payments.html"><i data-lucide="indian-rupee"></i><span>Payments</span></a>
+      <a class="nav-item" href="calendar.html"><i data-lucide="calendar"></i><span>Calendar</span></a>
+      <a class="nav-item" href="reports.html"><i data-lucide="bar-chart-3"></i><span>Reports</span></a>
+      <div class="nav-divider"></div>
+      <a class="nav-item" href="ai-coo.html"><i data-lucide="sparkles"></i><span>AI COO</span></a>
+      <a class="nav-item" href="settings.html"><i data-lucide="settings"></i><span>Settings</span></a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar">MV</div>
+        <div class="user-meta"><div class="user-name">Manik Verma</div><div class="user-role">Admin</div></div>
+        <i data-lucide="chevrons-up-down" class="chev" style="width:16px;height:16px"></i>
+      </div>
+      <div class="quick-add">
+        <div class="quick-add-icon"><i data-lucide="plus" style="width:16px;height:16px"></i></div>
+        <div class="quick-add-text"><strong>Quick Add Lead</strong><span>Add a new client</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="greeting">
+        <h1><span id="greetingText">Good afternoon</span>, <span id="userName">Manik</span> <span class="wave">👋</span></h1>
+        <p id="greetingSub">Saturday, 17 May 2026 · Here's what's happening in your business</p>
+      </div>
+      <div class="search">
+        <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
+        <input type="text" placeholder="Search leads, clients, notes, phone..." />
+        <span class="search-kbd">⌘ K</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn ai-btn"><i data-lucide="sparkles" style="width:18px;height:18px"></i></button>
+        <button class="icon-btn"><i data-lucide="bell" style="width:18px;height:18px"></i><span class="dot">12</span></button>
+        <button class="icon-btn"><i data-lucide="sun" style="width:18px;height:18px"></i></button>
+        <button class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px"></i><span>Add Lead</span><span class="btn-primary-split"><i data-lucide="chevron-down" style="width:14px;height:14px;display:block"></i></span></button>
+      </div>
+    </header>
+
+    <div class="content with-top">
+
+      <section class="stats-grid">
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">New Leads</span><span class="stat-icon-tiny"><i data-lucide="user-plus"></i></span></div><div class="stat-value">128</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 18% <span class="muted">vs yesterday</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Follow-ups Today</span><span class="stat-icon-tiny green"><i data-lucide="phone"></i></span></div><div class="stat-value">24</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 12% <span class="muted">vs yesterday</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Consultations</span><span class="stat-icon-tiny orange"><i data-lucide="calendar-check"></i></span></div><div class="stat-value">15</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 20% <span class="muted">vs yesterday</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Payments Pending</span><span class="stat-icon-tiny violet"><i data-lucide="indian-rupee"></i></span></div><div class="stat-value">₹12,45,000</div><div class="stat-delta down"><i data-lucide="arrow-down"></i> 8% <span class="muted">vs yesterday</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Revenue Closed</span><span class="stat-icon-tiny blue"><i data-lucide="wallet"></i></span></div><div class="stat-value">₹8,75,000</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 15% <span class="muted">vs yesterday</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Conversion Rate</span><span class="stat-icon-tiny pink"><i data-lucide="trending-up"></i></span></div><div class="stat-value">23.6%</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 5% <span class="muted">vs yesterday</span></div></div>
+      </section>
+
+      <section class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-head"><div><h3>Lead Funnel</h3><p>Current pipeline by stage</p></div><div class="chart-pill">Last 30 days</div></div>
+          <div class="chart-container"><canvas id="funnelChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head"><div><h3>Lead Temperature</h3><p>Distribution by quality</p></div></div>
+          <div class="donut-layout">
+            <div class="chart-container"><canvas id="tempChart"></canvas></div>
+            <div class="donut-legend">
+              <div class="donut-row"><span class="donut-dot" style="background:#EF4444"></span><span class="donut-row-label">Hot</span><span class="donut-row-value">42</span><span class="donut-row-pct">17%</span></div>
+              <div class="donut-row"><span class="donut-dot" style="background:#F97316"></span><span class="donut-row-label">Warm</span><span class="donut-row-value">78</span><span class="donut-row-pct">31%</span></div>
+              <div class="donut-row"><span class="donut-dot" style="background:#3B82F6"></span><span class="donut-row-label">Cold</span><span class="donut-row-value">96</span><span class="donut-row-pct">39%</span></div>
+              <div class="donut-row"><span class="donut-dot" style="background:#94A3B8"></span><span class="donut-row-label">Junk</span><span class="donut-row-value">32</span><span class="donut-row-pct">13%</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="charts-row-2">
+        <div class="chart-card">
+          <div class="chart-head"><div><h3>Daily New Leads</h3><p>Last 14 days inflow</p></div><div class="chart-pill up"><i data-lucide="arrow-up"></i> 23% WoW</div></div>
+          <div class="chart-container"><canvas id="inflowChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head"><div><h3>Revenue Trend</h3><p>Last 6 months closed revenue</p></div><div class="chart-pill up"><i data-lucide="arrow-up"></i> 42% YoY</div></div>
+          <div class="chart-container"><canvas id="revenueChart"></canvas></div>
+        </div>
+      </section>
+
+      <section class="ai-section">
+        <div class="ai-section-head">
+          <div class="ai-section-icon"><i data-lucide="sparkles"></i></div>
+          <div>
+            <div class="ai-section-title">AI COO insights <span class="ai-section-beta">BETA</span></div>
+            <div class="ai-section-sub">Live recommendations from your CRM activity</div>
+          </div>
+          <a href="ai-coo.html" class="ai-section-ask"><i data-lucide="message-circle"></i> Ask AI COO</a>
+        </div>
+        <div class="ai-section-grid">
+          <div class="ai-card">
+            <span class="ai-tag work-hard">⚡ Work hard</span>
+            <h4>5 hot leads need follow-up today</h4>
+            <p>Rahul, Anita, Neha, Sandeep and Divya are at score ≥7 and consultation-ready. Closing rate drops 60% after 48hr silence.</p>
+            <a class="ai-action">Open priority list <i data-lucide="arrow-right"></i></a>
+          </div>
+          <div class="ai-card">
+            <span class="ai-tag save-time">💎 Save time</span>
+            <h4>Batch your morning calls</h4>
+            <p>9 of 18 follow-ups are between 10AM–12PM. Block 90min and knock them out — saves ~2hrs vs scattered calls.</p>
+            <a class="ai-action">Show schedule <i data-lucide="arrow-right"></i></a>
+          </div>
+          <div class="ai-card">
+            <span class="ai-tag risk">⚠ Hidden risk</span>
+            <h4>₹2.45L stuck at Profile Building</h4>
+            <p>3 partial-payment clients haven't moved forward in 14+ days. One nudge could unblock ₹1.05L revenue this week.</p>
+            <a class="ai-action">Take action <i data-lucide="arrow-right"></i></a>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <script src="assets/app.js"></script>
+  <script>
+    Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+    Chart.defaults.font.size = 12;
+    Chart.defaults.color = '#475569';
+    Chart.defaults.borderColor = '#F1F2F6';
+
+    new Chart(document.getElementById('funnelChart'), {
+      type: 'bar',
+      data: { labels: ['New Inquiry','Attempted','Connected','Qualified','Consultation','Proposal','Partial Pay','Closed Won'],
+        datasets: [{ data: [128,102,78,56,38,25,18,11],
+          backgroundColor: ['#C7D2FE','#A5B4FC','#818CF8','#6366F1','#8B5CF6','#F59E0B','#14B8A6','#10B981'],
+          borderRadius: 6, borderSkipped: false }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false, callbacks: { label: (ctx) => `${ctx.parsed.y} leads` } } },
+        scales: { x: { grid: { display: false }, ticks: { font: { size: 10.5 }, color: '#94A3B8', maxRotation: 30, minRotation: 30 } },
+          y: { beginAtZero: true, grid: { color: '#F1F2F6', drawBorder: false }, ticks: { font: { size: 11 }, color: '#94A3B8', stepSize: 30 } } } }
+    });
+
+    new Chart(document.getElementById('tempChart'), {
+      type: 'doughnut',
+      data: { labels: ['Hot','Warm','Cold','Junk'], datasets: [{ data: [42,78,96,32], backgroundColor: ['#EF4444','#F97316','#3B82F6','#94A3B8'], borderWidth: 0, hoverOffset: 6 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '70%',
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false,
+          callbacks: { label: (ctx) => { const t = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${ctx.parsed} (${((ctx.parsed/t)*100).toFixed(0)}%)`; } } } } },
+      plugins: [{ id: 'centerText', beforeDraw: (chart) => {
+        const { ctx, chartArea: { width, height, top, left } } = chart;
+        ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#0F172A'; ctx.font = '700 22px Inter';
+        ctx.fillText('248', left + width / 2, top + height / 2 - 6);
+        ctx.fillStyle = '#94A3B8'; ctx.font = '500 11px Inter';
+        ctx.fillText('Total Leads', left + width / 2, top + height / 2 + 14);
+        ctx.restore(); } }]
+    });
+
+    const inflowLabels = [];
+    for (let i = 13; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); inflowLabels.push(d.getDate() + ' ' + d.toLocaleDateString('en-IN', { month: 'short' })); }
+    new Chart(document.getElementById('inflowChart'), {
+      type: 'bar',
+      data: { labels: inflowLabels, datasets: [{ data: [8,12,6,14,9,11,7,15,10,13,18,16,14,21],
+        backgroundColor: (ctx) => ctx.dataIndex === ctx.dataset.data.length - 1 ? '#6366F1' : '#C7D2FE', borderRadius: 5, borderSkipped: false, maxBarThickness: 22 }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false, callbacks: { label: (ctx) => `${ctx.parsed.y} new leads` } } },
+        scales: { x: { grid: { display: false }, ticks: { font: { size: 10.5 }, color: '#94A3B8' } },
+          y: { beginAtZero: true, grid: { color: '#F1F2F6', drawBorder: false }, ticks: { font: { size: 11 }, color: '#94A3B8' } } } }
+    });
+
+    new Chart(document.getElementById('revenueChart'), {
+      type: 'line',
+      data: { labels: ['Dec','Jan','Feb','Mar','Apr','May'],
+        datasets: [{ data: [4.2,5.8,5.1,6.9,7.4,8.75], borderColor: '#6366F1',
+          backgroundColor: (ctx) => { const { chart } = ctx; const { ctx: c, chartArea } = chart; if (!chartArea) return null;
+            const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom); g.addColorStop(0,'rgba(99,102,241,0.25)'); g.addColorStop(1,'rgba(99,102,241,0)'); return g; },
+          fill: true, tension: 0.4, borderWidth: 2.5, pointBackgroundColor: '#6366F1', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6 }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false, callbacks: { label: (ctx) => `₹${ctx.parsed.y.toFixed(2)} Lakhs` } } },
+        scales: { x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#94A3B8' } },
+          y: { beginAtZero: true, grid: { color: '#F1F2F6', drawBorder: false }, ticks: { font: { size: 11 }, color: '#94A3B8', callback: (v) => '₹' + v + 'L' } } } }
+    });
+  </script>
+</body>
+</html>

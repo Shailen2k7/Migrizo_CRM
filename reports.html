@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Migrizo CRM — Reports</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  .reports-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; flex-wrap: wrap; }
+  .date-range { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg); border-radius: 8px; font-size: 12.5px; color: var(--text-1); font-weight: 500; }
+  .date-range i { width: 14px; height: 14px; color: var(--text-3); }
+  .date-pill { padding: 6px 12px; border-radius: 7px; font-size: 12.5px; color: var(--text-2); font-weight: 500; cursor: pointer; }
+  .date-pill.active { background: var(--primary-50); color: var(--primary-hover); font-weight: 600; }
+  .date-pill:hover:not(.active) { background: var(--bg); color: var(--text-1); }
+  .charts-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 1100px) { .charts-row-2 { grid-template-columns: 1fr; } }
+  .chart-container.tall { height: 320px; }
+  .chart-container.short { height: 240px; }
+  .funnel-stage { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+  .funnel-label { min-width: 160px; font-size: 12.5px; color: var(--text-2); font-weight: 500; }
+  .funnel-bar-wrap { flex: 1; background: #F1F5F9; border-radius: 6px; height: 28px; overflow: hidden; position: relative; }
+  .funnel-bar { height: 100%; background: linear-gradient(90deg, var(--primary), #818CF8); border-radius: 6px; display: flex; align-items: center; padding: 0 12px; color: #fff; font-size: 12px; font-weight: 600; }
+  .funnel-conv { min-width: 60px; text-align: right; font-size: 12px; font-weight: 600; color: var(--green-text); }
+
+  .insight-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--divider); }
+  .insight-row:last-child { border-bottom: none; }
+  .insight-label { font-size: 13px; color: var(--text-2); font-weight: 500; }
+  .insight-val { font-size: 14px; font-weight: 700; color: var(--text-1); }
+  .insight-val.green { color: var(--green-text); }
+  .insight-val.red { color: var(--red-text); }
+</style>
+</head>
+<body>
+
+  <aside class="sidebar">
+    <div class="logo"><div class="logo-mark">M</div><div class="logo-text">Migrizo</div></div>
+    <nav class="nav">
+      <a class="nav-item" href="index.html"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
+      <a class="nav-item" href="leads.html"><i data-lucide="users"></i><span>Leads</span></a>
+      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span><span class="nav-badge">18</span></a>
+      <a class="nav-item" href="payments.html"><i data-lucide="indian-rupee"></i><span>Payments</span></a>
+      <a class="nav-item" href="calendar.html"><i data-lucide="calendar"></i><span>Calendar</span></a>
+      <a class="nav-item active" href="reports.html"><i data-lucide="bar-chart-3"></i><span>Reports</span></a>
+      <div class="nav-divider"></div>
+      <a class="nav-item" href="ai-coo.html"><i data-lucide="sparkles"></i><span>AI COO</span></a>
+      <a class="nav-item" href="settings.html"><i data-lucide="settings"></i><span>Settings</span></a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar">MV</div>
+        <div class="user-meta"><div class="user-name">Manik Verma</div><div class="user-role">Admin</div></div>
+        <i data-lucide="chevrons-up-down" class="chev" style="width:16px;height:16px"></i>
+      </div>
+      <div class="quick-add">
+        <div class="quick-add-icon"><i data-lucide="plus" style="width:16px;height:16px"></i></div>
+        <div class="quick-add-text"><strong>Quick Add Lead</strong><span>Add a new client</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="page-title"><h1>Reports</h1><p>Deep analytics across leads, conversion, revenue and operations</p></div>
+      <div class="search">
+        <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
+        <input type="text" placeholder="Search reports..." />
+        <span class="search-kbd">⌘ K</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn ai-btn"><i data-lucide="sparkles" style="width:18px;height:18px"></i></button>
+        <button class="icon-btn"><i data-lucide="bell" style="width:18px;height:18px"></i><span class="dot">12</span></button>
+        <button class="icon-btn"><i data-lucide="sun" style="width:18px;height:18px"></i></button>
+        <button class="btn-primary"><i data-lucide="download" style="width:16px;height:16px"></i><span>Export Report</span></button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <div class="reports-toolbar">
+        <span style="font-size:12px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Date range</span>
+        <div class="date-range"><i data-lucide="calendar"></i><span>1 May – 17 May 2026</span></div>
+        <div style="height:24px;width:1px;background:var(--divider)"></div>
+        <button class="date-pill">7 days</button>
+        <button class="date-pill active">30 days</button>
+        <button class="date-pill">Quarter</button>
+        <button class="date-pill">YTD</button>
+        <button class="date-pill">All time</button>
+        <div class="spacer"></div>
+        <button class="btn-ghost"><i data-lucide="filter"></i> Filters</button>
+        <button class="btn-ghost"><i data-lucide="share-2"></i> Share</button>
+      </div>
+
+      <section class="stats-grid cols-4">
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Total Leads</span><span class="stat-icon-tiny"><i data-lucide="users"></i></span></div><div class="stat-value">248</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 18% <span class="muted">vs prev period</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Conversion Rate</span><span class="stat-icon-tiny green"><i data-lucide="trending-up"></i></span></div><div class="stat-value">23.6%</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 5pp <span class="muted">vs prev period</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Revenue Closed</span><span class="stat-icon-tiny violet"><i data-lucide="wallet"></i></span></div><div class="stat-value">₹8,75,000</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 15% <span class="muted">vs prev period</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Avg. Deal Value</span><span class="stat-icon-tiny orange"><i data-lucide="indian-rupee"></i></span></div><div class="stat-value">₹1,09,375</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 8% <span class="muted">vs prev period</span></div></div>
+      </section>
+
+      <section class="chart-card">
+        <div class="chart-head"><div><h3>Conversion Funnel</h3><p>From lead capture to closed-won across all stages</p></div><div class="chart-pill">30 days</div></div>
+        <div>
+          <div class="funnel-stage"><div class="funnel-label">New Inquiry</div><div class="funnel-bar-wrap"><div class="funnel-bar" style="width:100%">248 leads</div></div><div class="funnel-conv" style="color:var(--text-3)">—</div></div>
+          <div class="funnel-stage"><div class="funnel-label">Attempted Contact</div><div class="funnel-bar-wrap"><div class="funnel-bar" style="width:82%">202 leads</div></div><div class="funnel-conv">81.5%</div></div>
+          <div class="funnel-stage"><div class="funnel-label">Connected</div><div class="funnel-bar-wrap"><div class="funnel-bar" style="width:63%">156 leads</div></div><div class="funnel-conv">77.2%</div></div>
+          <div class="funnel-stage"><div class="funnel-label">Qualified</div><div class="funnel-bar-wrap"><div class="funnel-bar" style="width:45%">112 leads</div></div><div class="funnel-conv">71.8%</div></div>
+          <div class="funnel-stage"><div class="funnel-label">Consultation Scheduled</div><div class="funnel-bar-wrap"><div class="funnel-bar" style="width:31%">77 leads</div></div><div class="funnel-conv">68.8%</div></div>
+          <div class="funnel-stage"><div class="funnel-label">Proposal Shared</div><div class="funnel-bar-wrap"><div class="funnel-bar" style="width:20%">50 leads</div></div><div class="funnel-conv">64.9%</div></div>
+          <div class="funnel-stage"><div class="funnel-label">Partial Payment</div><div class="funnel-bar-wrap"><div class="funnel-bar" style="width:14%">36 leads</div></div><div class="funnel-conv">72.0%</div></div>
+          <div class="funnel-stage"><div class="funnel-label">Closed Won</div><div class="funnel-bar-wrap"><div class="funnel-bar" style="width:9%;background:linear-gradient(90deg,#10B981,#34D399)">22 leads</div></div><div class="funnel-conv">61.1%</div></div>
+        </div>
+      </section>
+
+      <section class="charts-row-2">
+        <div class="chart-card">
+          <div class="chart-head"><div><h3>Revenue Trend</h3><p>Monthly closed revenue, last 6 months</p></div><div class="chart-pill up"><i data-lucide="arrow-up"></i> 42% YoY</div></div>
+          <div class="chart-container tall"><canvas id="revChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head"><div><h3>Lead Aging</h3><p>Active leads by days in pipeline</p></div></div>
+          <div class="chart-container tall"><canvas id="agingChart"></canvas></div>
+        </div>
+      </section>
+
+      <section class="charts-row-2">
+        <div class="chart-card">
+          <div class="chart-head"><div><h3>Stage Conversion Rates</h3><p>% of leads moving to next stage</p></div></div>
+          <div class="chart-container tall"><canvas id="convChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head"><div><h3>Avg. Time Per Stage</h3><p>Days spent at each pipeline stage</p></div></div>
+          <div class="chart-container tall"><canvas id="timeChart"></canvas></div>
+        </div>
+      </section>
+
+      <section class="charts-row-2">
+        <div class="chart-card">
+          <div class="chart-head"><div><h3>Source ROI — Meta Ads</h3><p>Cost per qualified lead over time</p></div><div class="chart-pill down"><i data-lucide="arrow-down"></i> 12% CPL</div></div>
+          <div class="chart-container tall"><canvas id="roiChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head"><div><h3>Operations Health</h3><p>Activity metrics last 30 days</p></div></div>
+          <div style="padding:6px 0">
+            <div class="insight-row"><span class="insight-label">Avg. lead response time</span><span class="insight-val green">2.4 hrs</span></div>
+            <div class="insight-row"><span class="insight-label">Follow-ups completed on time</span><span class="insight-val green">89%</span></div>
+            <div class="insight-row"><span class="insight-label">Overdue follow-ups</span><span class="insight-val red">7</span></div>
+            <div class="insight-row"><span class="insight-label">Avg. days from lead to closed</span><span class="insight-val">21 days</span></div>
+            <div class="insight-row"><span class="insight-label">Consultation show-up rate</span><span class="insight-val green">82%</span></div>
+            <div class="insight-row"><span class="insight-label">Avg. payments per closed deal</span><span class="insight-val">3.2 milestones</span></div>
+            <div class="insight-row"><span class="insight-label">Active counselors</span><span class="insight-val">1</span></div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <script src="assets/app.js"></script>
+  <script>
+    Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+    Chart.defaults.font.size = 12;
+    Chart.defaults.color = '#475569';
+
+    new Chart(document.getElementById('revChart'), {
+      type: 'line',
+      data: { labels: ['Dec','Jan','Feb','Mar','Apr','May'],
+        datasets: [{ data: [4.2,5.8,5.1,6.9,7.4,8.75], borderColor: '#6366F1',
+          backgroundColor: (ctx) => { const { ctx: c, chartArea } = ctx.chart; if (!chartArea) return null;
+            const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom); g.addColorStop(0,'rgba(99,102,241,0.25)'); g.addColorStop(1,'rgba(99,102,241,0)'); return g; },
+          fill: true, tension: 0.4, borderWidth: 2.5, pointBackgroundColor: '#6366F1', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 4 }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false, callbacks: { label: (ctx) => `₹${ctx.parsed.y.toFixed(2)} Lakhs` } } },
+        scales: { x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#94A3B8' } },
+          y: { beginAtZero: true, grid: { color: '#F1F2F6' }, ticks: { font: { size: 11 }, color: '#94A3B8', callback: (v) => '₹' + v + 'L' } } } }
+    });
+
+    new Chart(document.getElementById('agingChart'), {
+      type: 'bar',
+      data: { labels: ['0-3 days','4-7 days','8-14 days','15-30 days','30+ days'],
+        datasets: [{ data: [78,52,46,28,12],
+          backgroundColor: ['#10B981','#3B82F6','#F59E0B','#F97316','#EF4444'],
+          borderRadius: 6, borderSkipped: false }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false, callbacks: { label: (ctx) => `${ctx.parsed.y} leads` } } },
+        scales: { x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#94A3B8' } },
+          y: { beginAtZero: true, grid: { color: '#F1F2F6' }, ticks: { font: { size: 11 }, color: '#94A3B8' } } } }
+    });
+
+    new Chart(document.getElementById('convChart'), {
+      type: 'bar',
+      data: { labels: ['Inquiry→Att','Att→Conn','Conn→Qual','Qual→Cons','Cons→Prop','Prop→Pay','Pay→Won'],
+        datasets: [{ data: [81.5,77.2,71.8,68.8,64.9,72.0,61.1],
+          backgroundColor: '#6366F1', borderRadius: 6, borderSkipped: false }] },
+      options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false, callbacks: { label: (ctx) => `${ctx.parsed.x}% conversion` } } },
+        scales: { x: { beginAtZero: true, max: 100, grid: { color: '#F1F2F6' }, ticks: { font: { size: 11 }, color: '#94A3B8', callback: (v) => v + '%' } },
+          y: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#94A3B8' } } } }
+    });
+
+    new Chart(document.getElementById('timeChart'), {
+      type: 'bar',
+      data: { labels: ['New Inquiry','Attempted','Connected','Qualified','Consultation','Proposal','Partial Pay'],
+        datasets: [{ data: [0.5,1.2,2.4,3.8,2.1,4.5,8.2],
+          backgroundColor: '#8B5CF6', borderRadius: 6, borderSkipped: false }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false, callbacks: { label: (ctx) => `${ctx.parsed.y} days avg` } } },
+        scales: { x: { grid: { display: false }, ticks: { font: { size: 10 }, color: '#94A3B8', maxRotation: 30, minRotation: 30 } },
+          y: { beginAtZero: true, grid: { color: '#F1F2F6' }, ticks: { font: { size: 11 }, color: '#94A3B8', callback: (v) => v + 'd' } } } }
+    });
+
+    new Chart(document.getElementById('roiChart'), {
+      type: 'line',
+      data: { labels: ['W1','W2','W3','W4','W5','W6','W7','W8'],
+        datasets: [
+          { label: 'Cost per Lead', data: [820,780,890,720,680,650,620,580], borderColor: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.4, borderWidth: 2.5, pointRadius: 3, yAxisID: 'y' },
+          { label: 'Qualified Leads', data: [12,18,14,22,28,32,38,42], borderColor: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', tension: 0.4, borderWidth: 2.5, pointRadius: 3, yAxisID: 'y1' }
+        ] },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, color: '#475569', usePointStyle: true, padding: 12 } },
+          tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8 } },
+        scales: { x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#94A3B8' } },
+          y: { position: 'left', beginAtZero: true, grid: { color: '#F1F2F6' }, ticks: { font: { size: 11 }, color: '#F59E0B', callback: (v) => '₹' + v } },
+          y1: { position: 'right', beginAtZero: true, grid: { display: false }, ticks: { font: { size: 11 }, color: '#10B981' } } } }
+    });
+  </script>
+</body>
+</html>

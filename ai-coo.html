@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Migrizo CRM — AI COO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>
+  .ai-layout { display: grid; grid-template-columns: 1fr 320px; gap: 16px; }
+  @media (max-width: 1200px) { .ai-layout { grid-template-columns: 1fr; } }
+
+  .briefing {
+    background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%);
+    border-radius: 14px;
+    padding: 22px 24px;
+    color: #fff;
+    position: relative; overflow: hidden;
+  }
+  .briefing::before { content: ''; position: absolute; right: -40px; top: -40px; width: 200px; height: 200px; background: radial-gradient(circle, rgba(255,255,255,0.15), transparent 70%); }
+  .briefing-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .briefing-icon { width: 40px; height: 40px; border-radius: 10px; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
+  .briefing-icon i { width: 22px; height: 22px; }
+  .briefing-title { font-size: 13px; opacity: 0.85; font-weight: 500; }
+  .briefing-name { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .briefing-body { font-size: 15px; line-height: 1.6; font-weight: 500; max-width: 720px; position: relative; z-index: 1; }
+  .briefing-body strong { font-weight: 700; }
+  .briefing-stats { display: flex; gap: 28px; margin-top: 18px; position: relative; z-index: 1; }
+  .briefing-stat-num { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+  .briefing-stat-lbl { font-size: 11.5px; opacity: 0.85; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .insights-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  @media (max-width: 900px) { .insights-grid { grid-template-columns: 1fr; } }
+  .insight-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    transition: all 0.15s ease;
+    cursor: pointer;
+  }
+  .insight-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--primary-200); }
+  .insight-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .insight-card-tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 5px; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+  .insight-card-tag.work-hard { background: var(--red-bg); color: var(--red-text); }
+  .insight-card-tag.save-time { background: var(--green-bg); color: var(--green-text); }
+  .insight-card-tag.risk { background: var(--amber-bg); color: var(--amber-text); }
+  .insight-card-tag.opportunity { background: var(--blue-bg); color: var(--blue-text); }
+  .insight-card h4 { font-size: 14.5px; font-weight: 600; color: var(--text-1); margin-bottom: 6px; line-height: 1.35; }
+  .insight-card p { font-size: 12.5px; color: var(--text-2); line-height: 1.55; margin-bottom: 12px; }
+  .insight-card-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ic-btn-primary { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; background: var(--primary); color: #fff; border-radius: 7px; font-size: 12px; font-weight: 600; }
+  .ic-btn-primary i { width: 12px; height: 12px; }
+  .ic-btn-primary:hover { background: var(--primary-hover); }
+  .ic-btn-ghost { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; color: var(--text-2); border-radius: 7px; font-size: 12px; font-weight: 500; }
+  .ic-btn-ghost:hover { background: var(--bg); color: var(--text-1); }
+
+  .chat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; height: 480px; }
+  .chat-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--divider); }
+  .chat-head-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, #6366F1, #8B5CF6); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(99,102,241,0.3); }
+  .chat-head-icon i { width: 16px; height: 16px; }
+  .chat-title { font-size: 14.5px; font-weight: 700; }
+  .chat-sub { font-size: 11.5px; color: var(--text-3); margin-top: 1px; display: flex; align-items: center; gap: 6px; }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: #10B981; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .chat-body { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { display: flex; gap: 10px; max-width: 88%; }
+  .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+  .msg-av { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .msg.ai .msg-av { background: linear-gradient(135deg, #6366F1, #8B5CF6); color: #fff; }
+  .msg.user .msg-av { background: #475569; color: #fff; font-size: 11px; font-weight: 700; }
+  .msg-av i { width: 14px; height: 14px; }
+  .msg-bubble { padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.55; }
+  .msg.ai .msg-bubble { background: var(--bg); color: var(--text-1); border-top-left-radius: 4px; }
+  .msg.user .msg-bubble { background: var(--primary); color: #fff; border-top-right-radius: 4px; }
+  .msg-bubble strong { font-weight: 700; }
+  .msg-bubble ul { margin: 6px 0; padding-left: 20px; }
+  .msg-bubble li { margin: 3px 0; }
+  .chat-input-wrap { padding: 12px 14px; border-top: 1px solid var(--divider); display: flex; align-items: center; gap: 8px; }
+  .chat-input { flex: 1; height: 40px; padding: 0 14px; background: var(--bg); border: 1px solid transparent; border-radius: 10px; font-size: 13px; color: var(--text-1); transition: all 0.15s ease; }
+  .chat-input:focus { outline: none; border-color: var(--primary-200); background: var(--surface); box-shadow: 0 0 0 4px var(--primary-50); }
+  .chat-send { width: 40px; height: 40px; border-radius: 10px; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; transition: all 0.15s ease; }
+  .chat-send:hover { background: var(--primary-hover); transform: translateY(-1px); }
+
+  .prompts-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .prompts-title { font-size: 11px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+  .prompt-chip { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-radius: 8px; cursor: pointer; transition: all 0.15s ease; font-size: 12.5px; color: var(--text-2); }
+  .prompt-chip:hover { background: var(--primary-50); color: var(--primary-hover); }
+  .prompt-chip i { width: 14px; height: 14px; color: var(--text-3); flex-shrink: 0; }
+  .prompt-chip:hover i { color: var(--primary); }
+
+  .history-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .history-row { display: flex; align-items: center; gap: 8px; padding: 7px 4px; border-radius: 6px; cursor: pointer; font-size: 12.5px; color: var(--text-2); }
+  .history-row:hover { background: var(--bg); color: var(--text-1); }
+  .history-row i { width: 13px; height: 13px; color: var(--text-3); }
+</style>
+</head>
+<body>
+
+  <aside class="sidebar">
+    <div class="logo"><div class="logo-mark">M</div><div class="logo-text">Migrizo</div></div>
+    <nav class="nav">
+      <a class="nav-item" href="index.html"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
+      <a class="nav-item" href="leads.html"><i data-lucide="users"></i><span>Leads</span></a>
+      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span><span class="nav-badge">18</span></a>
+      <a class="nav-item" href="payments.html"><i data-lucide="indian-rupee"></i><span>Payments</span></a>
+      <a class="nav-item" href="calendar.html"><i data-lucide="calendar"></i><span>Calendar</span></a>
+      <a class="nav-item" href="reports.html"><i data-lucide="bar-chart-3"></i><span>Reports</span></a>
+      <div class="nav-divider"></div>
+      <a class="nav-item active" href="ai-coo.html"><i data-lucide="sparkles"></i><span>AI COO</span></a>
+      <a class="nav-item" href="settings.html"><i data-lucide="settings"></i><span>Settings</span></a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar">MV</div>
+        <div class="user-meta"><div class="user-name">Manik Verma</div><div class="user-role">Admin</div></div>
+        <i data-lucide="chevrons-up-down" class="chev" style="width:16px;height:16px"></i>
+      </div>
+      <div class="quick-add">
+        <div class="quick-add-icon"><i data-lucide="plus" style="width:16px;height:16px"></i></div>
+        <div class="quick-add-text"><strong>Quick Add Lead</strong><span>Add a new client</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="page-title"><h1 style="display:flex;align-items:center;gap:10px">AI COO <span class="ai-section-beta" style="font-size:10px">BETA</span></h1><p>Your always-on operational co-pilot — built on top of your CRM data</p></div>
+      <div class="search">
+        <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
+        <input type="text" placeholder="Search past conversations..." />
+        <span class="search-kbd">⌘ K</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn"><i data-lucide="bell" style="width:18px;height:18px"></i><span class="dot">12</span></button>
+        <button class="icon-btn"><i data-lucide="sun" style="width:18px;height:18px"></i></button>
+        <button class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px"></i><span>New conversation</span></button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <div class="briefing">
+        <div class="briefing-head">
+          <div class="briefing-icon"><i data-lucide="sparkles"></i></div>
+          <div><div class="briefing-title">Your daily briefing</div><div class="briefing-name">Good afternoon, Manik 👋</div></div>
+        </div>
+        <div class="briefing-body">You have <strong>24 follow-ups today</strong>, of which <strong>5 are with hot leads</strong> at score ≥7. The biggest risk: <strong>₹2.45L stuck</strong> at Profile Building for 14+ days. The biggest opportunity: <strong>Vikram Khanna</strong> (₹40K overdue, score 7) — reach him today.</div>
+        <div class="briefing-stats">
+          <div><div class="briefing-stat-num">24</div><div class="briefing-stat-lbl">Follow-ups</div></div>
+          <div><div class="briefing-stat-num">5</div><div class="briefing-stat-lbl">Hot leads</div></div>
+          <div><div class="briefing-stat-num">₹2.45L</div><div class="briefing-stat-lbl">At risk</div></div>
+          <div><div class="briefing-stat-num">3</div><div class="briefing-stat-lbl">Likely closes</div></div>
+        </div>
+      </div>
+
+      <div class="ai-layout">
+
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+
+          <section class="insights-grid">
+
+            <div class="insight-card">
+              <div class="insight-card-head"><span class="insight-card-tag work-hard">⚡ Work hard</span></div>
+              <h4>5 hot leads need follow-up today</h4>
+              <p>Rahul, Anita, Neha, Sandeep and Divya are at score ≥7 and consultation-ready. Closing rate drops 60% after 48hr silence. Reach them today.</p>
+              <div class="insight-card-actions">
+                <button class="ic-btn-primary"><i data-lucide="phone"></i> Open priority list</button>
+                <button class="ic-btn-ghost">Snooze 1 day</button>
+              </div>
+            </div>
+
+            <div class="insight-card">
+              <div class="insight-card-head"><span class="insight-card-tag save-time">💎 Save time</span></div>
+              <h4>Batch your morning calls 10AM–12PM</h4>
+              <p>9 of 18 follow-ups today fall in the 10–12 window. Block 90min and knock them out back-to-back — saves ~2hrs vs scattered calls.</p>
+              <div class="insight-card-actions">
+                <button class="ic-btn-primary"><i data-lucide="calendar"></i> Block calendar</button>
+                <button class="ic-btn-ghost">Show schedule</button>
+              </div>
+            </div>
+
+            <div class="insight-card">
+              <div class="insight-card-head"><span class="insight-card-tag risk">⚠ Hidden risk</span></div>
+              <h4>₹2.45L stuck at Profile Building</h4>
+              <p>3 partial-payment clients haven't moved in 14+ days. Vikram (₹40K, 14d late), Sandeep (₹30K, 4d), Priya (₹40K, due Mon). One nudge unblocks ₹1.05L this week.</p>
+              <div class="insight-card-actions">
+                <button class="ic-btn-primary"><i data-lucide="zap"></i> Send nudges</button>
+                <button class="ic-btn-ghost">View clients</button>
+              </div>
+            </div>
+
+            <div class="insight-card">
+              <div class="insight-card-head"><span class="insight-card-tag opportunity">✨ Opportunity</span></div>
+              <h4>Meta Ads CPL dropped 12% this week</h4>
+              <p>Cost per qualified lead is at ₹580 (down from ₹820 four weeks ago). Consider scaling ad spend 30% to capture more qualified inflow before the cycle reverses.</p>
+              <div class="insight-card-actions">
+                <button class="ic-btn-primary"><i data-lucide="trending-up"></i> See trend</button>
+                <button class="ic-btn-ghost">Open Reports</button>
+              </div>
+            </div>
+
+            <div class="insight-card">
+              <div class="insight-card-head"><span class="insight-card-tag opportunity">✨ Opportunity</span></div>
+              <h4>Divya Kapoor is 92% ready to close</h4>
+              <p>Profile complete, payments 65% done, score 9. Schedule the endorsement submission this week — likely closes ₹42K final payment by 25 May.</p>
+              <div class="insight-card-actions">
+                <button class="ic-btn-primary"><i data-lucide="calendar-check"></i> Schedule close</button>
+                <button class="ic-btn-ghost">Open profile</button>
+              </div>
+            </div>
+
+            <div class="insight-card">
+              <div class="insight-card-head"><span class="insight-card-tag work-hard">⚡ Work hard</span></div>
+              <h4>Amit Das — 3rd attempt today</h4>
+              <p>Two missed calls, no response in 16 days. Score is 3. Try WhatsApp first, then call — if no response by EOD, mark as Junk and free up bandwidth.</p>
+              <div class="insight-card-actions">
+                <button class="ic-btn-primary"><i data-lucide="message-circle"></i> Send WhatsApp</button>
+                <button class="ic-btn-ghost">Mark as Junk</button>
+              </div>
+            </div>
+
+          </section>
+
+          <div class="chat-card">
+            <div class="chat-head">
+              <div class="chat-head-icon"><i data-lucide="sparkles"></i></div>
+              <div><div class="chat-title">Ask AI COO anything</div><div class="chat-sub"><span class="live-dot"></span> Live · trained on your CRM</div></div>
+              <div class="spacer"></div>
+              <button class="btn-icon-square" title="Reset"><i data-lucide="rotate-ccw" style="width:15px;height:15px"></i></button>
+            </div>
+            <div class="chat-body" id="chatBody">
+
+              <div class="msg ai">
+                <div class="msg-av"><i data-lucide="sparkles"></i></div>
+                <div class="msg-bubble">Hi Manik 👋 I've reviewed today's pipeline. What would you like to focus on first?</div>
+              </div>
+
+              <div class="msg user">
+                <div class="msg-av">MV</div>
+                <div class="msg-bubble">Which leads should I prioritize this week?</div>
+              </div>
+
+              <div class="msg ai">
+                <div class="msg-av"><i data-lucide="sparkles"></i></div>
+                <div class="msg-bubble">Based on your pipeline, here are the top 5 to focus on this week:<ul><li><strong>Divya Kapoor</strong> — 92% paid, score 9, can close by 25 May (₹42K)</li><li><strong>Rohit Gupta</strong> — Endorsement stage, ₹10K remaining, consultation today at 3PM</li><li><strong>Vikram Khanna</strong> — ₹40K overdue 14 days, needs nudge urgently</li><li><strong>Anita Singh</strong> — Score 7, qualified, follow-up in 30 min</li><li><strong>Sandeep Kaur</strong> — Profile Building, ₹30K due in 4 days</li></ul>Combined potential closes this week: <strong>₹1.22L</strong>.</div>
+              </div>
+
+              <div class="msg user">
+                <div class="msg-av">MV</div>
+                <div class="msg-bubble">Draft a WhatsApp message to Vikram</div>
+              </div>
+
+              <div class="msg ai">
+                <div class="msg-av"><i data-lucide="sparkles"></i></div>
+                <div class="msg-bubble">Here's a tactful message that maintains the relationship while creating urgency:<br><br><em>"Hi Vikram, hope you're doing well. Just checking in on your Profile Building stage — your endorsement window is open and we'd love to move forward this week. Could you confirm a good time today or tomorrow for a quick 10-min call to discuss the pending ₹40K and next steps? Thanks!"</em><br><br>Want me to also draft a softer/firmer alternative?</div>
+              </div>
+
+            </div>
+            <div class="chat-input-wrap">
+              <input class="chat-input" id="chatInput" type="text" placeholder="Ask anything about your leads, payments, follow-ups..." />
+              <button class="chat-send" id="chatSend"><i data-lucide="send" style="width:16px;height:16px"></i></button>
+            </div>
+          </div>
+
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="prompts-card">
+            <div class="prompts-title">Suggested prompts</div>
+            <div class="prompt-chip"><i data-lucide="users"></i>Which leads to prioritize this week?</div>
+            <div class="prompt-chip"><i data-lucide="trending-up"></i>Forecast my revenue for this month</div>
+            <div class="prompt-chip"><i data-lucide="alert-triangle"></i>Which payments are at risk?</div>
+            <div class="prompt-chip"><i data-lucide="message-square"></i>Draft a follow-up WhatsApp for Vikram</div>
+            <div class="prompt-chip"><i data-lucide="calendar-clock"></i>What's the best time to batch calls?</div>
+            <div class="prompt-chip"><i data-lucide="archive"></i>Which cold leads should I archive?</div>
+          </div>
+          <div class="history-card">
+            <div class="prompts-title">Recent conversations</div>
+            <div class="history-row"><i data-lucide="message-circle"></i>Priority leads this week</div>
+            <div class="history-row"><i data-lucide="message-circle"></i>Vikram WhatsApp draft</div>
+            <div class="history-row"><i data-lucide="message-circle"></i>Revenue forecast May</div>
+            <div class="history-row"><i data-lucide="message-circle"></i>Meta Ads CPL trend</div>
+            <div class="history-row"><i data-lucide="message-circle"></i>Endorsement timeline Divya</div>
+            <div class="history-row"><i data-lucide="message-circle"></i>How to handle cold leads</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <script src="assets/app.js"></script>
+  <script>
+    function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const text = input.value.trim();
+      if (!text) return;
+      const body = document.getElementById('chatBody');
+      const u = document.createElement('div'); u.className = 'msg user';
+      u.innerHTML = '<div class="msg-av">MV</div><div class="msg-bubble"></div>';
+      u.querySelector('.msg-bubble').textContent = text;
+      body.appendChild(u);
+      input.value = '';
+      body.scrollTop = body.scrollHeight;
+      setTimeout(() => {
+        const a = document.createElement('div'); a.className = 'msg ai';
+        a.innerHTML = '<div class="msg-av"><i data-lucide="sparkles"></i></div><div class="msg-bubble">Got it — analyzing your CRM data right now. (In production, this connects to Claude/GPT with your live Bigin + Supabase data and returns an actionable answer in ~2s.)</div>';
+        body.appendChild(a);
+        lucide.createIcons();
+        body.scrollTop = body.scrollHeight;
+      }, 400);
+    }
+    document.getElementById('chatSend').addEventListener('click', sendMessage);
+    document.getElementById('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+    document.querySelectorAll('.prompt-chip').forEach(p => p.addEventListener('click', () => {
+      document.getElementById('chatInput').value = p.textContent.trim();
+      document.getElementById('chatInput').focus();
+    }));
+    document.getElementById('chatBody').scrollTop = document.getElementById('chatBody').scrollHeight;
+  </script>
+</body>
+</html>

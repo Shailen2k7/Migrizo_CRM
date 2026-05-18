@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Migrizo CRM — Payments</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>
+  .phase-pipeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 1100px) { .phase-pipeline { grid-template-columns: 1fr 1fr; } }
+
+  .phase-col { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; min-height: 380px; }
+  .phase-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--divider); }
+  .phase-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--text-1); }
+  .phase-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .phase-count { background: var(--bg); color: var(--text-2); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .phase-amount { font-size: 11px; color: var(--text-3); margin-top: 2px; font-weight: 500; }
+  .phase-cards { display: flex; flex-direction: column; gap: 8px; }
+  .pay-card { background: #FAFBFD; border: 1px solid var(--border); border-radius: 10px; padding: 12px; cursor: pointer; transition: all 0.15s ease; }
+  .pay-card:hover { background: var(--surface); box-shadow: var(--shadow-sm); transform: translateY(-1px); border-color: var(--primary-200); }
+  .pay-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .pay-card-name { font-size: 13px; font-weight: 600; color: var(--text-1); flex: 1; min-width: 0; }
+  .pay-card-row { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-3); margin-top: 8px; }
+  .pay-card-row strong { color: var(--text-1); font-weight: 600; }
+  .pay-card-row.overdue strong { color: var(--red-text); }
+
+  /* Table */
+  table.payments { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.payments thead th { text-align: left; padding: 12px 14px; background: #FAFBFD; color: var(--text-3); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--divider); }
+  table.payments tbody td { padding: 14px; border-bottom: 1px solid var(--divider); color: var(--text-2); vertical-align: middle; }
+  table.payments tbody tr:hover { background: #FAFBFD; }
+  table.payments tbody tr:last-child td { border-bottom: none; }
+  .pay-client { display: flex; align-items: center; gap: 10px; }
+  .pay-client-name { font-weight: 600; color: var(--text-1); font-size: 13.5px; }
+  .pay-progress { min-width: 140px; }
+  .pay-progress-text { font-size: 11.5px; color: var(--text-3); margin-bottom: 4px; }
+
+  .view-toggle-pay { display: inline-flex; align-items: center; background: var(--bg); border-radius: 8px; padding: 3px; }
+  .v-btn { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 6px; color: var(--text-2); font-weight: 500; font-size: 12.5px; cursor: pointer; transition: all 0.15s ease; }
+  .v-btn i { width: 14px; height: 14px; }
+  .v-btn.active { background: var(--surface); color: var(--primary-hover); font-weight: 600; box-shadow: var(--shadow-sm); }
+</style>
+</head>
+<body>
+
+  <aside class="sidebar">
+    <div class="logo"><div class="logo-mark">M</div><div class="logo-text">Migrizo</div></div>
+    <nav class="nav">
+      <a class="nav-item" href="index.html"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
+      <a class="nav-item" href="leads.html"><i data-lucide="users"></i><span>Leads</span></a>
+      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span><span class="nav-badge">18</span></a>
+      <a class="nav-item active" href="payments.html"><i data-lucide="indian-rupee"></i><span>Payments</span></a>
+      <a class="nav-item" href="calendar.html"><i data-lucide="calendar"></i><span>Calendar</span></a>
+      <a class="nav-item" href="reports.html"><i data-lucide="bar-chart-3"></i><span>Reports</span></a>
+      <div class="nav-divider"></div>
+      <a class="nav-item" href="ai-coo.html"><i data-lucide="sparkles"></i><span>AI COO</span></a>
+      <a class="nav-item" href="settings.html"><i data-lucide="settings"></i><span>Settings</span></a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar">MV</div>
+        <div class="user-meta"><div class="user-name">Manik Verma</div><div class="user-role">Admin</div></div>
+        <i data-lucide="chevrons-up-down" class="chev" style="width:16px;height:16px"></i>
+      </div>
+      <div class="quick-add">
+        <div class="quick-add-icon"><i data-lucide="plus" style="width:16px;height:16px"></i></div>
+        <div class="quick-add-text"><strong>Quick Add Lead</strong><span>Add a new client</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="page-title"><h1>Payments</h1><p>Track milestone payments and revenue pipeline</p></div>
+      <div class="search">
+        <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
+        <input type="text" placeholder="Search by client name..." />
+        <span class="search-kbd">⌘ K</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn ai-btn"><i data-lucide="sparkles" style="width:18px;height:18px"></i></button>
+        <button class="icon-btn"><i data-lucide="bell" style="width:18px;height:18px"></i><span class="dot">12</span></button>
+        <button class="icon-btn"><i data-lucide="sun" style="width:18px;height:18px"></i></button>
+        <button class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px"></i><span>Record Payment</span></button>
+      </div>
+    </header>
+
+    <div class="content">
+      <section class="stats-grid cols-4">
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Pipeline Value</span><span class="stat-icon-tiny violet"><i data-lucide="layers"></i></span></div><div class="stat-value">₹25,80,000</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 12% <span class="muted">vs last month</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Collected This Month</span><span class="stat-icon-tiny green"><i data-lucide="wallet"></i></span></div><div class="stat-value">₹8,75,000</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 15% <span class="muted">vs last month</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Pending</span><span class="stat-icon-tiny amber"><i data-lucide="hourglass"></i></span></div><div class="stat-value">₹12,45,000</div><div class="stat-delta"><span class="muted">across 18 clients</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Overdue</span><span class="stat-icon-tiny red"><i data-lucide="alert-triangle"></i></span></div><div class="stat-value">₹2,40,000</div><div class="stat-delta down"><i data-lucide="arrow-up"></i> 3 clients <span class="muted">7+ days late</span></div></div>
+      </section>
+
+      <div class="ai-mini">
+        <div class="ai-mini-icon"><i data-lucide="sparkles"></i></div>
+        <div class="ai-mini-text"><strong>AI COO insight:</strong> <span class="highlight">₹2.45L stuck</span> at Profile Building for 14+ days across 3 clients. A nudge today could unblock ₹1.05L revenue this week.</div>
+        <a class="ai-mini-act">See stuck clients <i data-lucide="arrow-right"></i></a>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="view-toggle-pay">
+          <button class="v-btn active" data-view="pipeline"><i data-lucide="kanban-square"></i>Pipeline</button>
+          <button class="v-btn" data-view="table"><i data-lucide="list"></i>Table</button>
+        </div>
+        <button class="btn-ghost"><i data-lucide="filter"></i> Filters</button>
+        <button class="btn-ghost"><i data-lucide="download"></i> Export</button>
+        <div class="spacer"></div>
+        <span style="font-size:12px;color:var(--text-3)">Total: <strong style="color:var(--text-1)">28 active clients</strong></span>
+      </div>
+
+      <div id="pipeline-view">
+        <section class="phase-pipeline">
+
+          <div class="phase-col">
+            <div class="phase-head">
+              <div>
+                <div class="phase-title"><span class="phase-dot" style="background:#94A3B8"></span>Not Paid</div>
+                <div class="phase-amount">₹0 received · 6 clients</div>
+              </div>
+              <span class="phase-count">6</span>
+            </div>
+            <div class="phase-cards">
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a5">MG</div><div class="pay-card-name">Manish Gupta</div></div>
+                <div class="pay-card-row"><span>Total Fee</span><strong>₹90,000</strong></div>
+                <div class="pay-card-row"><span>Pending</span><strong>₹90,000</strong></div>
+              </div>
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a7">AD</div><div class="pay-card-name">Amit Das</div></div>
+                <div class="pay-card-row"><span>Total Fee</span><strong>₹80,000</strong></div>
+                <div class="pay-card-row"><span>Pending</span><strong>₹80,000</strong></div>
+              </div>
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a2">JM</div><div class="pay-card-name">Jaya Menon</div></div>
+                <div class="pay-card-row"><span>Total Fee</span><strong>₹1,00,000</strong></div>
+                <div class="pay-card-row"><span>Pending</span><strong>₹1,00,000</strong></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="phase-col">
+            <div class="phase-head">
+              <div>
+                <div class="phase-title"><span class="phase-dot" style="background:#10B981"></span>Kickstart Paid</div>
+                <div class="phase-amount">₹2,15,000 received · 9 clients</div>
+              </div>
+              <span class="phase-count">9</span>
+            </div>
+            <div class="phase-cards">
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a1">RK</div><div class="pay-card-name">Rahul Kumar</div></div>
+                <div class="pay-card-row"><span>Paid</span><strong style="color:var(--green-text)">₹25,000</strong></div>
+                <div class="progress-bar" style="--p:25%;--c:var(--green);margin:8px 0 4px"></div>
+                <div class="pay-card-row"><span>of ₹1,00,000</span><strong>25%</strong></div>
+              </div>
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a3">AS</div><div class="pay-card-name">Anita Singh</div></div>
+                <div class="pay-card-row"><span>Paid</span><strong style="color:var(--green-text)">₹15,000</strong></div>
+                <div class="progress-bar" style="--p:12%;--c:var(--green);margin:8px 0 4px"></div>
+                <div class="pay-card-row"><span>of ₹1,20,000</span><strong>12%</strong></div>
+              </div>
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a3">NB</div><div class="pay-card-name">Neha Bansal</div></div>
+                <div class="pay-card-row"><span>Paid</span><strong style="color:var(--green-text)">₹25,000</strong></div>
+                <div class="progress-bar" style="--p:25%;--c:var(--green);margin:8px 0 4px"></div>
+                <div class="pay-card-row"><span>of ₹1,00,000</span><strong>25%</strong></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="phase-col">
+            <div class="phase-head">
+              <div>
+                <div class="phase-title"><span class="phase-dot" style="background:#F59E0B"></span>Profile Building</div>
+                <div class="phase-amount">₹3,20,000 received · 7 clients</div>
+              </div>
+              <span class="phase-count">7</span>
+            </div>
+            <div class="phase-cards">
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a4">SK</div><div class="pay-card-name">Sandeep Kaur</div></div>
+                <div class="pay-card-row"><span>Paid</span><strong style="color:var(--amber-text)">₹30,000</strong></div>
+                <div class="progress-bar" style="--p:25%;--c:var(--amber);margin:8px 0 4px"></div>
+                <div class="pay-card-row overdue"><span>Next due</span><strong>4 days</strong></div>
+              </div>
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a5">VK</div><div class="pay-card-name">Vikram Khanna</div></div>
+                <div class="pay-card-row"><span>Paid</span><strong style="color:var(--amber-text)">₹40,000</strong></div>
+                <div class="progress-bar" style="--p:33%;--c:var(--amber);margin:8px 0 4px"></div>
+                <div class="pay-card-row overdue"><span>Next due</span><strong>14 days late</strong></div>
+              </div>
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a6">PS</div><div class="pay-card-name">Priya Sharma</div></div>
+                <div class="pay-card-row"><span>Paid</span><strong style="color:var(--amber-text)">₹40,000</strong></div>
+                <div class="progress-bar" style="--p:40%;--c:var(--amber);margin:8px 0 4px"></div>
+                <div class="pay-card-row"><span>Next due</span><strong>Mon 19 May</strong></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="phase-col">
+            <div class="phase-head">
+              <div>
+                <div class="phase-title"><span class="phase-dot" style="background:#14B8A6"></span>Endorsement / Closed</div>
+                <div class="phase-amount">₹3,40,000 received · 6 clients</div>
+              </div>
+              <span class="phase-count">6</span>
+            </div>
+            <div class="phase-cards">
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a5">DK</div><div class="pay-card-name">Divya Kapoor</div></div>
+                <div class="pay-card-row"><span>Paid</span><strong style="color:var(--teal-text)">₹78,000</strong></div>
+                <div class="progress-bar" style="--p:65%;--c:var(--teal);margin:8px 0 4px"></div>
+                <div class="pay-card-row"><span>of ₹1,20,000</span><strong>65%</strong></div>
+              </div>
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a8">RG</div><div class="pay-card-name">Rohit Gupta</div></div>
+                <div class="pay-card-row"><span>Paid</span><strong style="color:var(--teal-text)">₹1,10,000</strong></div>
+                <div class="progress-bar" style="--p:92%;--c:var(--teal);margin:8px 0 4px"></div>
+                <div class="pay-card-row"><span>of ₹1,20,000</span><strong>92%</strong></div>
+              </div>
+              <div class="pay-card">
+                <div class="pay-card-head"><div class="avatar sm a9">KP</div><div class="pay-card-name">Kavita Pillai</div></div>
+                <div class="pay-card-row"><span>Paid</span><strong style="color:var(--green-text)">₹1,00,000</strong></div>
+                <div class="progress-bar" style="--p:100%;--c:var(--green);margin:8px 0 4px"></div>
+                <div class="pay-card-row"><span>Fully paid</span><strong style="color:var(--green-text)">✓ Closed</strong></div>
+              </div>
+            </div>
+          </div>
+
+        </section>
+      </div>
+
+      <div id="table-view" style="display:none">
+        <div class="panel">
+          <table class="payments">
+            <thead><tr>
+              <th>Client</th><th>Phase</th><th>Paid</th><th>Pending</th><th>Total Fee</th><th>Last Payment</th><th>Next Due</th><th>Status</th>
+            </tr></thead>
+            <tbody>
+              <tr><td><div class="pay-client"><div class="avatar sm a1">RK</div><span class="pay-client-name">Rahul Kumar</span></div></td><td><span class="badge green">Kickstart Paid</span></td><td><strong>₹25,000</strong></td><td>₹75,000</td><td>₹1,00,000</td><td>12 May 2026</td><td>22 May 2026</td><td><span class="badge blue">On track</span></td></tr>
+              <tr><td><div class="pay-client"><div class="avatar sm a4">SK</div><span class="pay-client-name">Sandeep Kaur</span></div></td><td><span class="badge amber">Profile Building</span></td><td><strong>₹30,000</strong></td><td>₹90,000</td><td>₹1,20,000</td><td>4 May 2026</td><td>21 May 2026</td><td><span class="badge blue">On track</span></td></tr>
+              <tr><td><div class="pay-client"><div class="avatar sm a5">VK</div><span class="pay-client-name">Vikram Khanna</span></div></td><td><span class="badge amber">Profile Building</span></td><td><strong>₹40,000</strong></td><td>₹80,000</td><td>₹1,20,000</td><td>29 Apr 2026</td><td>3 May 2026</td><td><span class="badge red">Overdue 14d</span></td></tr>
+              <tr><td><div class="pay-client"><div class="avatar sm a5">DK</div><span class="pay-client-name">Divya Kapoor</span></div></td><td><span class="badge teal">Endorsement</span></td><td><strong>₹78,000</strong></td><td>₹42,000</td><td>₹1,20,000</td><td>10 May 2026</td><td>25 May 2026</td><td><span class="badge blue">On track</span></td></tr>
+              <tr><td><div class="pay-client"><div class="avatar sm a8">RG</div><span class="pay-client-name">Rohit Gupta</span></div></td><td><span class="badge teal">Endorsement</span></td><td><strong>₹1,10,000</strong></td><td>₹10,000</td><td>₹1,20,000</td><td>14 May 2026</td><td>31 May 2026</td><td><span class="badge green">Final stage</span></td></tr>
+              <tr><td><div class="pay-client"><div class="avatar sm a9">KP</div><span class="pay-client-name">Kavita Pillai</span></div></td><td><span class="badge green">Closed Won</span></td><td><strong>₹1,00,000</strong></td><td>₹0</td><td>₹1,00,000</td><td>2 May 2026</td><td>—</td><td><span class="badge green">✓ Fully Paid</span></td></tr>
+              <tr><td><div class="pay-client"><div class="avatar sm a7">AD</div><span class="pay-client-name">Amit Das</span></div></td><td><span class="badge gray">Not Paid</span></td><td><strong>₹0</strong></td><td>₹80,000</td><td>₹80,000</td><td>—</td><td>—</td><td><span class="badge gray">Awaiting Kickstart</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="assets/app.js"></script>
+  <script>
+    document.querySelectorAll('.v-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.v-btn').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        const v = b.dataset.view;
+        document.getElementById('pipeline-view').style.display = v === 'pipeline' ? '' : 'none';
+        document.getElementById('table-view').style.display = v === 'table' ? '' : 'none';
+      });
+    });
+  </script>
+</body>
+</html>

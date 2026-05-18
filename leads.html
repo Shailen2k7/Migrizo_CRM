@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Migrizo CRM — Leads</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>
+  /* Page-specific: toolbar, table, popovers, drawer */
+  .smart-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+  .view-dropdown { position: relative; }
+  .view-dropdown-btn { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; background: var(--bg); border: 1px solid transparent; border-radius: 8px; color: var(--text-1); font-weight: 600; font-size: 13.5px; transition: all 0.15s ease; }
+  .view-dropdown-btn:hover { background: var(--primary-50); }
+  .view-dropdown-btn.open { background: var(--primary-50); border-color: var(--primary-200); }
+  .view-dropdown-btn .view-count { background: var(--surface); color: var(--text-2); font-size: 11.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); }
+  .view-dropdown-btn .chev { color: var(--text-3); width: 14px; height: 14px; transition: transform 0.15s ease; }
+  .view-dropdown-btn.open .chev { transform: rotate(180deg); }
+  .view-popover { position: absolute; top: calc(100% + 6px); left: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-xl); min-width: 260px; padding: 6px; z-index: 50; display: none; }
+  .view-popover.open { display: block; }
+  .view-popover-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 7px; color: var(--text-2); font-weight: 500; font-size: 13px; cursor: pointer; }
+  .view-popover-item:hover { background: var(--bg); color: var(--text-1); }
+  .view-popover-item.active { background: var(--primary-50); color: var(--primary-hover); font-weight: 600; }
+  .view-popover-item.active i { color: var(--primary-hover); }
+  .view-popover-item i { width: 16px; height: 16px; color: var(--text-3); }
+  .view-popover-item .v-count { margin-left: auto; background: var(--bg); color: var(--text-2); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); }
+  .view-popover-item.active .v-count { background: var(--primary); color: #fff; border-color: transparent; }
+  .view-popover-divider { height: 1px; background: var(--divider); margin: 4px 0; }
+  .view-popover-new { color: var(--primary-hover); font-weight: 500; }
+  .view-popover-new i { color: var(--primary); }
+
+  .filter-btn { position: relative; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-2); font-weight: 500; font-size: 13px; transition: all 0.15s ease; }
+  .filter-btn:hover { background: var(--bg); color: var(--text-1); border-color: var(--border-strong); }
+  .filter-btn.has-filters { background: var(--primary-50); color: var(--primary-hover); border-color: var(--primary-200); font-weight: 600; }
+  .filter-btn i { width: 15px; height: 15px; }
+  .filter-btn .filter-count { background: var(--primary); color: #fff; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; min-width: 18px; text-align: center; }
+
+  .active-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 6px 0 10px; background: var(--primary-50); border: 1px solid var(--primary-200); border-radius: 7px; color: var(--primary-hover); font-size: 12.5px; font-weight: 500; }
+  .active-chip strong { font-weight: 700; }
+  .active-chip-x { width: 18px; height: 18px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--primary-hover); cursor: pointer; }
+  .active-chip-x:hover { background: var(--primary-100); }
+  .active-chip-x i { width: 12px; height: 12px; }
+
+  .view-toggle { display: inline-flex; align-items: center; background: var(--bg); border-radius: 8px; padding: 3px; margin-left: auto; }
+  .view-btn { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 6px; color: var(--text-2); font-weight: 500; font-size: 12.5px; transition: all 0.15s ease; }
+  .view-btn i { width: 14px; height: 14px; }
+  .view-btn:hover { color: var(--text-1); }
+  .view-btn.active { background: var(--surface); color: var(--primary-hover); font-weight: 600; box-shadow: var(--shadow-sm); }
+
+  .bulk-bar { background: linear-gradient(90deg, var(--primary), #7C3AED); border-radius: 12px; padding: 10px 16px; display: flex; align-items: center; gap: 12px; color: #fff; box-shadow: 0 4px 16px rgba(99,102,241,0.25); }
+  .bulk-count { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; }
+  .bulk-count-num { background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 999px; font-weight: 700; }
+  .bulk-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .bulk-btn { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; background: rgba(255,255,255,0.12); color: #fff; font-size: 13px; font-weight: 500; }
+  .bulk-btn:hover { background: rgba(255,255,255,0.22); }
+  .bulk-btn i { width: 14px; height: 14px; }
+  .bulk-close { width: 28px; height: 28px; border-radius: 7px; color: rgba(255,255,255,0.85); display: flex; align-items: center; justify-content: center; }
+  .bulk-close:hover { background: rgba(255,255,255,0.15); color: #fff; }
+
+  .leads-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+  .leads-panel .table-wrap { border-radius: 12px 12px 0 0; overflow-x: auto; overflow-y: visible; }
+  table.leads { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 1100px; }
+  table.leads thead th { text-align: left; padding: 12px 14px; background: #FAFBFD; color: var(--text-3); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--divider); white-space: nowrap; }
+  table.leads thead th.center { text-align: center; }
+  table.leads tbody td { padding: 14px 14px; border-bottom: 1px solid var(--divider); color: var(--text-2); vertical-align: middle; }
+  table.leads tbody tr { transition: background 0.1s ease; cursor: pointer; }
+  table.leads tbody tr:hover { background: #FAFBFD; }
+  table.leads tbody tr.selected { background: var(--primary-50); }
+  table.leads tbody tr:last-child td { border-bottom: none; }
+
+  .client-cell { display: flex; align-items: center; gap: 12px; }
+  .client-row { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; }
+  .client-name-wrap { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 4px; padding: 2px 4px; margin-left: -4px; flex-shrink: 0; }
+  .client-name-wrap:hover { background: var(--primary-50); }
+  .client-name { font-weight: 600; color: var(--text-1); font-size: 13.5px; white-space: nowrap; }
+  .client-name-wrap .star { width: 12px; height: 12px; color: var(--amber); fill: var(--amber); }
+  .client-name-wrap .edit-hint { width: 10px; height: 10px; color: var(--text-3); opacity: 0; transition: opacity 0.15s ease; }
+  .client-name-wrap:hover .edit-hint { opacity: 1; }
+
+  .tag-row { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 1; min-width: 0; }
+  .tag { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; height: 18px; line-height: 1; border-radius: 5px; font-size: 10px; font-weight: 600; background: #F1F5F9; color: var(--text-2); white-space: nowrap; }
+  .tag.warm { background: var(--orange-bg); color: var(--orange-text); }
+  .tag.high-val { background: var(--purple-bg); color: var(--purple-text); }
+  .tag.docs { background: var(--blue-bg); color: var(--blue-text); }
+  .tag.urgent { background: var(--red-bg); color: var(--red-text); }
+  .tag.repeat { background: var(--teal-bg); color: var(--teal-text); }
+  .tag.cold { background: #F1F5F9; color: #475569; }
+  .tag .tag-x { width: 11px; height: 11px; border-radius: 3px; display: none; align-items: center; justify-content: center; cursor: pointer; opacity: 0.7; margin-left: 1px; }
+  .tag:hover .tag-x { display: inline-flex; }
+  .tag .tag-x:hover { opacity: 1; background: rgba(0,0,0,0.08); }
+  .tag .tag-x i { width: 8px; height: 8px; }
+  .tag-add { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; color: var(--text-3); border: 1px dashed var(--border-strong); cursor: pointer; transition: all 0.15s ease; }
+  .tag-add:hover { color: var(--primary); border-color: var(--primary-200); background: var(--primary-50); }
+  .tag-add i { width: 9px; height: 9px; }
+
+  .contact-pop { position: fixed; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px; min-width: 260px; box-shadow: var(--shadow-xl); z-index: 100; opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity 0.15s ease, transform 0.15s ease; }
+  .contact-pop.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  .contact-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 7px; }
+  .contact-row:hover { background: var(--bg); }
+  .contact-row .ci { width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .contact-row .ci.phone { background: var(--green-bg); color: var(--green-text); }
+  .contact-row .ci.email { background: var(--blue-bg); color: var(--blue-text); }
+  .contact-row .ci.wa { background: #DCFCE7; color: #15803D; }
+  .contact-row .ci i { width: 14px; height: 14px; }
+  .contact-text { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text-1); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .copy-btn { width: 28px; height: 28px; border-radius: 7px; color: var(--text-3); flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.15s ease; }
+  .copy-btn:hover { background: var(--primary-50); color: var(--primary); }
+  .copy-btn i { width: 13px; height: 13px; }
+  .copy-btn.copied { background: var(--green-bg); color: var(--green-text); }
+
+  .stage-badge { cursor: pointer; }
+  .stage-badge:hover { transform: translateY(-1px); }
+  .stage-badge .badge-chev { width: 11px; height: 11px; opacity: 0.7; }
+  .stage-popover { position: fixed; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px; min-width: 220px; box-shadow: var(--shadow-xl); z-index: 100; display: none; }
+  .stage-popover.open { display: block; }
+  .stage-option { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; cursor: pointer; }
+  .stage-option:hover { background: var(--bg); }
+  .stage-option .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .stage-option .label { font-size: 13px; color: var(--text-1); font-weight: 500; }
+
+  .followup { display: flex; align-items: center; gap: 8px; }
+  .followup-dates { display: flex; flex-direction: column; gap: 2px; }
+  .followup-day { font-weight: 600; color: var(--primary-hover); font-size: 12.5px; }
+  .followup-time { color: var(--text-3); font-size: 12px; }
+  .followup-icon { width: 28px; height: 28px; border-radius: 7px; background: var(--primary-50); color: var(--primary); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .followup-icon i { width: 14px; height: 14px; }
+
+  .score-wrap { display: flex; justify-content: center; }
+  .score { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; position: relative; background: conic-gradient(var(--ring-color) var(--p), #F1F5F9 0); cursor: pointer; transition: transform 0.15s ease; }
+  .score:hover { transform: scale(1.1); }
+  .score::before { content: ''; position: absolute; inset: 3px; background: var(--surface); border-radius: 50%; }
+  .score span { position: relative; z-index: 1; color: var(--text-1); }
+
+  .payment-cell { display: flex; flex-direction: column; gap: 6px; min-width: 140px; }
+  .payment-amount { font-size: 12.5px; color: var(--text-1); font-weight: 600; }
+  .payment-label { font-size: 11.5px; color: var(--text-3); font-weight: 500; }
+
+  .created-cell { display: flex; flex-direction: column; gap: 2px; }
+  .created-date { color: var(--text-1); font-weight: 500; font-size: 12.5px; }
+  .created-ago { color: var(--text-3); font-size: 11.5px; }
+
+  .notes-cell { color: var(--text-2); font-size: 12.5px; max-width: 240px; min-width: 180px; line-height: 1.45; cursor: pointer; border-radius: 6px; padding: 6px 8px; margin: -6px -8px; border: 1px dashed transparent; }
+  .notes-cell:hover { background: var(--bg); border-color: var(--border); }
+  .notes-cell[contenteditable="true"] { background: var(--surface); border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px var(--primary-50); }
+  .notes-cell.empty { color: var(--text-3); font-style: italic; }
+
+  .more-btn { width: 28px; height: 28px; border-radius: 6px; color: var(--text-3); display: flex; align-items: center; justify-content: center; }
+  .more-btn:hover { background: var(--bg); color: var(--text-1); }
+
+  /* ============ DRAWER ============ */
+  .drawer-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.3); z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
+  .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 480px; max-width: 100vw; background: var(--surface); border-left: 1px solid var(--border); box-shadow: -16px 0 40px rgba(15,23,42,0.12); z-index: 201; transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); display: flex; flex-direction: column; }
+  .drawer.open { transform: translateX(0); }
+  .drawer-head { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--divider); }
+  .drawer-head .close { width: 32px; height: 32px; border-radius: 8px; color: var(--text-2); display: flex; align-items: center; justify-content: center; margin-left: auto; }
+  .drawer-head .close:hover { background: var(--bg); color: var(--text-1); }
+  .drawer-body { flex: 1; overflow-y: auto; padding: 20px; }
+  .drawer-section { margin-bottom: 24px; }
+  .drawer-section-title { font-size: 11px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+  .drawer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .drawer-field { background: var(--bg); border-radius: 8px; padding: 10px 12px; }
+  .drawer-field-label { font-size: 11px; color: var(--text-3); font-weight: 500; }
+  .drawer-field-value { font-size: 13px; color: var(--text-1); font-weight: 600; margin-top: 2px; }
+  .timeline { display: flex; flex-direction: column; gap: 14px; position: relative; }
+  .timeline::before { content: ''; position: absolute; left: 14px; top: 6px; bottom: 6px; width: 2px; background: var(--divider); }
+  .timeline-item { display: flex; gap: 12px; position: relative; z-index: 1; }
+  .timeline-dot { width: 30px; height: 30px; border-radius: 50%; background: var(--surface); border: 2px solid var(--primary-200); color: var(--primary); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .timeline-dot i { width: 14px; height: 14px; }
+  .timeline-dot.green { border-color: var(--green); color: var(--green); }
+  .timeline-dot.amber { border-color: var(--amber); color: var(--amber); }
+  .timeline-content { flex: 1; padding-top: 4px; }
+  .timeline-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+  .timeline-meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+  .timeline-body { font-size: 12.5px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
+  .drawer-foot { padding: 14px 20px; border-top: 1px solid var(--divider); display: flex; gap: 8px; }
+  .drawer-foot .btn-primary { flex: 1; justify-content: center; }
+</style>
+</head>
+<body>
+
+  <aside class="sidebar">
+    <div class="logo"><div class="logo-mark">M</div><div class="logo-text">Migrizo</div></div>
+    <nav class="nav">
+      <a class="nav-item" href="index.html"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
+      <a class="nav-item active" href="leads.html"><i data-lucide="users"></i><span>Leads</span></a>
+      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span><span class="nav-badge">18</span></a>
+      <a class="nav-item" href="payments.html"><i data-lucide="indian-rupee"></i><span>Payments</span></a>
+      <a class="nav-item" href="calendar.html"><i data-lucide="calendar"></i><span>Calendar</span></a>
+      <a class="nav-item" href="reports.html"><i data-lucide="bar-chart-3"></i><span>Reports</span></a>
+      <div class="nav-divider"></div>
+      <a class="nav-item" href="ai-coo.html"><i data-lucide="sparkles"></i><span>AI COO</span></a>
+      <a class="nav-item" href="settings.html"><i data-lucide="settings"></i><span>Settings</span></a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar">MV</div>
+        <div class="user-meta"><div class="user-name">Manik Verma</div><div class="user-role">Admin</div></div>
+        <i data-lucide="chevrons-up-down" class="chev" style="width:16px;height:16px"></i>
+      </div>
+      <div class="quick-add">
+        <div class="quick-add-icon"><i data-lucide="plus" style="width:16px;height:16px"></i></div>
+        <div class="quick-add-text"><strong>Quick Add Lead</strong><span>Add a new client</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="page-title"><h1>Leads</h1><p>Manage your entire leads database</p></div>
+      <div class="search">
+        <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
+        <input type="text" placeholder="Search leads by name, phone, email..." />
+        <span class="search-kbd">⌘ K</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn ai-btn"><i data-lucide="sparkles" style="width:18px;height:18px"></i></button>
+        <button class="icon-btn"><i data-lucide="bell" style="width:18px;height:18px"></i><span class="dot">12</span></button>
+        <button class="icon-btn"><i data-lucide="sun" style="width:18px;height:18px"></i></button>
+        <button class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px"></i><span>Add Lead</span><span class="btn-primary-split"><i data-lucide="chevron-down" style="width:14px;height:14px;display:block"></i></span></button>
+      </div>
+    </header>
+
+    <div class="content">
+      <div class="ai-mini">
+        <div class="ai-mini-icon"><i data-lucide="sparkles"></i></div>
+        <div class="ai-mini-text"><strong>AI COO insight:</strong> <span class="highlight">5 hot leads</span> haven't been contacted in 24+ hours. Reaching out today could save <strong>₹1.05L</strong>.</div>
+        <a class="ai-mini-act">View leads <i data-lucide="arrow-right"></i></a>
+      </div>
+
+      <div class="smart-toolbar">
+        <div class="view-dropdown">
+          <button class="view-dropdown-btn" id="viewBtn">
+            <i data-lucide="inbox" style="width:15px;height:15px;color:var(--primary)"></i>
+            <span class="view-name">All Leads</span>
+            <span class="view-count">248</span>
+            <i data-lucide="chevron-down" class="chev"></i>
+          </button>
+          <div class="view-popover" id="viewPopover">
+            <div class="view-popover-item active"><i data-lucide="inbox"></i><span>All Leads</span><span class="v-count">248</span></div>
+            <div class="view-popover-item"><span style="font-size:14px;width:16px;text-align:center">🔥</span><span>Hot Leads</span><span class="v-count">42</span></div>
+            <div class="view-popover-item"><i data-lucide="phone-call"></i><span>Follow-up Today</span><span class="v-count">24</span></div>
+            <div class="view-popover-item"><i data-lucide="banknote"></i><span>Payment Pending</span><span class="v-count">18</span></div>
+            <div class="view-popover-item"><i data-lucide="alert-triangle"></i><span>Overdue</span><span class="v-count">7</span></div>
+            <div class="view-popover-item"><i data-lucide="archive"></i><span>Archived</span><span class="v-count">31</span></div>
+            <div class="view-popover-divider"></div>
+            <div class="view-popover-item view-popover-new"><i data-lucide="plus"></i><span>Create new view</span></div>
+          </div>
+        </div>
+
+        <button class="filter-btn has-filters"><i data-lucide="sliders-horizontal"></i><span>Filters</span><span class="filter-count">2</span></button>
+        <span class="active-chip"><span>Score: <strong>≥ 6</strong></span><button class="active-chip-x"><i data-lucide="x"></i></button></span>
+        <span class="active-chip"><span>Last 30 days</span><button class="active-chip-x"><i data-lucide="x"></i></button></span>
+
+        <div class="view-toggle">
+          <button class="view-btn active"><i data-lucide="list"></i>List</button>
+          <button class="view-btn"><i data-lucide="kanban-square"></i>Kanban</button>
+          <button class="view-btn"><i data-lucide="calendar-days"></i>Calendar</button>
+        </div>
+        <button class="btn-ghost"><i data-lucide="columns-3"></i> Columns</button>
+        <button class="btn-icon-square"><i data-lucide="download" style="width:16px;height:16px"></i></button>
+      </div>
+
+      <div class="bulk-bar" id="bulkBar" style="display:none">
+        <div class="bulk-count"><span class="bulk-count-num" id="bulkCount">0</span><span>leads selected</span></div>
+        <div class="bulk-actions">
+          <button class="bulk-btn"><i data-lucide="tag"></i> Add Tag</button>
+          <button class="bulk-btn"><i data-lucide="git-branch"></i> Change Stage</button>
+          <button class="bulk-btn"><i data-lucide="mail"></i> Send Email</button>
+          <button class="bulk-btn"><i data-lucide="message-square"></i> WhatsApp</button>
+          <button class="bulk-btn"><i data-lucide="trash-2"></i> Archive</button>
+        </div>
+        <button class="bulk-close" id="bulkClose"><i data-lucide="x" style="width:16px;height:16px"></i></button>
+      </div>
+
+      <section class="leads-panel">
+        <div class="table-wrap">
+          <table class="leads">
+            <thead><tr>
+              <th style="width:36px"><input type="checkbox" class="check" id="selectAll" /></th>
+              <th>Client</th><th>Stage</th><th>Next Follow-up</th><th class="center">Score</th>
+              <th>Payments</th><th>Created</th><th>Updated</th><th>Notes</th><th style="width:36px"></th>
+            </tr></thead>
+            <tbody id="leadsBody"></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <div class="pagination-info">Showing 1 to 8 of 248 leads</div>
+          <div class="pagination-nav">
+            <button class="page-btn disabled"><i data-lucide="chevron-left" style="width:16px;height:16px"></i></button>
+            <button class="page-btn active">1</button><button class="page-btn">2</button><button class="page-btn">3</button>
+            <span class="page-ellipsis">...</span><button class="page-btn">10</button>
+            <button class="page-btn"><i data-lucide="chevron-right" style="width:16px;height:16px"></i></button>
+          </div>
+          <div class="rows-per-page"><span>Rows per page</span><div class="rows-select">25 <i data-lucide="chevron-down" style="width:14px;height:14px"></i></div></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Drawer for Lead Details -->
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+  <aside class="drawer" id="drawer">
+    <div class="drawer-head">
+      <div class="avatar a1 lg" id="drawerAvatar">RK</div>
+      <div>
+        <div style="font-size:16px;font-weight:700;color:var(--text-1)" id="drawerName">Rahul Kumar</div>
+        <div style="font-size:12.5px;color:var(--text-3);margin-top:2px" id="drawerStage">Connected · Score 8</div>
+      </div>
+      <button class="close" id="drawerClose"><i data-lucide="x" style="width:18px;height:18px"></i></button>
+    </div>
+    <div class="drawer-body">
+      <div class="drawer-section">
+        <div class="drawer-section-title">Contact</div>
+        <div class="drawer-grid">
+          <div class="drawer-field"><div class="drawer-field-label">Phone</div><div class="drawer-field-value" id="drawerPhone">+91 98765 43210</div></div>
+          <div class="drawer-field"><div class="drawer-field-label">Email</div><div class="drawer-field-value" id="drawerEmail">rahul.k@email.com</div></div>
+          <div class="drawer-field"><div class="drawer-field-label">Lead Score</div><div class="drawer-field-value">8 / 10</div></div>
+          <div class="drawer-field"><div class="drawer-field-label">Created</div><div class="drawer-field-value">12 May 2026</div></div>
+        </div>
+      </div>
+      <div class="drawer-section">
+        <div class="drawer-section-title">Payment Breakdown</div>
+        <div class="drawer-field" style="background:var(--surface);border:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:12.5px;color:var(--text-2)">Paid: <strong style="color:var(--text-1)">₹25,000</strong></span>
+            <span style="font-size:12.5px;color:var(--text-2)">Total: <strong style="color:var(--text-1)">₹1,00,000</strong></span>
+          </div>
+          <div class="progress-bar" style="--p:25%;--c:var(--green)"></div>
+          <div style="font-size:11.5px;color:var(--text-3);margin-top:6px">Kickstart Paid · ₹75,000 remaining</div>
+        </div>
+      </div>
+      <div class="drawer-section">
+        <div class="drawer-section-title">Activity Timeline</div>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-dot green"><i data-lucide="check"></i></div>
+            <div class="timeline-content">
+              <div class="timeline-title">Kickstart payment received</div>
+              <div class="timeline-meta">12 May 2026 · 3:42 PM</div>
+              <div class="timeline-body">₹25,000 received via UPI. Receipt sent.</div>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot"><i data-lucide="phone"></i></div>
+            <div class="timeline-content">
+              <div class="timeline-title">Discovery call completed</div>
+              <div class="timeline-meta">10 May 2026 · 11:15 AM · 32 min</div>
+              <div class="timeline-body">Interested in Canada PR. Strong profile — 6 years software engineering. Will share proposal.</div>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot amber"><i data-lucide="mail"></i></div>
+            <div class="timeline-content">
+              <div class="timeline-title">Lead captured from Meta Ads</div>
+              <div class="timeline-meta">8 May 2026 · 9:20 AM</div>
+              <div class="timeline-body">Source: Meta Lead Gen Form — Canada Express Entry campaign.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="drawer-foot">
+      <button class="btn-ghost"><i data-lucide="phone"></i> Call</button>
+      <button class="btn-ghost"><i data-lucide="message-square"></i> WhatsApp</button>
+      <button class="btn-primary"><i data-lucide="external-link" style="width:16px;height:16px"></i> Open full profile</button>
+    </div>
+  </aside>
+
+  <div class="contact-pop" id="contactPop"></div>
+  <div class="stage-popover" id="stagePop">
+    <div class="stage-option" data-stage="New Inquiry" data-color="pink"><span class="dot" style="background:#EC4899"></span><span class="label">New Inquiry</span></div>
+    <div class="stage-option" data-stage="Attempted Contact" data-color="gray"><span class="dot" style="background:#94A3B8"></span><span class="label">Attempted Contact</span></div>
+    <div class="stage-option" data-stage="Connected" data-color="green"><span class="dot" style="background:#10B981"></span><span class="label">Connected</span></div>
+    <div class="stage-option" data-stage="Qualified" data-color="blue"><span class="dot" style="background:#3B82F6"></span><span class="label">Qualified</span></div>
+    <div class="stage-option" data-stage="Consultation Scheduled" data-color="purple"><span class="dot" style="background:#8B5CF6"></span><span class="label">Consultation Scheduled</span></div>
+    <div class="stage-option" data-stage="Proposal Shared" data-color="orange"><span class="dot" style="background:#F97316"></span><span class="label">Proposal Shared</span></div>
+    <div class="stage-option" data-stage="Partial Payment" data-color="teal"><span class="dot" style="background:#14B8A6"></span><span class="label">Partial Payment</span></div>
+  </div>
+
+  <script src="assets/app.js"></script>
+  <script>
+    // Sample data
+    const LEADS = [
+      { initials:'RK', avatar:'a1', name:'Rahul Kumar', phone:'+91 98765 43210', email:'rahul.k@email.com', star:true, tags:[{t:'warm',l:'Warm'},{t:'high-val',l:'High Value'}], stage:'Connected', stageColor:'green', followupDay:'Tomorrow', followupTime:'10:30 AM', followupUrgent:false, score:8, ring:'green', p:80, paid:'₹25,000', total:'₹1,00,000', phase:'Kickstart Paid', barP:25, barC:'green', created:'12 May', createdAgo:'5 days ago', updated:'2m ago', notes:'Interested in Canada PR. Asked about timelines.' },
+      { initials:'AS', avatar:'a3', name:'Anita Singh', phone:'+91 91234 56789', email:'anita.s@email.com', star:true, tags:[{t:'urgent',l:'Urgent'},{t:'docs',l:'Docs Pending'}], stage:'Qualified', stageColor:'blue', followupDay:'Today', followupTime:'04:00 PM', followupUrgent:true, score:7, ring:'green', p:70, paid:'₹15,000', total:'₹1,20,000', phase:'Kickstart Paid', barP:12, barC:'green', created:'10 May', createdAgo:'7 days ago', updated:'15m ago', notes:'Profile looks strong. Planning consultation.' },
+      { initials:'MG', avatar:'a5', name:'Manish Gupta', phone:'+91 99887 76655', email:'manish.g@email.com', star:false, tags:[{t:'cold',l:'Cold'}], stage:'Consultation Scheduled', stageColor:'purple', followupDay:'Sat, 18 May', followupTime:'11:00 AM', followupUrgent:false, score:6, ring:'amber', p:60, paid:'₹0', total:'₹90,000', phase:'Not Paid', barP:0, barC:'text-3', created:'8 May', createdAgo:'9 days ago', updated:'30m ago', notes:'Consultation booked for Saturday.' },
+      { initials:'PS', avatar:'a6', name:'Priya Sharma', phone:'+91 88776 65544', email:'priya.s@email.com', star:false, tags:[{t:'warm',l:'Warm'}], stage:'Proposal Shared', stageColor:'orange', followupDay:'Mon, 20 May', followupTime:'02:00 PM', followupUrgent:false, score:5, ring:'amber', p:50, paid:'₹40,000', total:'₹1,00,000', phase:'Profile Building', barP:40, barC:'amber', created:'5 May', createdAgo:'12 days ago', updated:'1h ago', notes:'Shared proposal. Waiting for feedback.' },
+      { initials:'SK', avatar:'a4', name:'Sandeep Kaur', phone:'+91 77665 54433', email:'sandeep.k@email.com', star:true, tags:[{t:'high-val',l:'High Value'},{t:'docs',l:'Docs Pending'}], stage:'Partial Payment', stageColor:'teal', followupDay:'Wed, 22 May', followupTime:'12:30 PM', followupUrgent:false, score:7, ring:'green', p:70, paid:'₹30,000', total:'₹1,20,000', phase:'Profile Building', barP:25, barC:'amber', created:'3 May', createdAgo:'14 days ago', updated:'2h ago', notes:'Paid Kickstart. Working on profile.' },
+      { initials:'AD', avatar:'a7', name:'Amit Das', phone:'+91 66554 43322', email:'amit.d@email.com', star:false, tags:[{t:'cold',l:'Cold'}], stage:'Attempted Contact', stageColor:'gray', followupDay:'Today', followupTime:'06:00 PM', followupUrgent:true, score:3, ring:'red', p:30, paid:'₹0', total:'₹80,000', phase:'Not Paid', barP:0, barC:'text-3', created:'1 May', createdAgo:'16 days ago', updated:'3h ago', notes:'', notesEmpty:true },
+      { initials:'NB', avatar:'a3', name:'Neha Bansal', phone:'+91 55443 32211', email:'neha.b@email.com', star:true, tags:[{t:'warm',l:'Warm'},{t:'repeat',l:'Repeat'}], stage:'Connected', stageColor:'green', followupDay:'Fri, 17 May', followupTime:'05:00 PM', followupUrgent:false, score:8, ring:'green', p:80, paid:'₹25,000', total:'₹1,00,000', phase:'Kickstart Paid', barP:25, barC:'green', created:'28 Apr', createdAgo:'19 days ago', updated:'4h ago', notes:'Very interested. Discussed process.' },
+      { initials:'DK', avatar:'a5', name:'Divya Kapoor', phone:'+91 22110 09988', email:'divya.k@email.com', star:true, tags:[{t:'high-val',l:'High Value'}], stage:'Partial Payment', stageColor:'teal', followupDay:'Thu, 23 May', followupTime:'03:00 PM', followupUrgent:false, score:9, ring:'green', p:90, paid:'₹78,000', total:'₹1,20,000', phase:'Profile Building', barP:65, barC:'green', created:'22 Apr', createdAgo:'25 days ago', updated:'6h ago', notes:'Final document review pending.' },
+    ];
+
+    function renderLeads() {
+      const body = document.getElementById('leadsBody');
+      body.innerHTML = LEADS.map((l, idx) => {
+        const followupIconStyle = l.followupUrgent ? 'background:var(--orange-bg);color:var(--orange-text)' : '';
+        const followupDayStyle = l.followupUrgent ? 'color:var(--orange-text)' : '';
+        const tags = l.tags.map(t => `<span class="tag ${t.t}">${t.l}<button class="tag-x"><i data-lucide="x"></i></button></span>`).join('');
+        const star = l.star ? '<i data-lucide="star" class="star"></i>' : '';
+        const notesClass = l.notesEmpty ? 'notes-cell empty' : 'notes-cell';
+        const notesText = l.notesEmpty ? 'Add note...' : l.notes;
+        return `
+          <tr data-lead-idx="${idx}">
+            <td><input type="checkbox" class="check row-check" onclick="event.stopPropagation()" /></td>
+            <td>
+              <div class="client-cell">
+                <div class="avatar ${l.avatar}">${l.initials}</div>
+                <div class="client-row">
+                  <div class="client-name-wrap" data-phone="${l.phone}" data-email="${l.email}" data-name="${l.name}">
+                    <span class="client-name">${l.name}</span>${star}
+                    <i data-lucide="pencil" class="edit-hint"></i>
+                  </div>
+                  <div class="tag-row">${tags}<button class="tag-add"><i data-lucide="plus"></i></button></div>
+                </div>
+              </div>
+            </td>
+            <td><span class="badge ${l.stageColor} stage-badge" data-stage="${l.stage}">${l.stage} <i data-lucide="chevron-down" class="badge-chev"></i></span></td>
+            <td><div class="followup"><div class="followup-icon" style="${followupIconStyle}"><i data-lucide="calendar"></i></div><div class="followup-dates"><span class="followup-day" style="${followupDayStyle}">${l.followupDay}</span><span class="followup-time">${l.followupTime}</span></div></div></td>
+            <td class="center"><div class="score-wrap"><div class="score" style="--p:${l.p}%;--ring-color:var(--${l.ring})"><span>${l.score}</span></div></div></td>
+            <td><div class="payment-cell"><div class="payment-amount">${l.paid} / <span style="color:var(--text-3);font-weight:500">${l.total}</span></div><div class="progress-bar" style="--p:${l.barP}%;--c:var(--${l.barC})"></div><div class="payment-label">${l.phase}</div></div></td>
+            <td><div class="created-cell"><span class="created-date">${l.created}</span><span class="created-ago">${l.createdAgo}</span></div></td>
+            <td style="color:var(--text-3);font-size:12.5px">${l.updated}</td>
+            <td><div class="${notesClass}">${notesText}</div></td>
+            <td><button class="more-btn" onclick="event.stopPropagation()"><i data-lucide="more-vertical" style="width:16px;height:16px"></i></button></td>
+          </tr>`;
+      }).join('');
+      lucide.createIcons();
+      attachHandlers();
+    }
+
+    function attachHandlers() {
+      // Hover contact popover
+      const contactPop = document.getElementById('contactPop');
+      let hideTimer;
+      function showPop(el) {
+        clearTimeout(hideTimer);
+        const phone = el.dataset.phone, email = el.dataset.email, name = el.dataset.name;
+        contactPop.innerHTML = `
+          <div class="contact-row"><div class="ci phone"><i data-lucide="phone"></i></div><span class="contact-text">${phone}</span><button class="copy-btn" data-copy="${phone}"><i data-lucide="copy"></i></button></div>
+          <div class="contact-row"><div class="ci email"><i data-lucide="mail"></i></div><span class="contact-text">${email}</span><button class="copy-btn" data-copy="${email}"><i data-lucide="copy"></i></button></div>
+          <div class="contact-row"><div class="ci wa"><i data-lucide="message-circle"></i></div><span class="contact-text">WhatsApp ${name}</span><button class="copy-btn" data-link="https://wa.me/${phone.replace(/[^0-9]/g,'')}"><i data-lucide="external-link"></i></button></div>`;
+        lucide.createIcons();
+        const r = el.getBoundingClientRect();
+        let left = r.left; const popW = 280;
+        if (left + popW > innerWidth - 16) left = innerWidth - popW - 16;
+        contactPop.style.left = left + 'px'; contactPop.style.top = (r.bottom + 8) + 'px';
+        contactPop.classList.add('visible');
+      }
+      function hidePop() { hideTimer = setTimeout(() => contactPop.classList.remove('visible'), 200); }
+      document.querySelectorAll('.client-name-wrap').forEach(el => {
+        el.addEventListener('mouseenter', () => showPop(el));
+        el.addEventListener('mouseleave', hidePop);
+      });
+      contactPop.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+      contactPop.addEventListener('mouseleave', hidePop);
+
+      // Editable name
+      document.querySelectorAll('.client-name-wrap').forEach(wrap => {
+        wrap.addEventListener('click', (e) => {
+          if (e.target.closest('.copy-btn')) return;
+          e.stopPropagation();
+          const span = wrap.querySelector('.client-name');
+          if (span.isContentEditable) return;
+          span.contentEditable = 'true'; span.focus();
+          const range = document.createRange(); range.selectNodeContents(span);
+          const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+        });
+        const span = wrap.querySelector('.client-name');
+        span.addEventListener('blur', () => { span.contentEditable = 'false'; wrap.dataset.name = span.textContent.trim(); });
+        span.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); span.blur(); } if (e.key === 'Escape') span.blur(); });
+      });
+
+      // Editable notes
+      document.querySelectorAll('.notes-cell').forEach(cell => {
+        cell.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (cell.isContentEditable) return;
+          if (cell.classList.contains('empty')) { cell.textContent = ''; cell.classList.remove('empty'); }
+          cell.contentEditable = 'true'; cell.focus();
+        });
+        cell.addEventListener('blur', () => {
+          cell.contentEditable = 'false';
+          if (!cell.textContent.trim()) { cell.textContent = 'Add note...'; cell.classList.add('empty'); }
+        });
+        cell.addEventListener('keydown', (e) => { if (e.key === 'Escape') cell.blur(); });
+      });
+
+      // Stage badge
+      const stagePop = document.getElementById('stagePop');
+      let currentBadge = null;
+      document.querySelectorAll('.stage-badge').forEach(b => {
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          currentBadge = b;
+          const r = b.getBoundingClientRect();
+          stagePop.style.left = r.left + 'px'; stagePop.style.top = (r.bottom + 6) + 'px';
+          stagePop.classList.add('open');
+        });
+      });
+      document.querySelectorAll('.stage-option').forEach(o => {
+        o.onclick = (e) => {
+          e.stopPropagation();
+          if (!currentBadge) return;
+          currentBadge.dataset.stage = o.dataset.stage;
+          currentBadge.className = 'badge ' + o.dataset.color + ' stage-badge';
+          currentBadge.innerHTML = o.dataset.stage + ' <i data-lucide="chevron-down" class="badge-chev"></i>';
+          lucide.createIcons();
+          stagePop.classList.remove('open');
+        };
+      });
+
+      // Row click → drawer
+      document.querySelectorAll('tr[data-lead-idx]').forEach(row => {
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('input,button,.tag,.tag-add,.tag-x,.client-name-wrap,.stage-badge,.notes-cell')) return;
+          const idx = +row.dataset.leadIdx;
+          openDrawer(LEADS[idx]);
+        });
+      });
+
+      // Row check
+      document.querySelectorAll('.row-check').forEach(c => c.addEventListener('change', updateBulk));
+    }
+
+    function openDrawer(l) {
+      document.getElementById('drawerAvatar').textContent = l.initials;
+      document.getElementById('drawerAvatar').className = 'avatar ' + l.avatar + ' lg';
+      document.getElementById('drawerName').textContent = l.name;
+      document.getElementById('drawerStage').textContent = l.stage + ' · Score ' + l.score;
+      document.getElementById('drawerPhone').textContent = l.phone;
+      document.getElementById('drawerEmail').textContent = l.email;
+      document.getElementById('drawer').classList.add('open');
+      document.getElementById('drawerBackdrop').classList.add('open');
+    }
+    function closeDrawer() {
+      document.getElementById('drawer').classList.remove('open');
+      document.getElementById('drawerBackdrop').classList.remove('open');
+    }
+    document.getElementById('drawerClose').onclick = closeDrawer;
+    document.getElementById('drawerBackdrop').onclick = closeDrawer;
+
+    // Tag remove/add
+    document.addEventListener('click', (e) => {
+      const x = e.target.closest('.tag-x');
+      if (x) { e.stopPropagation(); x.closest('.tag').remove(); return; }
+      const adder = e.target.closest('.tag-add');
+      if (adder) {
+        e.stopPropagation();
+        const newTag = prompt('Enter tag name:');
+        if (newTag && newTag.trim()) {
+          const tag = document.createElement('span');
+          tag.className = 'tag warm';
+          tag.innerHTML = `${newTag.trim()}<button class="tag-x"><i data-lucide="x"></i></button>`;
+          adder.parentElement.insertBefore(tag, adder);
+          lucide.createIcons();
+        }
+      }
+    });
+
+    // Close popovers on outside click
+    document.addEventListener('click', () => {
+      document.getElementById('viewPopover').classList.remove('open');
+      document.getElementById('viewBtn').classList.remove('open');
+      document.getElementById('stagePop').classList.remove('open');
+    });
+    ['viewPopover','stagePop'].forEach(id => document.getElementById(id).addEventListener('click', (e) => e.stopPropagation()));
+
+    // View dropdown
+    const viewBtn = document.getElementById('viewBtn');
+    viewBtn.addEventListener('click', (e) => { e.stopPropagation(); viewBtn.classList.toggle('open'); document.getElementById('viewPopover').classList.toggle('open'); });
+    document.querySelectorAll('.view-popover-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (item.classList.contains('view-popover-new')) return;
+        document.querySelectorAll('.view-popover-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        viewBtn.querySelector('.view-name').textContent = item.querySelector('span').textContent;
+        viewBtn.querySelector('.view-count').textContent = item.querySelector('.v-count')?.textContent || '0';
+        viewBtn.classList.remove('open');
+        document.getElementById('viewPopover').classList.remove('open');
+      });
+    });
+
+    // Bulk
+    function updateBulk() {
+      const checked = document.querySelectorAll('.row-check:checked');
+      const bulkBar = document.getElementById('bulkBar');
+      if (checked.length > 0) { bulkBar.style.display = 'flex'; document.getElementById('bulkCount').textContent = checked.length; }
+      else bulkBar.style.display = 'none';
+      document.querySelectorAll('.row-check').forEach(c => {
+        const row = c.closest('tr');
+        if (c.checked) row.classList.add('selected'); else row.classList.remove('selected');
+      });
+    }
+    document.getElementById('selectAll').addEventListener('change', (e) => {
+      document.querySelectorAll('.row-check').forEach(c => c.checked = e.target.checked);
+      updateBulk();
+    });
+    document.getElementById('bulkClose').addEventListener('click', () => {
+      document.querySelectorAll('.row-check').forEach(c => c.checked = false);
+      document.getElementById('selectAll').checked = false;
+      updateBulk();
+    });
+
+    // View toggle
+    document.querySelectorAll('.view-btn').forEach(t => t.addEventListener('click', () => {
+      document.querySelectorAll('.view-btn').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+    }));
+    document.querySelectorAll('.active-chip-x').forEach(b => b.addEventListener('click', () => b.closest('.active-chip').remove()));
+
+    renderLeads();
+  </script>
+</body>
+</html>
