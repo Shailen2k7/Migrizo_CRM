@@ -14,10 +14,11 @@
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
+# Assets: short cache, NO immutable — so updates actually reach the browser
 [[headers]]
   for = "/assets/*"
   [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+    Cache-Control = "public, max-age=300, must-revalidate"
 
 [[headers]]
   for = "/*"

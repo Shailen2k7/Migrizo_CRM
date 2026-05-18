@@ -127,3 +127,6 @@ window.CRM = {
   // Call AI COO
   askAI: (question, context) => apiPost('ai-coo', { question, context })
 };
+
+// ===== SELF-CHECK (debug aid) =====
+console.log('[Migrizo] auth.js loaded ✓', { CRM: !!window.CRM, askAI: !!(window.CRM && window.CRM.askAI), requireAuth: !!window.requireAuth, version: '20260518' });

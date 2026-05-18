@@ -142,3 +142,6 @@ window.emptyState = function(opts) {
       ${opts.action ? `<button class="btn-primary" id="${opts.actionId || 'emptyAction'}">${opts.action}</button>` : ''}
     </div>`;
 };
+
+// ===== SELF-CHECK (debug aid) =====
+console.log('[Migrizo] app.js loaded ✓', { fmt: !!window.fmt, openModal: !!window.openModal, showToast: !!window.showToast, version: '20260518' });
