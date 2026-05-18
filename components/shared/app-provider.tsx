@@ -15,16 +15,13 @@ interface AppData {
   activity: Activity[];
   loading: boolean;
   refresh: () => Promise<void>;
-  // CRUD
   createLead: (input: Partial<Lead>) => Promise<Lead | null>;
   updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
   addNote: (leadId: string, body: string) => Promise<void>;
   getNotes: (leadId: string) => Promise<Note[]>;
   recordPayment: (input: Partial<Payment> & { lead_id: string; milestone: Payment['milestone']; amount: number }) => Promise<void>;
-  // Import
   bulkInsertLeads: (rows: Partial<Lead>[]) => Promise<{ inserted: number }>;
-  // Settings
   resetWorkspace: (sampleOnly: boolean) => Promise<void>;
   loadSampleData: () => Promise<void>;
 }
@@ -70,19 +67,52 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     }
   }, [supabase]);
 
-  // Realtime subscription for collaborative updates
+  // INCREMENTAL realtime — only patch the changed row, no full refetches
   useEffect(() => {
     const ch = supabase
-      .channel('workspace-' + workspace.id)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads', filter: `workspace_id=eq.${workspace.id}` }, () => refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `workspace_id=eq.${workspace.id}` }, () => refresh())
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity', filter: `workspace_id=eq.${workspace.id}` }, (payload) => {
-        const a = payload.new as Activity;
-        setActivity((prev) => [a, ...prev].slice(0, 50));
-      })
+      .channel('ws-' + workspace.id)
+      // Leads: INSERT / UPDATE / DELETE
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'leads', filter: `workspace_id=eq.${workspace.id}` },
+        (payload) => {
+          const row = payload.new as Lead;
+          setLeads((prev) => prev.some((l) => l.id === row.id) ? prev : [row, ...prev]);
+        })
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'leads', filter: `workspace_id=eq.${workspace.id}` },
+        (payload) => {
+          const row = payload.new as Lead;
+          setLeads((prev) => prev.map((l) => l.id === row.id ? row : l));
+        })
+      .on('postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'leads', filter: `workspace_id=eq.${workspace.id}` },
+        (payload) => {
+          const id = (payload.old as { id?: string }).id;
+          if (id) setLeads((prev) => prev.filter((l) => l.id !== id));
+        })
+      // Payments
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'payments', filter: `workspace_id=eq.${workspace.id}` },
+        (payload) => {
+          const row = payload.new as Payment;
+          setPayments((prev) => prev.some((p) => p.id === row.id) ? prev : [row, ...prev]);
+        })
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'payments', filter: `workspace_id=eq.${workspace.id}` },
+        (payload) => {
+          const row = payload.new as Payment;
+          setPayments((prev) => prev.map((p) => p.id === row.id ? row : p));
+        })
+      // Activity (insert only — append to feed)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'activity', filter: `workspace_id=eq.${workspace.id}` },
+        (payload) => {
+          const row = payload.new as Activity;
+          setActivity((prev) => prev.some((a) => a.id === row.id) ? prev : [row, ...prev].slice(0, 50));
+        })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [supabase, workspace.id, refresh]);
+  }, [supabase, workspace.id]);
 
   const logActivity = useCallback(async (action: string, leadId: string | null = null, meta: Record<string, unknown> = {}) => {
     await supabase.from('activity').insert({ workspace_id: workspace.id, user_id: user.id, lead_id: leadId, action, meta });
@@ -111,26 +141,23 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     };
     const { data, error } = await supabase.from('leads').insert(payload).select().single();
     if (error) { toast.error(`Failed to create lead: ${error.message}`); return null; }
-    setLeads((prev) => [data as Lead, ...prev]);
-    await logActivity('created_lead', data.id, { name: data.full_name });
+    setLeads((prev) => prev.some((l) => l.id === data.id) ? prev : [data as Lead, ...prev]);
+    logActivity('created_lead', data.id, { name: data.full_name });
     toast.success(`Added ${data.full_name}`);
     return data as Lead;
   }, [supabase, workspace.id, user.id, logActivity]);
 
   const updateLead = useCallback(async (id: string, patch: Partial<Lead>) => {
-    // Optimistic
     const before = leads.find((l) => l.id === id);
     setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } as Lead : l)));
     const { error } = await supabase.from('leads').update(patch).eq('id', id);
     if (error) {
-      // Rollback
       if (before) setLeads((prev) => prev.map((l) => (l.id === id ? before : l)));
       toast.error(`Update failed: ${error.message}`);
       return;
     }
-    // Log specific changes
     if (patch.stage && before?.stage !== patch.stage) {
-      await logActivity('moved_stage', id, { from: before?.stage, to: patch.stage });
+      logActivity('moved_stage', id, { from: before?.stage, to: patch.stage });
     }
   }, [supabase, leads, logActivity]);
 
@@ -158,7 +185,7 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
       last_note: trimmed, last_note_at: new Date().toISOString(), last_note_author_id: user.id,
     }).eq('id', leadId);
     setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, last_note: trimmed, last_note_at: new Date().toISOString(), last_note_author_id: user.id } : l));
-    await logActivity('added_note', leadId, { preview: trimmed.slice(0, 80) });
+    logActivity('added_note', leadId, { preview: trimmed.slice(0, 80) });
     toast.success('Note added');
   }, [supabase, workspace.id, user.id, logActivity]);
 
@@ -182,16 +209,15 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     };
     const { data, error } = await supabase.from('payments').insert(payload).select().single();
     if (error) { toast.error(`Payment failed: ${error.message}`); return; }
-    setPayments((prev) => [data as Payment, ...prev]);
+    setPayments((prev) => prev.some((p) => p.id === data.id) ? prev : [data as Payment, ...prev]);
 
-    // Update lead's amount_paid + payment_status
     const lead = leads.find((l) => l.id === input.lead_id);
     if (lead && input.status !== 'pending') {
       const newPaid = (lead.amount_paid || 0) + input.amount;
       const newStatus = newPaid >= (lead.amount_total || newPaid) && lead.amount_total > 0 ? 'paid' : 'partial';
       await updateLead(lead.id, { amount_paid: newPaid, payment_status: newStatus });
     }
-    await logActivity('recorded_payment', input.lead_id, { milestone: input.milestone, amount: input.amount });
+    logActivity('recorded_payment', input.lead_id, { milestone: input.milestone, amount: input.amount });
     toast.success(`Payment recorded`);
   }, [supabase, workspace.id, user.id, leads, updateLead, logActivity]);
 
@@ -218,10 +244,14 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     }));
     const { data, error } = await supabase.from('leads').insert(payload).select();
     if (error) { toast.error(`Import failed: ${error.message}`); return { inserted: 0 }; }
-    if (data) setLeads((prev) => [...(data as Lead[]), ...prev]);
-    await logActivity('imported_leads', null, { count: data?.length || 0 });
+    if (data) {
+      const existingIds = new Set(leads.map((l) => l.id));
+      const fresh = (data as Lead[]).filter((l) => !existingIds.has(l.id));
+      setLeads((prev) => [...fresh, ...prev]);
+    }
+    logActivity('imported_leads', null, { count: data?.length || 0 });
     return { inserted: data?.length || 0 };
-  }, [supabase, workspace.id, user.id, logActivity]);
+  }, [supabase, workspace.id, user.id, leads, logActivity]);
 
   const resetWorkspace = useCallback(async (sampleOnly: boolean) => {
     if (role !== 'admin') { toast.error('Only admins can reset data'); return; }
@@ -235,10 +265,14 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     const rows = buildSampleLeads(workspace.id, user.id);
     const { data, error } = await supabase.from('leads').insert(rows).select();
     if (error) { toast.error(`Sample load failed: ${error.message}`); return; }
-    if (data) setLeads((prev) => [...(data as Lead[]), ...prev]);
-    await logActivity('loaded_sample_data', null, { count: data?.length || 0 });
+    if (data) {
+      const existingIds = new Set(leads.map((l) => l.id));
+      const fresh = (data as Lead[]).filter((l) => !existingIds.has(l.id));
+      setLeads((prev) => [...fresh, ...prev]);
+    }
+    logActivity('loaded_sample_data', null, { count: data?.length || 0 });
     toast.success(`Loaded ${data?.length || 0} sample leads`);
-  }, [supabase, workspace.id, user.id, logActivity]);
+  }, [supabase, workspace.id, user.id, leads, logActivity]);
 
   const value: AppData = {
     user, workspace, role, leads, payments, activity, loading,
