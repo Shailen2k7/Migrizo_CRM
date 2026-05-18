@@ -382,18 +382,62 @@
   </div>
 
   <script src="assets/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="assets/auth.js"></script>
   <script>
-    // Sample data
-    const LEADS = [
-      { initials:'RK', avatar:'a1', name:'Rahul Kumar', phone:'+91 98765 43210', email:'rahul.k@email.com', star:true, tags:[{t:'warm',l:'Warm'},{t:'high-val',l:'High Value'}], stage:'Connected', stageColor:'green', followupDay:'Tomorrow', followupTime:'10:30 AM', followupUrgent:false, score:8, ring:'green', p:80, paid:'₹25,000', total:'₹1,00,000', phase:'Kickstart Paid', barP:25, barC:'green', created:'12 May', createdAgo:'5 days ago', updated:'2m ago', notes:'Interested in Canada PR. Asked about timelines.' },
-      { initials:'AS', avatar:'a3', name:'Anita Singh', phone:'+91 91234 56789', email:'anita.s@email.com', star:true, tags:[{t:'urgent',l:'Urgent'},{t:'docs',l:'Docs Pending'}], stage:'Qualified', stageColor:'blue', followupDay:'Today', followupTime:'04:00 PM', followupUrgent:true, score:7, ring:'green', p:70, paid:'₹15,000', total:'₹1,20,000', phase:'Kickstart Paid', barP:12, barC:'green', created:'10 May', createdAgo:'7 days ago', updated:'15m ago', notes:'Profile looks strong. Planning consultation.' },
-      { initials:'MG', avatar:'a5', name:'Manish Gupta', phone:'+91 99887 76655', email:'manish.g@email.com', star:false, tags:[{t:'cold',l:'Cold'}], stage:'Consultation Scheduled', stageColor:'purple', followupDay:'Sat, 18 May', followupTime:'11:00 AM', followupUrgent:false, score:6, ring:'amber', p:60, paid:'₹0', total:'₹90,000', phase:'Not Paid', barP:0, barC:'text-3', created:'8 May', createdAgo:'9 days ago', updated:'30m ago', notes:'Consultation booked for Saturday.' },
-      { initials:'PS', avatar:'a6', name:'Priya Sharma', phone:'+91 88776 65544', email:'priya.s@email.com', star:false, tags:[{t:'warm',l:'Warm'}], stage:'Proposal Shared', stageColor:'orange', followupDay:'Mon, 20 May', followupTime:'02:00 PM', followupUrgent:false, score:5, ring:'amber', p:50, paid:'₹40,000', total:'₹1,00,000', phase:'Profile Building', barP:40, barC:'amber', created:'5 May', createdAgo:'12 days ago', updated:'1h ago', notes:'Shared proposal. Waiting for feedback.' },
-      { initials:'SK', avatar:'a4', name:'Sandeep Kaur', phone:'+91 77665 54433', email:'sandeep.k@email.com', star:true, tags:[{t:'high-val',l:'High Value'},{t:'docs',l:'Docs Pending'}], stage:'Partial Payment', stageColor:'teal', followupDay:'Wed, 22 May', followupTime:'12:30 PM', followupUrgent:false, score:7, ring:'green', p:70, paid:'₹30,000', total:'₹1,20,000', phase:'Profile Building', barP:25, barC:'amber', created:'3 May', createdAgo:'14 days ago', updated:'2h ago', notes:'Paid Kickstart. Working on profile.' },
-      { initials:'AD', avatar:'a7', name:'Amit Das', phone:'+91 66554 43322', email:'amit.d@email.com', star:false, tags:[{t:'cold',l:'Cold'}], stage:'Attempted Contact', stageColor:'gray', followupDay:'Today', followupTime:'06:00 PM', followupUrgent:true, score:3, ring:'red', p:30, paid:'₹0', total:'₹80,000', phase:'Not Paid', barP:0, barC:'text-3', created:'1 May', createdAgo:'16 days ago', updated:'3h ago', notes:'', notesEmpty:true },
-      { initials:'NB', avatar:'a3', name:'Neha Bansal', phone:'+91 55443 32211', email:'neha.b@email.com', star:true, tags:[{t:'warm',l:'Warm'},{t:'repeat',l:'Repeat'}], stage:'Connected', stageColor:'green', followupDay:'Fri, 17 May', followupTime:'05:00 PM', followupUrgent:false, score:8, ring:'green', p:80, paid:'₹25,000', total:'₹1,00,000', phase:'Kickstart Paid', barP:25, barC:'green', created:'28 Apr', createdAgo:'19 days ago', updated:'4h ago', notes:'Very interested. Discussed process.' },
-      { initials:'DK', avatar:'a5', name:'Divya Kapoor', phone:'+91 22110 09988', email:'divya.k@email.com', star:true, tags:[{t:'high-val',l:'High Value'}], stage:'Partial Payment', stageColor:'teal', followupDay:'Thu, 23 May', followupTime:'03:00 PM', followupUrgent:false, score:9, ring:'green', p:90, paid:'₹78,000', total:'₹1,20,000', phase:'Profile Building', barP:65, barC:'green', created:'22 Apr', createdAgo:'25 days ago', updated:'6h ago', notes:'Final document review pending.' },
-    ];
+    // ── Live data from Bigin / Supabase cache ──────────────────
+    let LEADS = []; // populated by loadLeads()
+
+    // Normalize a raw lead from the API into the shape renderLeads expects
+    function normalizeApiLead(l) {
+      const stageColorMap = {
+        'New Inquiry':'gray','Attempted Contact':'gray','Connected':'green',
+        'Qualified':'blue','Consultation Scheduled':'purple',
+        'Proposal Shared':'orange','Partial Payment':'teal','Closed Won':'green'
+      };
+      const score = parseInt(l.score) || 0;
+      const ring  = score >= 7 ? 'green' : score >= 4 ? 'amber' : 'red';
+      const paid  = parseFloat(l.amount_paid) || 0;
+      const total = parseFloat(l.total_fee) || 0;
+      const barP  = total > 0 ? Math.round((paid / total) * 100) : 0;
+      const nameParts = (l.full_name || '').split(' ');
+      const initials  = nameParts.map(w => w[0]).join('').toUpperCase().slice(0,2) || '??';
+      const avatarColors = ['a1','a2','a3','a4','a5','a6','a7','a8','a9'];
+      const avatar = avatarColors[l.full_name?.charCodeAt(0) % 9 || 0];
+      const tags = (l.tags || []).map(t => ({
+        t: t.toLowerCase().replace(/\s+/g, '-'),
+        l: t
+      }));
+      return {
+        zoho_id: l.zoho_id, initials, avatar,
+        name: l.full_name || 'Unknown',
+        phone: l.phone || '', email: l.email || '',
+        star: score >= 7, tags,
+        stage: l.stage || 'New Inquiry',
+        stageColor: stageColorMap[l.stage] || 'gray',
+        followupDay: '—', followupTime: '—', followupUrgent: false,
+        score, ring, p: score * 10,
+        paid: `₹${paid.toLocaleString('en-IN')}`,
+        total: `₹${total.toLocaleString('en-IN')}`,
+        phase: l.payment_phase || '—',
+        barP, barC: barP > 75 ? 'green' : barP > 40 ? 'amber' : 'text-3',
+        created: '—', createdAgo: '', updated: 'from Bigin',
+        notes: '', notesEmpty: true
+      };
+    }
+
+    async function loadLeads(params = {}) {
+      const body = document.getElementById('leadsBody');
+      body.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text-3)"><div style="display:inline-flex;align-items:center;gap:8px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 0.8s linear infinite"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>Loading leads from Bigin...</div></td></tr>`;
+      try {
+        const data = await CRM.leads(params);
+        LEADS = (data.leads || []).map(normalizeApiLead);
+        document.querySelector('.view-count').textContent = LEADS.length;
+        renderLeads();
+      } catch (err) {
+        body.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--red-text)">⚠ ${err.message}. <a href="settings.html" style="color:var(--primary)">Connect Zoho Bigin in Settings →</a></td></tr>`;
+      }
+    }
 
     function renderLeads() {
       const body = document.getElementById('leadsBody');
@@ -613,7 +657,21 @@
     }));
     document.querySelectorAll('.active-chip-x').forEach(b => b.addEventListener('click', () => b.closest('.active-chip').remove()));
 
-    renderLeads();
+    document.querySelectorAll('.active-chip-x').forEach(b => b.addEventListener('click', () => b.closest('.active-chip').remove()));
+
+    // Wire search bar to filter Bigin data
+    document.querySelector('.search input').addEventListener('input', (e) => {
+      const q = e.target.value.trim();
+      if (q.length > 2) loadLeads({ search: q });
+      if (q.length === 0) loadLeads();
+    });
+
   </script>
+<script>
+  requireAuth().then(session => {
+    if (!session) return;
+    loadLeads(); // fetches real data from Bigin via Netlify Function
+  });
+</script>
 </body>
 </html>

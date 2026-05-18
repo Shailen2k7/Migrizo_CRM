@@ -252,14 +252,14 @@
                 <div class="settings-section-title">Integrations</div>
                 <div class="settings-section-sub">Connect Migrizo CRM with your backend systems and tools.</div>
                 <div style="display:flex;flex-direction:column;gap:12px">
-                  <div class="integration-card">
+                  <div class="integration-card" id="biginCard">
                     <div class="integration-logo">B</div>
                     <div class="integration-body">
-                      <div class="integration-name">Zoho Bigin <span class="integration-status"><span class="integration-status-dot"></span>Connected</span></div>
-                      <div class="integration-meta">Last sync: 2 min ago · Synced 248 leads, 36 deals, 142 tasks</div>
+                      <div class="integration-name">Zoho Bigin <span class="integration-status" id="biginStatus"><span class="integration-status-dot" style="background:var(--text-3)"></span><span id="biginStatusText">Checking...</span></span></div>
+                      <div class="integration-meta" id="biginMeta">Connect your Zoho Bigin account to sync live data.</div>
                     </div>
-                    <button class="btn-ghost">Configure</button>
-                    <button class="btn-icon-square"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i></button>
+                    <button class="btn-primary" id="biginConnectBtn" onclick="window.location.href='/.netlify/functions/zoho-auth'" style="display:none">Connect Zoho</button>
+                    <button class="btn-ghost" id="biginSyncBtn" onclick="syncBigin()" style="display:none"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Re-sync</button>
                   </div>
                   <div class="integration-card">
                     <div class="integration-logo" style="background:linear-gradient(135deg,#1877F2,#4267B2)">M</div>
@@ -365,6 +365,8 @@
   </main>
 
   <script src="assets/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="assets/auth.js"></script>
   <script>
     document.querySelectorAll('.s-tab').forEach(t => t.addEventListener('click', () => {
       document.querySelectorAll('.s-tab').forEach(x => x.classList.remove('active'));
@@ -378,5 +380,54 @@
       t.classList.add('active');
     }));
   </script>
+<script>
+requireAuth().then(async (session) => {
+  if (!session) return;
+  // Check Zoho connection status
+  checkBiginStatus();
+  // Handle OAuth callback messages
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('zoho_connected')) { window.showToast('Zoho Bigin connected successfully!'); checkBiginStatus(); }
+  if (params.get('zoho_error'))     { window.showToast('Zoho connection failed: ' + params.get('zoho_error')); }
+  if (params.get('reset'))          { window.showToast('Password updated successfully'); }
+});
+
+async function checkBiginStatus() {
+  try {
+    const res = await fetch('/.netlify/functions/get-leads?limit=1');
+    const statusEl  = document.getElementById('biginStatus');
+    const metaEl    = document.getElementById('biginMeta');
+    const connectBtn = document.getElementById('biginConnectBtn');
+    const syncBtn    = document.getElementById('biginSyncBtn');
+    if (res.ok) {
+      const data = await res.json();
+      statusEl.innerHTML = '<span class="integration-status-dot"></span> Connected';
+      statusEl.style.cssText = 'background:var(--green-bg);color:var(--green-text)';
+      metaEl.textContent = `Live data synced · ${data.total || 0} leads loaded · Source: Bigin`;
+      connectBtn.style.display = 'none';
+      syncBtn.style.display = 'flex';
+    } else {
+      statusEl.innerHTML = '<span class="integration-status-dot" style="background:var(--text-3)"></span> Not connected';
+      statusEl.style.cssText = 'background:var(--bg);color:var(--text-3)';
+      metaEl.textContent = 'Click Connect to link your Zoho Bigin account.';
+      connectBtn.style.display = 'flex';
+      syncBtn.style.display = 'none';
+    }
+  } catch {}
+}
+
+async function syncBigin() {
+  const btn = document.getElementById('biginSyncBtn');
+  btn.disabled = true; btn.innerHTML = '<span style="display:inline-flex;width:14px;height:14px;border:2px solid #6366F1;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite"></span> Syncing...';
+  try {
+    const res = await CRM.sync();
+    window.showToast(`Sync complete: ${res.synced?.contacts || 0} leads, ${res.synced?.tasks || 0} tasks`);
+  } catch (e) {
+    window.showToast('Sync failed: ' + e.message);
+  }
+  btn.disabled = false; btn.innerHTML = '<i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Re-sync';
+  lucide.createIcons(); checkBiginStatus();
+}
+</script>
 </body>
 </html>

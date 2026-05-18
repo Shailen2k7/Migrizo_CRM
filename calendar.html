@@ -159,6 +159,8 @@
   </main>
 
   <script src="assets/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="assets/auth.js"></script>
   <script>
     const grid = document.getElementById('calGrid');
     // May 2026 starts on Friday. Render 35 cells: Apr 26-30 + May 1-31 + Jun 1-6
@@ -223,5 +225,6 @@
       window.showToast('Opening event details...');
     }));
   </script>
+<script>requireAuth();</script>
 </body>
 </html>

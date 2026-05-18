@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Migrizo CRM — Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #6366F1; --primary-hover: #4F46E5; --primary-50: #EEF2FF; --primary-100: #E0E7FF;
+    --bg: #F7F8FB; --surface: #fff; --border: #ECEEF2; --border-strong: #E2E5EB;
+    --text-1: #0F172A; --text-2: #475569; --text-3: #94A3B8;
+    --green: #10B981; --green-bg: #DCFCE7; --green-text: #15803D;
+    --red: #EF4444; --red-bg: #FEE2E2; --red-text: #B91C1C;
+    --shadow-xl: 0 16px 40px rgba(15,23,42,.12);
+  }
+  html, body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text-1); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+  a { text-decoration: none; color: inherit; }
+
+  .login-wrap {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  /* Background gradient blobs */
+  .login-wrap::before, .login-wrap::after {
+    content: '';
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.35;
+    pointer-events: none;
+  }
+  .login-wrap::before {
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, #6366F1 0%, transparent 70%);
+    top: -200px; right: -100px;
+  }
+  .login-wrap::after {
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, #EC4899 0%, transparent 70%);
+    bottom: -150px; left: -100px;
+  }
+
+  .login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    box-shadow: var(--shadow-xl);
+    width: 100%;
+    max-width: 420px;
+    padding: 40px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; }
+  .logo-mark {
+    width: 40px; height: 40px; border-radius: 11px;
+    background: linear-gradient(135deg, #6366F1, #818CF8);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 22px;
+    box-shadow: 0 6px 16px rgba(99,102,241,0.35);
+  }
+  .logo-text { font-weight: 700; font-size: 20px; letter-spacing: -0.02em; }
+
+  .card-title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+  .card-sub { font-size: 13.5px; color: var(--text-3); margin-bottom: 28px; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .field label { font-size: 13px; font-weight: 600; color: var(--text-1); }
+  .field input {
+    height: 44px; padding: 0 14px;
+    border: 1.5px solid var(--border-strong); border-radius: 10px;
+    font-family: inherit; font-size: 14px; color: var(--text-1);
+    background: var(--bg);
+    transition: all 0.15s ease;
+  }
+  .field input::placeholder { color: var(--text-3); }
+  .field input:focus { outline: none; border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 4px var(--primary-50); }
+
+  .forgot { text-align: right; margin-top: -8px; margin-bottom: 20px; }
+  .forgot a { font-size: 12.5px; color: var(--primary); font-weight: 500; }
+  .forgot a:hover { color: var(--primary-hover); text-decoration: underline; }
+
+  .btn-login {
+    width: 100%; height: 46px;
+    background: var(--primary); color: #fff;
+    border: none; border-radius: 10px;
+    font-family: inherit; font-size: 14.5px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s ease;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    box-shadow: 0 4px 14px rgba(99,102,241,0.3);
+  }
+  .btn-login:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99,102,241,0.4); }
+  .btn-login:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
+
+  .divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--text-3); font-size: 12px; }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .magic-btn {
+    width: 100%; height: 44px;
+    background: var(--surface); color: var(--text-2);
+    border: 1.5px solid var(--border-strong); border-radius: 10px;
+    font-family: inherit; font-size: 13.5px; font-weight: 500;
+    cursor: pointer; transition: all 0.15s ease;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .magic-btn:hover { background: var(--bg); color: var(--text-1); border-color: var(--primary-100); }
+
+  .error-msg {
+    display: none;
+    background: var(--red-bg); color: var(--red-text);
+    border: 1px solid #FECACA; border-radius: 9px;
+    padding: 10px 14px; font-size: 13px; font-weight: 500;
+    margin-bottom: 16px; align-items: center; gap: 8px;
+  }
+  .error-msg.show { display: flex; }
+
+  .success-msg {
+    display: none;
+    background: var(--green-bg); color: var(--green-text);
+    border: 1px solid #BBF7D0; border-radius: 9px;
+    padding: 10px 14px; font-size: 13px; font-weight: 500;
+    margin-bottom: 16px; align-items: center; gap: 8px;
+  }
+  .success-msg.show { display: flex; }
+
+  .footer-note { margin-top: 24px; text-align: center; font-size: 12px; color: var(--text-3); }
+  .footer-note strong { color: var(--text-2); }
+
+  .spinner { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="login-card">
+
+    <div class="logo">
+      <div class="logo-mark">M</div>
+      <div class="logo-text">Migrizo CRM</div>
+    </div>
+
+    <h1 class="card-title">Welcome back</h1>
+    <p class="card-sub">Sign in to your Operations OS</p>
+
+    <div class="error-msg" id="errorMsg">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span id="errorText"></span>
+    </div>
+
+    <div class="success-msg" id="successMsg">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <span id="successText"></span>
+    </div>
+
+    <!-- Email / Password form -->
+    <div id="passwordForm">
+      <div class="field">
+        <label for="email">Email address</label>
+        <input type="email" id="email" placeholder="manik@migrizo.com" autocomplete="email" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+      <div class="forgot"><a href="#" id="forgotLink">Forgot password?</a></div>
+      <button class="btn-login" id="loginBtn" type="button">Sign in</button>
+    </div>
+
+    <div class="divider">or</div>
+
+    <!-- Magic link form -->
+    <button class="magic-btn" id="magicBtn" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      Send magic link instead
+    </button>
+
+    <div class="footer-note">
+      Access is <strong>invite-only</strong>. Contact your admin if you need an account.
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL      = 'https://whcrxkufczhqgnshzajt.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndoY3J4a3VmY3pocWduc2h6YWp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNzY5MzQsImV4cCI6MjA5NDY1MjkzNH0.5ZyptBpQOxacrgWqBTT7TR6zT9ugHRsr0z3teaY0YXs';
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // If already logged in, redirect
+  sb.auth.getSession().then(({ data: { session } }) => {
+    if (session) goToDashboard();
+  });
+
+  // Handle magic-link token in URL (after clicking email link)
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN' && session) goToDashboard();
+  });
+
+  function goToDashboard() {
+    const params = new URLSearchParams(window.location.search);
+    const returnTo = params.get('returnTo');
+    window.location.href = returnTo && returnTo.startsWith('/') ? returnTo : '/index.html';
+  }
+
+  function showError(msg) {
+    document.getElementById('errorText').textContent = msg;
+    document.getElementById('errorMsg').classList.add('show');
+    document.getElementById('successMsg').classList.remove('show');
+  }
+  function showSuccess(msg) {
+    document.getElementById('successText').textContent = msg;
+    document.getElementById('successMsg').classList.add('show');
+    document.getElementById('errorMsg').classList.remove('show');
+  }
+  function setLoading(btn, loading) {
+    btn.disabled = loading;
+    btn.innerHTML = loading
+      ? '<span class="spinner"></span> Signing in...'
+      : 'Sign in';
+  }
+
+  // Password sign-in
+  document.getElementById('loginBtn').addEventListener('click', async () => {
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const btn      = document.getElementById('loginBtn');
+
+    if (!email || !password) { showError('Please enter your email and password.'); return; }
+
+    setLoading(btn, true);
+    document.getElementById('errorMsg').classList.remove('show');
+
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) {
+      showError(error.message.replace('Invalid login credentials', 'Incorrect email or password.'));
+      setLoading(btn, false);
+    }
+    // Success: onAuthStateChange handles redirect
+  });
+
+  // Enter key on password field
+  document.getElementById('password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('loginBtn').click();
+  });
+
+  // Magic link
+  document.getElementById('magicBtn').addEventListener('click', async () => {
+    const emailInput = document.getElementById('email');
+    const email = emailInput.value.trim();
+    if (!email) {
+      emailInput.focus();
+      showError('Enter your email above first, then click this button.');
+      return;
+    }
+    const btn = document.getElementById('magicBtn');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    const { error } = await sb.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin + '/index.html' }
+    });
+
+    if (error) {
+      showError(error.message);
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> Send magic link instead`;
+    } else {
+      showSuccess(`Magic link sent to ${email}. Check your inbox.`);
+      btn.innerHTML = '✓ Link sent — check your email';
+    }
+  });
+
+  // Forgot password
+  document.getElementById('forgotLink').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value.trim();
+    if (!email) { showError('Enter your email above, then click Forgot password.'); return; }
+
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/settings.html?reset=1'
+    });
+    if (error) showError(error.message);
+    else showSuccess(`Password reset link sent to ${email}.`);
+  });
+</script>
+</body>
+</html>
