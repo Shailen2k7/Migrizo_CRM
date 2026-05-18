@@ -6,179 +6,23 @@
 <title>Migrizo CRM — Leads</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/styles.css">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
-  /* Page-specific: toolbar, table, popovers, drawer */
   .smart-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
-  .view-dropdown { position: relative; }
-  .view-dropdown-btn { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; background: var(--bg); border: 1px solid transparent; border-radius: 8px; color: var(--text-1); font-weight: 600; font-size: 13.5px; transition: all 0.15s ease; }
-  .view-dropdown-btn:hover { background: var(--primary-50); }
-  .view-dropdown-btn.open { background: var(--primary-50); border-color: var(--primary-200); }
-  .view-dropdown-btn .view-count { background: var(--surface); color: var(--text-2); font-size: 11.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); }
-  .view-dropdown-btn .chev { color: var(--text-3); width: 14px; height: 14px; transition: transform 0.15s ease; }
-  .view-dropdown-btn.open .chev { transform: rotate(180deg); }
-  .view-popover { position: absolute; top: calc(100% + 6px); left: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-xl); min-width: 260px; padding: 6px; z-index: 50; display: none; }
-  .view-popover.open { display: block; }
-  .view-popover-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 7px; color: var(--text-2); font-weight: 500; font-size: 13px; cursor: pointer; }
-  .view-popover-item:hover { background: var(--bg); color: var(--text-1); }
-  .view-popover-item.active { background: var(--primary-50); color: var(--primary-hover); font-weight: 600; }
-  .view-popover-item.active i { color: var(--primary-hover); }
-  .view-popover-item i { width: 16px; height: 16px; color: var(--text-3); }
-  .view-popover-item .v-count { margin-left: auto; background: var(--bg); color: var(--text-2); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); }
-  .view-popover-item.active .v-count { background: var(--primary); color: #fff; border-color: transparent; }
-  .view-popover-divider { height: 1px; background: var(--divider); margin: 4px 0; }
-  .view-popover-new { color: var(--primary-hover); font-weight: 500; }
-  .view-popover-new i { color: var(--primary); }
-
-  .filter-btn { position: relative; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-2); font-weight: 500; font-size: 13px; transition: all 0.15s ease; }
-  .filter-btn:hover { background: var(--bg); color: var(--text-1); border-color: var(--border-strong); }
-  .filter-btn.has-filters { background: var(--primary-50); color: var(--primary-hover); border-color: var(--primary-200); font-weight: 600; }
-  .filter-btn i { width: 15px; height: 15px; }
-  .filter-btn .filter-count { background: var(--primary); color: #fff; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; min-width: 18px; text-align: center; }
-
-  .active-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 6px 0 10px; background: var(--primary-50); border: 1px solid var(--primary-200); border-radius: 7px; color: var(--primary-hover); font-size: 12.5px; font-weight: 500; }
-  .active-chip strong { font-weight: 700; }
-  .active-chip-x { width: 18px; height: 18px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--primary-hover); cursor: pointer; }
-  .active-chip-x:hover { background: var(--primary-100); }
-  .active-chip-x i { width: 12px; height: 12px; }
-
-  .view-toggle { display: inline-flex; align-items: center; background: var(--bg); border-radius: 8px; padding: 3px; margin-left: auto; }
-  .view-btn { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 6px; color: var(--text-2); font-weight: 500; font-size: 12.5px; transition: all 0.15s ease; }
-  .view-btn i { width: 14px; height: 14px; }
-  .view-btn:hover { color: var(--text-1); }
-  .view-btn.active { background: var(--surface); color: var(--primary-hover); font-weight: 600; box-shadow: var(--shadow-sm); }
-
-  .bulk-bar { background: linear-gradient(90deg, var(--primary), #7C3AED); border-radius: 12px; padding: 10px 16px; display: flex; align-items: center; gap: 12px; color: #fff; box-shadow: 0 4px 16px rgba(99,102,241,0.25); }
-  .bulk-count { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; }
-  .bulk-count-num { background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 999px; font-weight: 700; }
-  .bulk-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .bulk-btn { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; background: rgba(255,255,255,0.12); color: #fff; font-size: 13px; font-weight: 500; }
-  .bulk-btn:hover { background: rgba(255,255,255,0.22); }
-  .bulk-btn i { width: 14px; height: 14px; }
-  .bulk-close { width: 28px; height: 28px; border-radius: 7px; color: rgba(255,255,255,0.85); display: flex; align-items: center; justify-content: center; }
-  .bulk-close:hover { background: rgba(255,255,255,0.15); color: #fff; }
-
-  .leads-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
-  .leads-panel .table-wrap { border-radius: 12px 12px 0 0; overflow-x: auto; overflow-y: visible; }
-  table.leads { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 1100px; }
-  table.leads thead th { text-align: left; padding: 12px 14px; background: #FAFBFD; color: var(--text-3); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--divider); white-space: nowrap; }
-  table.leads thead th.center { text-align: center; }
-  table.leads tbody td { padding: 14px 14px; border-bottom: 1px solid var(--divider); color: var(--text-2); vertical-align: middle; }
-  table.leads tbody tr { transition: background 0.1s ease; cursor: pointer; }
-  table.leads tbody tr:hover { background: #FAFBFD; }
-  table.leads tbody tr.selected { background: var(--primary-50); }
-  table.leads tbody tr:last-child td { border-bottom: none; }
-
-  .client-cell { display: flex; align-items: center; gap: 12px; }
-  .client-row { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; }
-  .client-name-wrap { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 4px; padding: 2px 4px; margin-left: -4px; flex-shrink: 0; }
-  .client-name-wrap:hover { background: var(--primary-50); }
-  .client-name { font-weight: 600; color: var(--text-1); font-size: 13.5px; white-space: nowrap; }
-  .client-name-wrap .star { width: 12px; height: 12px; color: var(--amber); fill: var(--amber); }
-  .client-name-wrap .edit-hint { width: 10px; height: 10px; color: var(--text-3); opacity: 0; transition: opacity 0.15s ease; }
-  .client-name-wrap:hover .edit-hint { opacity: 1; }
-
-  .tag-row { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 1; min-width: 0; }
-  .tag { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; height: 18px; line-height: 1; border-radius: 5px; font-size: 10px; font-weight: 600; background: #F1F5F9; color: var(--text-2); white-space: nowrap; }
-  .tag.warm { background: var(--orange-bg); color: var(--orange-text); }
-  .tag.high-val { background: var(--purple-bg); color: var(--purple-text); }
-  .tag.docs { background: var(--blue-bg); color: var(--blue-text); }
-  .tag.urgent { background: var(--red-bg); color: var(--red-text); }
-  .tag.repeat { background: var(--teal-bg); color: var(--teal-text); }
-  .tag.cold { background: #F1F5F9; color: #475569; }
-  .tag .tag-x { width: 11px; height: 11px; border-radius: 3px; display: none; align-items: center; justify-content: center; cursor: pointer; opacity: 0.7; margin-left: 1px; }
-  .tag:hover .tag-x { display: inline-flex; }
-  .tag .tag-x:hover { opacity: 1; background: rgba(0,0,0,0.08); }
-  .tag .tag-x i { width: 8px; height: 8px; }
-  .tag-add { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; color: var(--text-3); border: 1px dashed var(--border-strong); cursor: pointer; transition: all 0.15s ease; }
-  .tag-add:hover { color: var(--primary); border-color: var(--primary-200); background: var(--primary-50); }
-  .tag-add i { width: 9px; height: 9px; }
-
-  .contact-pop { position: fixed; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px; min-width: 260px; box-shadow: var(--shadow-xl); z-index: 100; opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity 0.15s ease, transform 0.15s ease; }
-  .contact-pop.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
-  .contact-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 7px; }
-  .contact-row:hover { background: var(--bg); }
-  .contact-row .ci { width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .contact-row .ci.phone { background: var(--green-bg); color: var(--green-text); }
-  .contact-row .ci.email { background: var(--blue-bg); color: var(--blue-text); }
-  .contact-row .ci.wa { background: #DCFCE7; color: #15803D; }
-  .contact-row .ci i { width: 14px; height: 14px; }
-  .contact-text { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text-1); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .copy-btn { width: 28px; height: 28px; border-radius: 7px; color: var(--text-3); flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.15s ease; }
-  .copy-btn:hover { background: var(--primary-50); color: var(--primary); }
-  .copy-btn i { width: 13px; height: 13px; }
-  .copy-btn.copied { background: var(--green-bg); color: var(--green-text); }
-
-  .stage-badge { cursor: pointer; }
-  .stage-badge:hover { transform: translateY(-1px); }
-  .stage-badge .badge-chev { width: 11px; height: 11px; opacity: 0.7; }
-  .stage-popover { position: fixed; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px; min-width: 220px; box-shadow: var(--shadow-xl); z-index: 100; display: none; }
-  .stage-popover.open { display: block; }
-  .stage-option { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; cursor: pointer; }
-  .stage-option:hover { background: var(--bg); }
-  .stage-option .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .stage-option .label { font-size: 13px; color: var(--text-1); font-weight: 500; }
-
-  .followup { display: flex; align-items: center; gap: 8px; }
-  .followup-dates { display: flex; flex-direction: column; gap: 2px; }
-  .followup-day { font-weight: 600; color: var(--primary-hover); font-size: 12.5px; }
-  .followup-time { color: var(--text-3); font-size: 12px; }
-  .followup-icon { width: 28px; height: 28px; border-radius: 7px; background: var(--primary-50); color: var(--primary); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .followup-icon i { width: 14px; height: 14px; }
-
-  .score-wrap { display: flex; justify-content: center; }
-  .score { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; position: relative; background: conic-gradient(var(--ring-color) var(--p), #F1F5F9 0); cursor: pointer; transition: transform 0.15s ease; }
-  .score:hover { transform: scale(1.1); }
-  .score::before { content: ''; position: absolute; inset: 3px; background: var(--surface); border-radius: 50%; }
-  .score span { position: relative; z-index: 1; color: var(--text-1); }
-
-  .payment-cell { display: flex; flex-direction: column; gap: 6px; min-width: 140px; }
-  .payment-amount { font-size: 12.5px; color: var(--text-1); font-weight: 600; }
-  .payment-label { font-size: 11.5px; color: var(--text-3); font-weight: 500; }
-
-  .created-cell { display: flex; flex-direction: column; gap: 2px; }
-  .created-date { color: var(--text-1); font-weight: 500; font-size: 12.5px; }
-  .created-ago { color: var(--text-3); font-size: 11.5px; }
-
-  .notes-cell { color: var(--text-2); font-size: 12.5px; max-width: 240px; min-width: 180px; line-height: 1.45; cursor: pointer; border-radius: 6px; padding: 6px 8px; margin: -6px -8px; border: 1px dashed transparent; }
-  .notes-cell:hover { background: var(--bg); border-color: var(--border); }
-  .notes-cell[contenteditable="true"] { background: var(--surface); border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px var(--primary-50); }
-  .notes-cell.empty { color: var(--text-3); font-style: italic; }
-
-  .more-btn { width: 28px; height: 28px; border-radius: 6px; color: var(--text-3); display: flex; align-items: center; justify-content: center; }
-  .more-btn:hover { background: var(--bg); color: var(--text-1); }
-
-  /* ============ DRAWER ============ */
-  .drawer-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.3); z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
-  .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
-  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 480px; max-width: 100vw; background: var(--surface); border-left: 1px solid var(--border); box-shadow: -16px 0 40px rgba(15,23,42,0.12); z-index: 201; transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); display: flex; flex-direction: column; }
-  .drawer.open { transform: translateX(0); }
-  .drawer-head { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--divider); }
-  .drawer-head .close { width: 32px; height: 32px; border-radius: 8px; color: var(--text-2); display: flex; align-items: center; justify-content: center; margin-left: auto; }
-  .drawer-head .close:hover { background: var(--bg); color: var(--text-1); }
-  .drawer-body { flex: 1; overflow-y: auto; padding: 20px; }
-  .drawer-section { margin-bottom: 24px; }
-  .drawer-section-title { font-size: 11px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
-  .drawer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .drawer-field { background: var(--bg); border-radius: 8px; padding: 10px 12px; }
-  .drawer-field-label { font-size: 11px; color: var(--text-3); font-weight: 500; }
-  .drawer-field-value { font-size: 13px; color: var(--text-1); font-weight: 600; margin-top: 2px; }
-  .timeline { display: flex; flex-direction: column; gap: 14px; position: relative; }
-  .timeline::before { content: ''; position: absolute; left: 14px; top: 6px; bottom: 6px; width: 2px; background: var(--divider); }
-  .timeline-item { display: flex; gap: 12px; position: relative; z-index: 1; }
-  .timeline-dot { width: 30px; height: 30px; border-radius: 50%; background: var(--surface); border: 2px solid var(--primary-200); color: var(--primary); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .timeline-dot i { width: 14px; height: 14px; }
-  .timeline-dot.green { border-color: var(--green); color: var(--green); }
-  .timeline-dot.amber { border-color: var(--amber); color: var(--amber); }
-  .timeline-content { flex: 1; padding-top: 4px; }
-  .timeline-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
-  .timeline-meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
-  .timeline-body { font-size: 12.5px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
-  .drawer-foot { padding: 14px 20px; border-top: 1px solid var(--divider); display: flex; gap: 8px; }
-  .drawer-foot .btn-primary { flex: 1; justify-content: center; }
+  .filter-btn { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text-1); font-weight: 500; font-size: 13px; cursor: pointer; }
+  .filter-btn i { width: 14px; height: 14px; color: var(--text-3); }
+  .leads-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-top: 12px; overflow: hidden; }
+  table.leads { width: 100%; border-collapse: collapse; }
+  table.leads th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-3); font-weight: 600; padding: 12px; background: var(--bg); border-bottom: 1px solid var(--border); text-align: left; }
+  table.leads td { padding: 14px 12px; border-bottom: 1px solid var(--divider); font-size: 13px; color: var(--text-1); }
+  table.leads tbody tr:hover { background: var(--bg); }
+  .stage-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
+  .stage-pill:hover { background: var(--primary-50); }
+  .score-circle { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--bg); border: 1px solid var(--border); font-weight: 700; font-size: 12px; color: var(--text-2); }
+  .pagination { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-2); }
 </style>
 </head>
 <body>
@@ -188,7 +32,7 @@
     <nav class="nav">
       <a class="nav-item" href="index.html"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
       <a class="nav-item active" href="leads.html"><i data-lucide="users"></i><span>Leads</span></a>
-      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span><span class="nav-badge">18</span></a>
+      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span></a>
       <a class="nav-item" href="payments.html"><i data-lucide="indian-rupee"></i><span>Payments</span></a>
       <a class="nav-item" href="calendar.html"><i data-lucide="calendar"></i><span>Calendar</span></a>
       <a class="nav-item" href="reports.html"><i data-lucide="bar-chart-3"></i><span>Reports</span></a>
@@ -198,481 +42,299 @@
     </nav>
     <div class="sidebar-footer">
       <div class="user-card">
-        <div class="user-avatar">MV</div>
-        <div class="user-meta"><div class="user-name">Manik Verma</div><div class="user-role">Admin</div></div>
-        <i data-lucide="chevrons-up-down" class="chev" style="width:16px;height:16px"></i>
+        <div class="user-avatar">—</div>
+        <div class="user-meta"><div class="user-name">Loading...</div><div class="user-role">—</div></div>
       </div>
-      <div class="quick-add">
+      <button class="quick-add" id="quickAddLead" style="border:none;width:100%;text-align:left;cursor:pointer">
         <div class="quick-add-icon"><i data-lucide="plus" style="width:16px;height:16px"></i></div>
         <div class="quick-add-text"><strong>Quick Add Lead</strong><span>Add a new client</span></div>
-      </div>
+      </button>
     </div>
   </aside>
 
   <main class="main">
     <header class="topbar">
-      <div class="page-title"><h1>Leads</h1><p>Manage your entire leads database</p></div>
-      <div class="search">
-        <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
-        <input type="text" placeholder="Search leads by name, phone, email..." />
-        <span class="search-kbd">⌘ K</span>
+      <div class="greeting">
+        <h1>Leads</h1>
+        <p>Manage your entire leads database</p>
       </div>
-      <div class="topbar-actions">
-        <button class="icon-btn ai-btn"><i data-lucide="sparkles" style="width:18px;height:18px"></i></button>
-        <button class="icon-btn"><i data-lucide="bell" style="width:18px;height:18px"></i><span class="dot">12</span></button>
-        <button class="icon-btn"><i data-lucide="sun" style="width:18px;height:18px"></i></button>
-        <button class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px"></i><span>Add Lead</span><span class="btn-primary-split"><i data-lucide="chevron-down" style="width:14px;height:14px;display:block"></i></span></button>
+      <div class="topbar-right">
+        <div class="search-box">
+          <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
+          <input type="text" placeholder="Search by name, phone, email..." id="leadSearch" />
+        </div>
+        <button class="btn-add" id="addLeadBtn"><i data-lucide="plus" style="width:16px;height:16px"></i> Add Lead</button>
       </div>
     </header>
 
-    <div class="content">
-      <div class="ai-mini">
-        <div class="ai-mini-icon"><i data-lucide="sparkles"></i></div>
-        <div class="ai-mini-text"><strong>AI COO insight:</strong> <span class="highlight">5 hot leads</span> haven't been contacted in 24+ hours. Reaching out today could save <strong>₹1.05L</strong>.</div>
-        <a class="ai-mini-act">View leads <i data-lucide="arrow-right"></i></a>
-      </div>
-
+    <section class="content">
       <div class="smart-toolbar">
-        <div class="view-dropdown">
-          <button class="view-dropdown-btn" id="viewBtn">
-            <i data-lucide="inbox" style="width:15px;height:15px;color:var(--primary)"></i>
-            <span class="view-name">All Leads</span>
-            <span class="view-count" id="leadsCount">...</span>
-            <i data-lucide="chevron-down" class="chev"></i>
+        <button class="filter-btn" id="stageFilterBtn">
+          <i data-lucide="filter"></i> <span>All Stages</span>
+        </button>
+        <select class="filter-btn" id="stageSelect" style="display:none">
+          <option value="">All stages</option>
+          <option>New Inquiry</option>
+          <option>Attempted</option>
+          <option>Connected</option>
+          <option>Qualified</option>
+          <option>Consultation</option>
+          <option>Proposal</option>
+          <option>Partial Pay</option>
+          <option>Closed Won</option>
+          <option>Closed Lost</option>
+        </select>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <span style="font-size:12.5px;color:var(--text-2)">Total:</span>
+          <strong id="totalCount" style="font-size:13px">—</strong>
+          <button class="filter-btn" id="syncBtn" title="Sync from Bigin">
+            <i data-lucide="refresh-cw"></i> <span>Sync</span>
           </button>
-          <div class="view-popover" id="viewPopover">
-            <div class="view-popover-item active"><i data-lucide="inbox"></i><span>All Leads</span><span class="v-count">248</span></div>
-            <div class="view-popover-item"><span style="font-size:14px;width:16px;text-align:center">🔥</span><span>Hot Leads</span><span class="v-count">42</span></div>
-            <div class="view-popover-item"><i data-lucide="phone-call"></i><span>Follow-up Today</span><span class="v-count">24</span></div>
-            <div class="view-popover-item"><i data-lucide="banknote"></i><span>Payment Pending</span><span class="v-count">18</span></div>
-            <div class="view-popover-item"><i data-lucide="alert-triangle"></i><span>Overdue</span><span class="v-count">7</span></div>
-            <div class="view-popover-item"><i data-lucide="archive"></i><span>Archived</span><span class="v-count">31</span></div>
-            <div class="view-popover-divider"></div>
-            <div class="view-popover-item view-popover-new"><i data-lucide="plus"></i><span>Create new view</span></div>
-          </div>
         </div>
-
-        <button class="filter-btn"><i data-lucide="sliders-horizontal"></i><span>Filters</span></button>
-
-        <div class="view-toggle">
-          <button class="view-btn active"><i data-lucide="list"></i>List</button>
-          <button class="view-btn"><i data-lucide="kanban-square"></i>Kanban</button>
-          <button class="view-btn"><i data-lucide="calendar-days"></i>Calendar</button>
-        </div>
-        <button class="btn-ghost"><i data-lucide="columns-3"></i> Columns</button>
-        <button class="btn-icon-square"><i data-lucide="download" style="width:16px;height:16px"></i></button>
-      </div>
-
-      <div class="bulk-bar" id="bulkBar" style="display:none">
-        <div class="bulk-count"><span class="bulk-count-num" id="bulkCount">0</span><span>leads selected</span></div>
-        <div class="bulk-actions">
-          <button class="bulk-btn"><i data-lucide="tag"></i> Add Tag</button>
-          <button class="bulk-btn"><i data-lucide="git-branch"></i> Change Stage</button>
-          <button class="bulk-btn"><i data-lucide="mail"></i> Send Email</button>
-          <button class="bulk-btn"><i data-lucide="message-square"></i> WhatsApp</button>
-          <button class="bulk-btn"><i data-lucide="trash-2"></i> Archive</button>
-        </div>
-        <button class="bulk-close" id="bulkClose"><i data-lucide="x" style="width:16px;height:16px"></i></button>
       </div>
 
       <section class="leads-panel">
-        <div class="table-wrap">
+        <div style="overflow-x:auto">
           <table class="leads">
             <thead><tr>
-              <th style="width:36px"><input type="checkbox" class="check" id="selectAll" /></th>
-              <th>Client</th><th>Stage</th><th>Next Follow-up</th><th class="center">Score</th>
-              <th>Payments</th><th>Created</th><th>Updated</th><th>Notes</th><th style="width:36px"></th>
+              <th>Client</th>
+              <th>Stage</th>
+              <th>Phone</th>
+              <th>Email</th>
+              <th style="text-align:center">Score</th>
+              <th>Payments</th>
+              <th>Updated</th>
+              <th style="width:80px"></th>
             </tr></thead>
-            <tbody id="leadsBody"></tbody>
+            <tbody id="leadsBody">
+              <tr><td colspan="8"><div class="loading-block"><span class="spinner"></span> Loading leads from Bigin...</div></td></tr>
+            </tbody>
           </table>
         </div>
         <div class="pagination">
-          <div class="pagination-info" id="paginationInfo">Loading leads...</div>
-          <div class="pagination-nav">
-            <button class="page-btn disabled"><i data-lucide="chevron-left" style="width:16px;height:16px"></i></button>
-            <button class="page-btn active">1</button><button class="page-btn">2</button><button class="page-btn">3</button>
-            <span class="page-ellipsis">...</span><button class="page-btn">10</button>
-            <button class="page-btn"><i data-lucide="chevron-right" style="width:16px;height:16px"></i></button>
-          </div>
-          <div class="rows-per-page"><span>Rows per page</span><div class="rows-select">25 <i data-lucide="chevron-down" style="width:14px;height:14px"></i></div></div>
+          <div id="paginationInfo">—</div>
         </div>
       </section>
-    </div>
+    </section>
   </main>
 
-  <!-- Drawer for Lead Details -->
-  <div class="drawer-backdrop" id="drawerBackdrop"></div>
-  <aside class="drawer" id="drawer">
-    <div class="drawer-head">
-      <div class="avatar a1 lg" id="drawerAvatar">RK</div>
-      <div>
-        <div style="font-size:16px;font-weight:700;color:var(--text-1)" id="drawerName">Rahul Kumar</div>
-        <div style="font-size:12.5px;color:var(--text-3);margin-top:2px" id="drawerStage">Connected · Score 8</div>
-      </div>
-      <button class="close" id="drawerClose"><i data-lucide="x" style="width:18px;height:18px"></i></button>
-    </div>
-    <div class="drawer-body">
-      <div class="drawer-section">
-        <div class="drawer-section-title">Contact</div>
-        <div class="drawer-grid">
-          <div class="drawer-field"><div class="drawer-field-label">Phone</div><div class="drawer-field-value" id="drawerPhone">+91 98765 43210</div></div>
-          <div class="drawer-field"><div class="drawer-field-label">Email</div><div class="drawer-field-value" id="drawerEmail">rahul.k@email.com</div></div>
-          <div class="drawer-field"><div class="drawer-field-label">Lead Score</div><div class="drawer-field-value">8 / 10</div></div>
-          <div class="drawer-field"><div class="drawer-field-label">Created</div><div class="drawer-field-value">12 May 2026</div></div>
-        </div>
-      </div>
-      <div class="drawer-section">
-        <div class="drawer-section-title">Payment Breakdown</div>
-        <div class="drawer-field" style="background:var(--surface);border:1px solid var(--border)">
-          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-            <span style="font-size:12.5px;color:var(--text-2)">Paid: <strong style="color:var(--text-1)">₹25,000</strong></span>
-            <span style="font-size:12.5px;color:var(--text-2)">Total: <strong style="color:var(--text-1)">₹1,00,000</strong></span>
-          </div>
-          <div class="progress-bar" style="--p:25%;--c:var(--green)"></div>
-          <div style="font-size:11.5px;color:var(--text-3);margin-top:6px">Kickstart Paid · ₹75,000 remaining</div>
-        </div>
-      </div>
-      <div class="drawer-section">
-        <div class="drawer-section-title">Activity Timeline</div>
-        <div class="timeline">
-          <div class="timeline-item">
-            <div class="timeline-dot green"><i data-lucide="check"></i></div>
-            <div class="timeline-content">
-              <div class="timeline-title">Kickstart payment received</div>
-              <div class="timeline-meta">12 May 2026 · 3:42 PM</div>
-              <div class="timeline-body">₹25,000 received via UPI. Receipt sent.</div>
-            </div>
-          </div>
-          <div class="timeline-item">
-            <div class="timeline-dot"><i data-lucide="phone"></i></div>
-            <div class="timeline-content">
-              <div class="timeline-title">Discovery call completed</div>
-              <div class="timeline-meta">10 May 2026 · 11:15 AM · 32 min</div>
-              <div class="timeline-body">Interested in Canada PR. Strong profile — 6 years software engineering. Will share proposal.</div>
-            </div>
-          </div>
-          <div class="timeline-item">
-            <div class="timeline-dot amber"><i data-lucide="mail"></i></div>
-            <div class="timeline-content">
-              <div class="timeline-title">Lead captured from Meta Ads</div>
-              <div class="timeline-meta">8 May 2026 · 9:20 AM</div>
-              <div class="timeline-body">Source: Meta Lead Gen Form — Canada Express Entry campaign.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="drawer-foot">
-      <button class="btn-ghost"><i data-lucide="phone"></i> Call</button>
-      <button class="btn-ghost"><i data-lucide="message-square"></i> WhatsApp</button>
-      <button class="btn-primary"><i data-lucide="external-link" style="width:16px;height:16px"></i> Open full profile</button>
-    </div>
-  </aside>
-
-  <div class="contact-pop" id="contactPop"></div>
-  <div class="stage-popover" id="stagePop">
-    <div class="stage-option" data-stage="New Inquiry" data-color="pink"><span class="dot" style="background:#EC4899"></span><span class="label">New Inquiry</span></div>
-    <div class="stage-option" data-stage="Attempted Contact" data-color="gray"><span class="dot" style="background:#94A3B8"></span><span class="label">Attempted Contact</span></div>
-    <div class="stage-option" data-stage="Connected" data-color="green"><span class="dot" style="background:#10B981"></span><span class="label">Connected</span></div>
-    <div class="stage-option" data-stage="Qualified" data-color="blue"><span class="dot" style="background:#3B82F6"></span><span class="label">Qualified</span></div>
-    <div class="stage-option" data-stage="Consultation Scheduled" data-color="purple"><span class="dot" style="background:#8B5CF6"></span><span class="label">Consultation Scheduled</span></div>
-    <div class="stage-option" data-stage="Proposal Shared" data-color="orange"><span class="dot" style="background:#F97316"></span><span class="label">Proposal Shared</span></div>
-    <div class="stage-option" data-stage="Partial Payment" data-color="teal"><span class="dot" style="background:#14B8A6"></span><span class="label">Partial Payment</span></div>
-  </div>
-
   <script src="assets/app.js"></script>
-<script src="assets/auth.js"></script>
+  <script src="assets/auth.js"></script>
   <script>
-    // ── Live data from Bigin / Supabase cache ──────────────────
-    let LEADS = []; // populated by loadLeads()
+  let LEADS = [];
+  let FILTERED = [];
+  let searchQuery = '';
+  let stageFilter = '';
 
-    // Normalize a raw lead from the API into the shape renderLeads expects
-    function normalizeApiLead(l) {
-      const stageColorMap = {
-        'New Inquiry':'gray','Attempted Contact':'gray','Connected':'green',
-        'Qualified':'blue','Consultation Scheduled':'purple',
-        'Proposal Shared':'orange','Partial Payment':'teal','Closed Won':'green'
-      };
-      const score = parseInt(l.score) || 0;
-      const ring  = score >= 7 ? 'green' : score >= 4 ? 'amber' : 'red';
-      const paid  = parseFloat(l.amount_paid) || 0;
-      const total = parseFloat(l.total_fee) || 0;
-      const barP  = total > 0 ? Math.round((paid / total) * 100) : 0;
-      const nameParts = (l.full_name || '').split(' ');
-      const initials  = nameParts.map(w => w[0]).join('').toUpperCase().slice(0,2) || '??';
-      const avatarColors = ['a1','a2','a3','a4','a5','a6','a7','a8','a9'];
-      const avatar = avatarColors[l.full_name?.charCodeAt(0) % 9 || 0];
-      const tags = (l.tags || []).map(t => ({
-        t: t.toLowerCase().replace(/\s+/g, '-'),
-        l: t
-      }));
-      return {
-        zoho_id: l.zoho_id, initials, avatar,
-        name: l.full_name || 'Unknown',
-        phone: l.phone || '', email: l.email || '',
-        star: score >= 7, tags,
-        stage: l.stage || 'New Inquiry',
-        stageColor: stageColorMap[l.stage] || 'gray',
-        followupDay: '—', followupTime: '—', followupUrgent: false,
-        score, ring, p: score * 10,
-        paid: `₹${paid.toLocaleString('en-IN')}`,
-        total: `₹${total.toLocaleString('en-IN')}`,
-        phase: l.payment_phase || '—',
-        barP, barC: barP > 75 ? 'green' : barP > 40 ? 'amber' : 'text-3',
-        created: '—', createdAgo: '', updated: 'from Bigin',
-        notes: '', notesEmpty: true
-      };
+  async function loadLeads() {
+    try {
+      const data = await CRM.leads();
+      LEADS = data.leads || [];
+      applyFilters();
+    } catch(err) {
+      console.error(err);
+      document.getElementById('leadsBody').innerHTML = `<tr><td colspan="8"><div class="loading-block" style="color:#DC2626">⚠️ ${err.message}</div></td></tr>`;
     }
+  }
 
-    async function loadLeads(params = {}) {
-      const body = document.getElementById('leadsBody');
-      body.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text-3)"><div style="display:inline-flex;align-items:center;gap:8px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 0.8s linear infinite"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>Loading leads from Bigin...</div></td></tr>`;
-      try {
-        const data = await CRM.leads(params);
-        LEADS = (data.leads || []).map(normalizeApiLead);
-        document.querySelector('.view-count').textContent = LEADS.length;
-        document.getElementById('leadsCount').textContent = LEADS.length;
-        const pi = document.getElementById('paginationInfo');
-        if (pi) pi.textContent = `Showing ${Math.min(LEADS.length, 25)} of ${LEADS.length} leads`;
-        renderLeads();
-      } catch (err) {
-        body.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--red-text)">⚠ ${err.message}. <a href="settings.html" style="color:var(--primary)">Connect Zoho Bigin in Settings →</a></td></tr>`;
+  function applyFilters() {
+    FILTERED = LEADS.filter(l => {
+      if (stageFilter && l.stage !== stageFilter) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        if (!(l.full_name || '').toLowerCase().includes(q)
+         && !(l.phone || '').toLowerCase().includes(q)
+         && !(l.email || '').toLowerCase().includes(q)) return false;
       }
+      return true;
+    });
+    renderLeads();
+  }
+
+  function renderLeads() {
+    const body = document.getElementById('leadsBody');
+    document.getElementById('totalCount').textContent = LEADS.length;
+    document.getElementById('paginationInfo').textContent = FILTERED.length === 0
+      ? 'No leads to show'
+      : `Showing ${FILTERED.length} of ${LEADS.length} leads`;
+
+    if (FILTERED.length === 0) {
+      body.innerHTML = `<tr><td colspan="8">${emptyState({ icon:'users', title: LEADS.length === 0 ? 'No leads in Bigin yet' : 'No leads match your filter', message: LEADS.length === 0 ? 'Add your first lead, or click Sync to pull from Bigin.' : 'Try clearing the search or stage filter.', action: LEADS.length === 0 ? 'Add Lead' : null, actionId: 'emptyAdd' })}</td></tr>`;
+      if (window.lucide) lucide.createIcons();
+      const ea = document.getElementById('emptyAdd');
+      if (ea) ea.onclick = openAddLeadModal;
+      return;
     }
 
-    function renderLeads() {
-      const body = document.getElementById('leadsBody');
-      body.innerHTML = LEADS.map((l, idx) => {
-        const followupIconStyle = l.followupUrgent ? 'background:var(--orange-bg);color:var(--orange-text)' : '';
-        const followupDayStyle = l.followupUrgent ? 'color:var(--orange-text)' : '';
-        const tags = l.tags.map(t => `<span class="tag ${t.t}">${t.l}<button class="tag-x"><i data-lucide="x"></i></button></span>`).join('');
-        const star = l.star ? '<i data-lucide="star" class="star"></i>' : '';
-        const notesClass = l.notesEmpty ? 'notes-cell empty' : 'notes-cell';
-        const notesText = l.notesEmpty ? 'Add note...' : l.notes;
-        return `
-          <tr data-lead-idx="${idx}">
-            <td><input type="checkbox" class="check row-check" onclick="event.stopPropagation()" /></td>
-            <td>
-              <div class="client-cell">
-                <div class="avatar ${l.avatar}">${l.initials}</div>
-                <div class="client-row">
-                  <div class="client-name-wrap" data-phone="${l.phone}" data-email="${l.email}" data-name="${l.name}">
-                    <span class="client-name">${l.name}</span>${star}
-                    <i data-lucide="pencil" class="edit-hint"></i>
-                  </div>
-                  <div class="tag-row">${tags}<button class="tag-add"><i data-lucide="plus"></i></button></div>
-                </div>
-              </div>
-            </td>
-            <td><span class="badge ${l.stageColor} stage-badge" data-stage="${l.stage}">${l.stage} <i data-lucide="chevron-down" class="badge-chev"></i></span></td>
-            <td><div class="followup"><div class="followup-icon" style="${followupIconStyle}"><i data-lucide="calendar"></i></div><div class="followup-dates"><span class="followup-day" style="${followupDayStyle}">${l.followupDay}</span><span class="followup-time">${l.followupTime}</span></div></div></td>
-            <td class="center"><div class="score-wrap"><div class="score" style="--p:${l.p}%;--ring-color:var(--${l.ring})"><span>${l.score}</span></div></div></td>
-            <td><div class="payment-cell"><div class="payment-amount">${l.paid} / <span style="color:var(--text-3);font-weight:500">${l.total}</span></div><div class="progress-bar" style="--p:${l.barP}%;--c:var(--${l.barC})"></div><div class="payment-label">${l.phase}</div></div></td>
-            <td><div class="created-cell"><span class="created-date">${l.created}</span><span class="created-ago">${l.createdAgo}</span></div></td>
-            <td style="color:var(--text-3);font-size:12.5px">${l.updated}</td>
-            <td><div class="${notesClass}">${notesText}</div></td>
-            <td><button class="more-btn" onclick="event.stopPropagation()"><i data-lucide="more-vertical" style="width:16px;height:16px"></i></button></td>
-          </tr>`;
-      }).join('');
-      lucide.createIcons();
-      attachHandlers();
-    }
+    body.innerHTML = FILTERED.map((l, i) => `
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="avatar sm a${(i % 6) + 1}">${fmt.initials(l.full_name)}</div>
+            <div>
+              <div style="font-weight:600;color:var(--text-1)">${l.full_name || '—'}</div>
+              <div style="font-size:11.5px;color:var(--text-3)">${l.owner_name || ''}</div>
+            </div>
+          </div>
+        </td>
+        <td>
+          <span class="stage-pill" style="background:${stageColor(l.stage)}1A;color:${stageColor(l.stage)}" onclick="changeStage('${l.zoho_id}', '${(l.full_name || '').replace(/'/g, "\\'")}', '${l.stage || ''}')">
+            ${l.stage || 'New Inquiry'} <i data-lucide="chevron-down" style="width:11px;height:11px"></i>
+          </span>
+        </td>
+        <td>${l.phone ? `<a href="tel:${l.phone}" style="color:var(--text-1);text-decoration:none">${fmt.phone(l.phone)}</a>` : '—'}</td>
+        <td>${l.email ? `<a href="mailto:${l.email}" style="color:var(--text-1);text-decoration:none;font-size:12.5px">${l.email}</a>` : '—'}</td>
+        <td style="text-align:center"><span class="score-circle">${l.score || 0}</span></td>
+        <td>
+          ${l.total_fee > 0 ? `
+            <div style="font-size:12px;color:var(--text-2)">${fmt.inr(l.amount_paid)} / ${fmt.inr(l.total_fee)}</div>
+            <div class="progress-bar" style="margin-top:4px;width:100px;--p:${Math.round((l.amount_paid/l.total_fee)*100)}%;--c:#10B981"></div>
+          ` : '—'}
+        </td>
+        <td style="font-size:12px;color:var(--text-3)">${fmt.dateShort(l.synced_at)}</td>
+        <td>
+          ${l.phone ? `<a href="tel:${l.phone}" class="filter-btn" style="padding:4px 8px;height:auto" title="Call"><i data-lucide="phone" style="width:14px;height:14px"></i></a>` : ''}
+        </td>
+      </tr>
+    `).join('');
+    if (window.lucide) lucide.createIcons();
+  }
 
-    function attachHandlers() {
-      // Hover contact popover
-      const contactPop = document.getElementById('contactPop');
-      let hideTimer;
-      function showPop(el) {
-        clearTimeout(hideTimer);
-        const phone = el.dataset.phone, email = el.dataset.email, name = el.dataset.name;
-        contactPop.innerHTML = `
-          <div class="contact-row"><div class="ci phone"><i data-lucide="phone"></i></div><span class="contact-text">${phone}</span><button class="copy-btn" data-copy="${phone}"><i data-lucide="copy"></i></button></div>
-          <div class="contact-row"><div class="ci email"><i data-lucide="mail"></i></div><span class="contact-text">${email}</span><button class="copy-btn" data-copy="${email}"><i data-lucide="copy"></i></button></div>
-          <div class="contact-row"><div class="ci wa"><i data-lucide="message-circle"></i></div><span class="contact-text">WhatsApp ${name}</span><button class="copy-btn" data-link="https://wa.me/${phone.replace(/[^0-9]/g,'')}"><i data-lucide="external-link"></i></button></div>`;
-        lucide.createIcons();
-        const r = el.getBoundingClientRect();
-        let left = r.left; const popW = 280;
-        if (left + popW > innerWidth - 16) left = innerWidth - popW - 16;
-        contactPop.style.left = left + 'px'; contactPop.style.top = (r.bottom + 8) + 'px';
-        contactPop.classList.add('visible');
-      }
-      function hidePop() { hideTimer = setTimeout(() => contactPop.classList.remove('visible'), 200); }
-      document.querySelectorAll('.client-name-wrap').forEach(el => {
-        el.addEventListener('mouseenter', () => showPop(el));
-        el.addEventListener('mouseleave', hidePop);
-      });
-      contactPop.addEventListener('mouseenter', () => clearTimeout(hideTimer));
-      contactPop.addEventListener('mouseleave', hidePop);
+  function stageColor(stage) {
+    const map = {
+      'New Inquiry': '#94A3B8',
+      'Attempted':   '#A5B4FC',
+      'Connected':   '#818CF8',
+      'Qualified':   '#6366F1',
+      'Consultation':'#8B5CF6',
+      'Proposal':    '#F59E0B',
+      'Partial Pay': '#14B8A6',
+      'Closed Won':  '#10B981',
+      'Closed Lost': '#EF4444'
+    };
+    return map[stage] || '#94A3B8';
+  }
 
-      // Editable name
-      document.querySelectorAll('.client-name-wrap').forEach(wrap => {
-        wrap.addEventListener('click', (e) => {
-          if (e.target.closest('.copy-btn')) return;
-          e.stopPropagation();
-          const span = wrap.querySelector('.client-name');
-          if (span.isContentEditable) return;
-          span.contentEditable = 'true'; span.focus();
-          const range = document.createRange(); range.selectNodeContents(span);
-          const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
-        });
-        const span = wrap.querySelector('.client-name');
-        span.addEventListener('blur', () => { span.contentEditable = 'false'; wrap.dataset.name = span.textContent.trim(); });
-        span.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); span.blur(); } if (e.key === 'Escape') span.blur(); });
-      });
-
-      // Editable notes
-      document.querySelectorAll('.notes-cell').forEach(cell => {
-        cell.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (cell.isContentEditable) return;
-          if (cell.classList.contains('empty')) { cell.textContent = ''; cell.classList.remove('empty'); }
-          cell.contentEditable = 'true'; cell.focus();
-        });
-        cell.addEventListener('blur', () => {
-          cell.contentEditable = 'false';
-          if (!cell.textContent.trim()) { cell.textContent = 'Add note...'; cell.classList.add('empty'); }
-        });
-        cell.addEventListener('keydown', (e) => { if (e.key === 'Escape') cell.blur(); });
-      });
-
-      // Stage badge
-      const stagePop = document.getElementById('stagePop');
-      let currentBadge = null;
-      document.querySelectorAll('.stage-badge').forEach(b => {
-        b.addEventListener('click', (e) => {
-          e.stopPropagation();
-          currentBadge = b;
-          const r = b.getBoundingClientRect();
-          stagePop.style.left = r.left + 'px'; stagePop.style.top = (r.bottom + 6) + 'px';
-          stagePop.classList.add('open');
-        });
-      });
-      document.querySelectorAll('.stage-option').forEach(o => {
-        o.onclick = (e) => {
-          e.stopPropagation();
-          if (!currentBadge) return;
-          currentBadge.dataset.stage = o.dataset.stage;
-          currentBadge.className = 'badge ' + o.dataset.color + ' stage-badge';
-          currentBadge.innerHTML = o.dataset.stage + ' <i data-lucide="chevron-down" class="badge-chev"></i>';
-          lucide.createIcons();
-          stagePop.classList.remove('open');
-        };
-      });
-
-      // Row click → drawer
-      document.querySelectorAll('tr[data-lead-idx]').forEach(row => {
-        row.addEventListener('click', (e) => {
-          if (e.target.closest('input,button,.tag,.tag-add,.tag-x,.client-name-wrap,.stage-badge,.notes-cell')) return;
-          const idx = +row.dataset.leadIdx;
-          openDrawer(LEADS[idx]);
-        });
-      });
-
-      // Row check
-      document.querySelectorAll('.row-check').forEach(c => c.addEventListener('change', updateBulk));
-    }
-
-    function openDrawer(l) {
-      document.getElementById('drawerAvatar').textContent = l.initials;
-      document.getElementById('drawerAvatar').className = 'avatar ' + l.avatar + ' lg';
-      document.getElementById('drawerName').textContent = l.name;
-      document.getElementById('drawerStage').textContent = l.stage + ' · Score ' + l.score;
-      document.getElementById('drawerPhone').textContent = l.phone;
-      document.getElementById('drawerEmail').textContent = l.email;
-      document.getElementById('drawer').classList.add('open');
-      document.getElementById('drawerBackdrop').classList.add('open');
-    }
-    function closeDrawer() {
-      document.getElementById('drawer').classList.remove('open');
-      document.getElementById('drawerBackdrop').classList.remove('open');
-    }
-    document.getElementById('drawerClose').onclick = closeDrawer;
-    document.getElementById('drawerBackdrop').onclick = closeDrawer;
-
-    // Tag remove/add
-    document.addEventListener('click', (e) => {
-      const x = e.target.closest('.tag-x');
-      if (x) { e.stopPropagation(); x.closest('.tag').remove(); return; }
-      const adder = e.target.closest('.tag-add');
-      if (adder) {
-        e.stopPropagation();
-        const newTag = prompt('Enter tag name:');
-        if (newTag && newTag.trim()) {
-          const tag = document.createElement('span');
-          tag.className = 'tag warm';
-          tag.innerHTML = `${newTag.trim()}<button class="tag-x"><i data-lucide="x"></i></button>`;
-          adder.parentElement.insertBefore(tag, adder);
-          lucide.createIcons();
+  window.changeStage = function(leadId, leadName, currentStage) {
+    openModal({
+      title: 'Change Stage',
+      submitLabel: 'Update in Bigin',
+      width: 420,
+      body: `
+        <p style="font-size:13px;color:var(--text-2);margin:0 0 12px">Update stage for <strong>${leadName}</strong></p>
+        <div class="form-group">
+          <label class="form-label">New stage</label>
+          <select class="form-select" id="cs_stage">
+            ${['New Inquiry','Attempted','Connected','Qualified','Consultation','Proposal','Partial Pay','Closed Won','Closed Lost']
+              .map(s => `<option ${s === currentStage ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <p class="form-hint">Note: Stage lives on the Deal record. If no Deal exists, one will be created automatically.</p>`,
+      onSubmit: async () => {
+        const newStage = document.getElementById('cs_stage').value;
+        // Find or create the deal for this contact
+        const dealsResp = await CRM.deals();
+        const deal = (dealsResp.deals || []).find(d => d.contact_id === leadId);
+        if (deal) {
+          await CRM.updateDeal(deal.zoho_id, { Stage: newStage });
+        } else {
+          await CRM.addDeal({
+            Deal_Name:    leadName + ' — Deal',
+            Stage:        newStage,
+            Contact_Name: { id: leadId },
+            Amount:       0
+          });
         }
+        showToast('Stage updated');
+        await loadLeads();
       }
     });
+  };
 
-    // Close popovers on outside click
-    document.addEventListener('click', () => {
-      document.getElementById('viewPopover').classList.remove('open');
-      document.getElementById('viewBtn').classList.remove('open');
-      document.getElementById('stagePop').classList.remove('open');
+  // ===== ADD LEAD MODAL =====
+  function openAddLeadModal() {
+    openModal({
+      title: 'Add New Lead',
+      submitLabel: 'Add to Bigin',
+      width: 520,
+      body: `
+        <div class="form-group">
+          <label class="form-label">Full Name *</label>
+          <input class="form-input" id="al_name" placeholder="e.g. Rahul Kumar" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input class="form-input" id="al_phone" placeholder="+91 98XXX XXXXX" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input class="form-input" id="al_email" type="email" placeholder="name@example.com" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-textarea" id="al_desc" placeholder="Source, what they're looking for..."></textarea>
+        </div>`,
+      onSubmit: async () => {
+        const name  = document.getElementById('al_name').value.trim();
+        const phone = document.getElementById('al_phone').value.trim();
+        const email = document.getElementById('al_email').value.trim();
+        const desc  = document.getElementById('al_desc').value.trim();
+        if (!name) throw new Error('Name is required');
+        const [first, ...rest] = name.split(' ');
+        const last = rest.join(' ') || first;
+        await CRM.addLead({
+          First_Name:  first,
+          Last_Name:   last,
+          Phone:       phone || null,
+          Email:       email || null,
+          Description: desc || null
+        });
+        showToast('Lead created');
+        await loadLeads();
+      }
     });
-    ['viewPopover','stagePop'].forEach(id => document.getElementById(id).addEventListener('click', (e) => e.stopPropagation()));
+  }
+  document.getElementById('addLeadBtn').onclick = openAddLeadModal;
+  document.getElementById('quickAddLead').onclick = openAddLeadModal;
 
-    // View dropdown
-    const viewBtn = document.getElementById('viewBtn');
-    viewBtn.addEventListener('click', (e) => { e.stopPropagation(); viewBtn.classList.toggle('open'); document.getElementById('viewPopover').classList.toggle('open'); });
-    document.querySelectorAll('.view-popover-item').forEach(item => {
-      item.addEventListener('click', () => {
-        if (item.classList.contains('view-popover-new')) return;
-        document.querySelectorAll('.view-popover-item').forEach(i => i.classList.remove('active'));
-        item.classList.add('active');
-        viewBtn.querySelector('.view-name').textContent = item.querySelector('span').textContent;
-        viewBtn.querySelector('.view-count').textContent = item.querySelector('.v-count')?.textContent || '0';
-        viewBtn.classList.remove('open');
-        document.getElementById('viewPopover').classList.remove('open');
-      });
-    });
-
-    // Bulk
-    function updateBulk() {
-      const checked = document.querySelectorAll('.row-check:checked');
-      const bulkBar = document.getElementById('bulkBar');
-      if (checked.length > 0) { bulkBar.style.display = 'flex'; document.getElementById('bulkCount').textContent = checked.length; }
-      else bulkBar.style.display = 'none';
-      document.querySelectorAll('.row-check').forEach(c => {
-        const row = c.closest('tr');
-        if (c.checked) row.classList.add('selected'); else row.classList.remove('selected');
-      });
-    }
-    document.getElementById('selectAll').addEventListener('change', (e) => {
-      document.querySelectorAll('.row-check').forEach(c => c.checked = e.target.checked);
-      updateBulk();
-    });
-    document.getElementById('bulkClose').addEventListener('click', () => {
-      document.querySelectorAll('.row-check').forEach(c => c.checked = false);
-      document.getElementById('selectAll').checked = false;
-      updateBulk();
-    });
-
-    // View toggle
-    document.querySelectorAll('.view-btn').forEach(t => t.addEventListener('click', () => {
-      document.querySelectorAll('.view-btn').forEach(x => x.classList.remove('active'));
-      t.classList.add('active');
-    }));
-    document.querySelectorAll('.active-chip-x').forEach(b => b.addEventListener('click', () => b.closest('.active-chip').remove()));
-
-    document.querySelectorAll('.active-chip-x').forEach(b => b.addEventListener('click', () => b.closest('.active-chip').remove()));
-
-    // Wire search bar to filter Bigin data
-    document.querySelector('.search input').addEventListener('input', (e) => {
-      const q = e.target.value.trim();
-      if (q.length > 2) loadLeads({ search: q });
-      if (q.length === 0) loadLeads();
-    });
-
-  </script>
-<script>
-  requireAuth().then(session => {
-    if (!session) return;
-    loadLeads(); // fetches real data from Bigin via Netlify Function
+  // Search
+  document.getElementById('leadSearch').addEventListener('input', e => {
+    searchQuery = e.target.value;
+    applyFilters();
   });
-</script>
+
+  // Stage filter
+  const stageBtn = document.getElementById('stageFilterBtn');
+  const stageSel = document.getElementById('stageSelect');
+  stageBtn.onclick = () => stageSel.style.display = stageSel.style.display === 'none' ? '' : 'none';
+  stageSel.onchange = () => {
+    stageFilter = stageSel.value;
+    stageBtn.querySelector('span').textContent = stageFilter || 'All Stages';
+    applyFilters();
+  };
+
+  // Sync button
+  document.getElementById('syncBtn').onclick = async () => {
+    const btn = document.getElementById('syncBtn');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Syncing...';
+    btn.disabled = true;
+    try {
+      const res = await CRM.sync();
+      showToast(`Synced ${res.synced?.contacts || 0} contacts`);
+      await loadLeads();
+    } catch(e) {
+      showToast('Sync failed: ' + e.message, 'error');
+    }
+    btn.innerHTML = orig;
+    btn.disabled = false;
+    if (window.lucide) lucide.createIcons();
+  };
+
+  // Auth & load
+  requireAuth().then(s => { if (s) loadLeads(); });
+  </script>
 </body>
 </html>

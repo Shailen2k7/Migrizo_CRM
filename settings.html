@@ -6,82 +6,38 @@
 <title>Migrizo CRM — Settings</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/styles.css">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
-  .settings-layout { display: grid; grid-template-columns: 220px 1fr; gap: 16px; }
+  .settings-layout { display: grid; grid-template-columns: 240px 1fr; gap: 20px; margin-top: 16px; }
   @media (max-width: 900px) { .settings-layout { grid-template-columns: 1fr; } }
-  .settings-nav { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 2px; align-self: start; position: sticky; top: 84px; }
-  .s-tab { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: var(--text-2); font-weight: 500; font-size: 13px; cursor: pointer; transition: all 0.15s ease; }
-  .s-tab:hover { background: var(--bg); color: var(--text-1); }
-  .s-tab.active { background: var(--primary-50); color: var(--primary-hover); font-weight: 600; }
-  .s-tab.active i { color: var(--primary-hover); }
-  .s-tab i { width: 16px; height: 16px; color: var(--text-3); }
-
-  .settings-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px 28px; }
-  .settings-pane { display: none; }
-  .settings-pane.active { display: block; }
-  .settings-section { margin-bottom: 28px; }
-  .settings-section:last-child { margin-bottom: 0; }
-  .settings-section-title { font-size: 16px; font-weight: 700; color: var(--text-1); margin-bottom: 4px; letter-spacing: -0.01em; }
-  .settings-section-sub { font-size: 13px; color: var(--text-3); margin-bottom: 16px; }
-
-  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
-  .field { display: flex; flex-direction: column; gap: 6px; }
-  .field-label { font-size: 12px; color: var(--text-2); font-weight: 600; }
-  .field-input { height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); font-size: 13.5px; color: var(--text-1); transition: all 0.15s ease; }
-  .field-input:focus { outline: none; border-color: var(--primary-200); box-shadow: 0 0 0 4px var(--primary-50); }
-  .field-textarea { padding: 10px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); font-size: 13.5px; color: var(--text-1); font-family: inherit; resize: vertical; min-height: 80px; }
-  .field-textarea:focus { outline: none; border-color: var(--primary-200); box-shadow: 0 0 0 4px var(--primary-50); }
-
-  .avatar-edit { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
-  .avatar-big { width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, #475569, #334155); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; }
-
-  .stage-list { display: flex; flex-direction: column; gap: 8px; }
-  .stage-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: #FAFBFD; border: 1px solid var(--border); border-radius: 10px; transition: all 0.15s ease; }
-  .stage-item:hover { background: var(--surface); border-color: var(--border-strong); }
-  .drag-handle { color: var(--text-3); cursor: grab; }
-  .drag-handle i { width: 16px; height: 16px; }
-  .stage-color { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
-  .stage-name { font-size: 13.5px; font-weight: 600; color: var(--text-1); flex: 1; }
-  .stage-count { font-size: 12px; color: var(--text-3); }
-
-  .integration-card { display: flex; align-items: center; gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
-  .integration-logo { width: 48px; height: 48px; border-radius: 10px; background: linear-gradient(135deg, #FBBF24, #F59E0B); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px; flex-shrink: 0; }
-  .integration-body { flex: 1; }
-  .integration-name { font-size: 14.5px; font-weight: 700; color: var(--text-1); }
-  .integration-status { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--green-text); font-weight: 600; margin-left: 8px; padding: 1px 8px; background: var(--green-bg); border-radius: 999px; }
-  .integration-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
-  .integration-meta { font-size: 12.5px; color: var(--text-3); margin-top: 4px; }
-
-  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--divider); }
-  .toggle-row:last-child { border-bottom: none; }
-  .toggle-info { flex: 1; }
-  .toggle-title { font-size: 13.5px; font-weight: 600; color: var(--text-1); }
-  .toggle-desc { font-size: 12px; color: var(--text-3); margin-top: 3px; max-width: 480px; }
-  .toggle { width: 40px; height: 22px; background: var(--border-strong); border-radius: 999px; position: relative; cursor: pointer; transition: background 0.2s ease; flex-shrink: 0; }
-  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.15); transition: transform 0.2s ease; }
-  .toggle.on { background: var(--primary); }
-  .toggle.on::after { transform: translateX(18px); }
-
-  .team-list { display: flex; flex-direction: column; gap: 10px; }
-  .team-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: #FAFBFD; border: 1px solid var(--border); border-radius: 10px; }
-  .team-name { font-size: 13.5px; font-weight: 600; color: var(--text-1); }
-  .team-email { font-size: 12px; color: var(--text-3); margin-top: 2px; }
-
-  .theme-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 540px; }
-  .theme-opt { padding: 16px; border: 2px solid var(--border); border-radius: 12px; cursor: pointer; text-align: center; transition: all 0.15s ease; }
-  .theme-opt:hover { border-color: var(--border-strong); }
-  .theme-opt.active { border-color: var(--primary); background: var(--primary-50); }
-  .theme-preview { height: 60px; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border); }
-  .theme-preview.light { background: linear-gradient(135deg, #fff 50%, #F1F5F9 50%); }
-  .theme-preview.dark { background: linear-gradient(135deg, #0F172A 50%, #1E293B 50%); }
-  .theme-preview.system { background: linear-gradient(135deg, #fff 50%, #0F172A 50%); }
-  .theme-name { font-size: 13px; font-weight: 600; color: var(--text-1); }
-
-  .save-bar { display: flex; align-items: center; gap: 10px; padding: 14px 0 0; border-top: 1px solid var(--divider); margin-top: 20px; }
+  .settings-nav { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px; height: fit-content; position: sticky; top: 20px; }
+  .settings-nav a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; font-size: 13px; color: var(--text-2); text-decoration: none; border-radius: 8px; font-weight: 500; cursor: pointer; }
+  .settings-nav a:hover { background: var(--bg); color: var(--text-1); }
+  .settings-nav a.active { background: var(--primary-50); color: var(--primary-hover); font-weight: 600; }
+  .settings-nav a i { width: 16px; height: 16px; }
+  .settings-section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  .settings-section h2 { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+  .settings-section .sub { font-size: 12.5px; color: var(--text-3); margin: 0 0 18px; }
+  .integration-row { display: flex; align-items: center; justify-content: space-between; padding: 14px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; }
+  .integration-info { display: flex; align-items: center; gap: 12px; }
+  .integration-icon { width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+  .badge-status { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .badge-status.connected { background: #DCFCE7; color: #166534; }
+  .badge-status.disconnected { background: #FEF2F2; color: #991B1B; }
+  .badge-status.pending { background: #FEF3C7; color: #92400E; }
+  .stage-list { display: flex; flex-direction: column; gap: 6px; }
+  .stage-list-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg); border-radius: 8px; font-size: 13px; }
+  .stage-list-item .order { width: 22px; height: 22px; border-radius: 6px; background: var(--primary-50); color: var(--primary-hover); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; }
+  .switch { position: relative; width: 36px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; inset: 0; background: #CBD5E1; border-radius: 999px; transition: 0.2s; }
+  .slider::before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+  .switch input:checked + .slider { background: var(--primary); }
+  .switch input:checked + .slider::before { transform: translateX(16px); }
+  .notice-box { padding: 12px 14px; background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 8px; font-size: 12.5px; color: #1E40AF; }
 </style>
 </head>
 <body>
@@ -91,7 +47,7 @@
     <nav class="nav">
       <a class="nav-item" href="index.html"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
       <a class="nav-item" href="leads.html"><i data-lucide="users"></i><span>Leads</span></a>
-      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span><span class="nav-badge">18</span></a>
+      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span></a>
       <a class="nav-item" href="payments.html"><i data-lucide="indian-rupee"></i><span>Payments</span></a>
       <a class="nav-item" href="calendar.html"><i data-lucide="calendar"></i><span>Calendar</span></a>
       <a class="nav-item" href="reports.html"><i data-lucide="bar-chart-3"></i><span>Reports</span></a>
@@ -101,333 +57,363 @@
     </nav>
     <div class="sidebar-footer">
       <div class="user-card">
-        <div class="user-avatar">MV</div>
-        <div class="user-meta"><div class="user-name">Manik Verma</div><div class="user-role">Admin</div></div>
-        <i data-lucide="chevrons-up-down" class="chev" style="width:16px;height:16px"></i>
-      </div>
-      <div class="quick-add">
-        <div class="quick-add-icon"><i data-lucide="plus" style="width:16px;height:16px"></i></div>
-        <div class="quick-add-text"><strong>Quick Add Lead</strong><span>Add a new client</span></div>
+        <div class="user-avatar">—</div>
+        <div class="user-meta"><div class="user-name">Loading...</div><div class="user-role">—</div></div>
       </div>
     </div>
   </aside>
 
   <main class="main">
     <header class="topbar">
-      <div class="page-title"><h1>Settings</h1><p>Manage your workspace, team, integrations and preferences</p></div>
-      <div class="search">
-        <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
-        <input type="text" placeholder="Search settings..." />
-        <span class="search-kbd">⌘ K</span>
-      </div>
-      <div class="topbar-actions">
-        <button class="icon-btn ai-btn"><i data-lucide="sparkles" style="width:18px;height:18px"></i></button>
-        <button class="icon-btn"><i data-lucide="bell" style="width:18px;height:18px"></i><span class="dot">12</span></button>
-        <button class="icon-btn"><i data-lucide="sun" style="width:18px;height:18px"></i></button>
+      <div class="greeting">
+        <h1>Settings</h1>
+        <p>Manage your profile, integrations and preferences</p>
       </div>
     </header>
 
-    <div class="content">
+    <section class="content">
       <div class="settings-layout">
-
-        <nav class="settings-nav">
-          <div class="s-tab active" data-pane="profile"><i data-lucide="user"></i>Profile</div>
-          <div class="s-tab" data-pane="team"><i data-lucide="users"></i>Team & Users</div>
-          <div class="s-tab" data-pane="lead-stages"><i data-lucide="git-branch"></i>Lead Stages</div>
-          <div class="s-tab" data-pane="payment-stages"><i data-lucide="indian-rupee"></i>Payment Stages</div>
-          <div class="s-tab" data-pane="integrations"><i data-lucide="link"></i>Integrations</div>
-          <div class="s-tab" data-pane="notifications"><i data-lucide="bell"></i>Notifications</div>
-          <div class="s-tab" data-pane="appearance"><i data-lucide="palette"></i>Appearance</div>
-        </nav>
+        <div class="settings-nav">
+          <a href="#profile" class="active" data-target="profile"><i data-lucide="user"></i> Profile</a>
+          <a href="#integrations" data-target="integrations"><i data-lucide="plug"></i> Integrations</a>
+          <a href="#team" data-target="team"><i data-lucide="users"></i> Team & Users</a>
+          <a href="#stages" data-target="stages"><i data-lucide="list-ordered"></i> Lead Stages</a>
+          <a href="#payments-stages" data-target="payments-stages"><i data-lucide="indian-rupee"></i> Payment Stages</a>
+          <a href="#notifications" data-target="notifications"><i data-lucide="bell"></i> Notifications</a>
+          <a href="#appearance" data-target="appearance"><i data-lucide="palette"></i> Appearance</a>
+        </div>
 
         <div>
-
           <!-- PROFILE -->
-          <div class="settings-pane active" data-pane="profile">
-            <div class="settings-panel">
-              <div class="settings-section">
-                <div class="settings-section-title">Profile</div>
-                <div class="settings-section-sub">Update your personal information and how others see you in the workspace</div>
-                <div class="avatar-edit">
-                  <div class="avatar-big">MV</div>
-                  <div style="display:flex;flex-direction:column;gap:6px">
-                    <button class="btn-ghost" style="width:fit-content"><i data-lucide="upload"></i> Upload new photo</button>
-                    <span style="font-size:11.5px;color:var(--text-3)">JPG or PNG · max 2MB</span>
-                  </div>
-                </div>
-                <div class="field-row">
-                  <div class="field"><label class="field-label">Full Name</label><input class="field-input" value="Manik Verma" /></div>
-                  <div class="field"><label class="field-label">Email</label><input class="field-input" type="email" value="manik@migrizo.com" /></div>
-                </div>
-                <div class="field-row">
-                  <div class="field"><label class="field-label">Phone</label><input class="field-input" value="+91 99876 54321" /></div>
-                  <div class="field"><label class="field-label">Role</label><input class="field-input" value="Admin · Founder" disabled style="background:var(--bg);color:var(--text-3)" /></div>
-                </div>
-                <div class="field"><label class="field-label">Bio / Title</label><textarea class="field-textarea" placeholder="A short bio shown in your profile">Founder at Migrizo · UK Global Talent Visa consulting</textarea></div>
+          <div class="settings-section" id="sec-profile">
+            <h2>Profile</h2>
+            <p class="sub">Your personal information shown across the CRM</p>
+            <div class="form-group">
+              <label class="form-label">Full Name</label>
+              <input class="form-input" id="p_name" />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Email</label>
+                <input class="form-input" id="p_email" disabled style="background:#F8FAFC" />
+                <p class="form-hint">Email can only be changed from Supabase Auth</p>
               </div>
-              <div class="save-bar">
-                <button class="btn-primary"><i data-lucide="check" style="width:16px;height:16px"></i> Save changes</button>
-                <button class="btn-ghost">Cancel</button>
+              <div class="form-group">
+                <label class="form-label">Role</label>
+                <select class="form-select" id="p_role">
+                  <option value="admin">Admin</option>
+                  <option value="counselor">Counselor</option>
+                </select>
               </div>
             </div>
-          </div>
-
-          <!-- TEAM -->
-          <div class="settings-pane" data-pane="team">
-            <div class="settings-panel">
-              <div class="settings-section">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px">
-                  <div>
-                    <div class="settings-section-title">Team & Users</div>
-                    <div class="settings-section-sub" style="margin-bottom:0">All members can view and edit all leads. Only admins can delete or change settings.</div>
-                  </div>
-                  <button class="btn-primary"><i data-lucide="user-plus" style="width:16px;height:16px"></i> Invite member</button>
-                </div>
-                <div class="team-list">
-                  <div class="team-row">
-                    <div class="avatar a1 lg">MV</div>
-                    <div style="flex:1"><div class="team-name">Manik Verma <span class="badge purple" style="margin-left:6px">Admin</span></div><div class="team-email">manik@migrizo.com · last active just now</div></div>
-                    <span class="badge green">Active</span>
-                    <button class="btn-icon-square"><i data-lucide="more-horizontal" style="width:16px;height:16px"></i></button>
-                  </div>
-                  <div class="team-row" style="opacity:0.7;border-style:dashed">
-                    <div class="avatar a2 lg" style="background:var(--bg);color:var(--text-3)">?</div>
-                    <div style="flex:1"><div class="team-name" style="color:var(--text-3)">Add a counselor</div><div class="team-email">Invite a teammate to share leads and follow-ups</div></div>
-                    <button class="btn-ghost"><i data-lucide="plus"></i> Invite</button>
-                  </div>
-                </div>
-              </div>
+            <div class="form-group">
+              <label class="form-label">Phone</label>
+              <input class="form-input" id="p_phone" placeholder="+91 98XXX XXXXX" />
             </div>
-          </div>
-
-          <!-- LEAD STAGES -->
-          <div class="settings-pane" data-pane="lead-stages">
-            <div class="settings-panel">
-              <div class="settings-section">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px">
-                  <div>
-                    <div class="settings-section-title">Lead Stages</div>
-                    <div class="settings-section-sub" style="margin-bottom:0">Customize the visa pipeline stages. Drag to reorder. Changes apply to all leads.</div>
-                  </div>
-                  <button class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px"></i> Add stage</button>
-                </div>
-                <div class="stage-list">
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#EC4899"></span><span class="stage-name">New Inquiry</span><span class="stage-count">128 leads</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#94A3B8"></span><span class="stage-name">Attempted Contact</span><span class="stage-count">26 leads</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#10B981"></span><span class="stage-name">Connected</span><span class="stage-count">22 leads</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#3B82F6"></span><span class="stage-name">Qualified</span><span class="stage-count">18 leads</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#8B5CF6"></span><span class="stage-name">Consultation Scheduled</span><span class="stage-count">13 leads</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#F97316"></span><span class="stage-name">Proposal Shared</span><span class="stage-count">7 leads</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#14B8A6"></span><span class="stage-name">Partial Payment</span><span class="stage-count">12 leads</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#22C55E"></span><span class="stage-name">Closed Won</span><span class="stage-count">22 leads</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- PAYMENT STAGES -->
-          <div class="settings-pane" data-pane="payment-stages">
-            <div class="settings-panel">
-              <div class="settings-section">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px">
-                  <div>
-                    <div class="settings-section-title">Payment Milestones</div>
-                    <div class="settings-section-sub" style="margin-bottom:0">Define the milestone-based payment phases for your visa service.</div>
-                  </div>
-                  <button class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px"></i> Add milestone</button>
-                </div>
-                <div class="stage-list">
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#10B981"></span><span class="stage-name">Kickstart</span><span class="stage-count" style="min-width:120px;text-align:right">25% · ₹25,000 typical</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#F59E0B"></span><span class="stage-name">Profile Building</span><span class="stage-count" style="min-width:120px;text-align:right">25% · ₹25,000 typical</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#14B8A6"></span><span class="stage-name">Endorsement Submission</span><span class="stage-count" style="min-width:120px;text-align:right">25% · ₹25,000 typical</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                  <div class="stage-item"><span class="drag-handle"><i data-lucide="grip-vertical"></i></span><span class="stage-color" style="background:#22C55E"></span><span class="stage-name">Post Approval</span><span class="stage-count" style="min-width:120px;text-align:right">25% · ₹25,000 typical</span><button class="btn-icon-square"><i data-lucide="pencil" style="width:14px;height:14px"></i></button></div>
-                </div>
-              </div>
+            <div style="display:flex;gap:10px;margin-top:18px">
+              <button class="btn-primary" id="saveProfile">Save Profile</button>
+              <button class="btn-secondary" onclick="signOut()">Sign Out</button>
             </div>
           </div>
 
           <!-- INTEGRATIONS -->
-          <div class="settings-pane" data-pane="integrations">
-            <div class="settings-panel">
-              <div class="settings-section">
-                <div class="settings-section-title">Integrations</div>
-                <div class="settings-section-sub">Connect Migrizo CRM with your backend systems and tools.</div>
-                <div style="display:flex;flex-direction:column;gap:12px">
-                  <div class="integration-card" id="biginCard">
-                    <div class="integration-logo">B</div>
-                    <div class="integration-body">
-                      <div class="integration-name">Zoho Bigin <span class="integration-status" id="biginStatus"><span class="integration-status-dot" style="background:var(--text-3)"></span><span id="biginStatusText">Checking...</span></span></div>
-                      <div class="integration-meta" id="biginMeta">Connect your Zoho Bigin account to sync live data.</div>
-                    </div>
-                    <button class="btn-primary" id="biginConnectBtn" onclick="window.location.href='/.netlify/functions/zoho-auth'" style="display:none">Connect Zoho</button>
-                    <button class="btn-ghost" id="biginSyncBtn" onclick="syncBigin()" style="display:none"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Re-sync</button>
-                  </div>
-                  <div class="integration-card">
-                    <div class="integration-logo" style="background:linear-gradient(135deg,#1877F2,#4267B2)">M</div>
-                    <div class="integration-body">
-                      <div class="integration-name">Meta Lead Ads <span class="integration-status"><span class="integration-status-dot"></span>Connected</span></div>
-                      <div class="integration-meta">Auto-importing leads from your "Canada Express Entry" campaign</div>
-                    </div>
-                    <button class="btn-ghost">Configure</button>
-                  </div>
-                  <div class="integration-card">
-                    <div class="integration-logo" style="background:linear-gradient(135deg,#25D366,#128C7E)">W</div>
-                    <div class="integration-body">
-                      <div class="integration-name">WhatsApp Business <span class="integration-status"><span class="integration-status-dot"></span>Connected</span></div>
-                      <div class="integration-meta">Send templates and log conversations against leads automatically</div>
-                    </div>
-                    <button class="btn-ghost">Configure</button>
-                  </div>
-                  <div class="integration-card">
-                    <div class="integration-logo" style="background:linear-gradient(135deg,#94A3B8,#64748B)">G</div>
-                    <div class="integration-body">
-                      <div class="integration-name">Google Calendar <span class="integration-status" style="background:var(--bg);color:var(--text-3)"><span class="integration-status-dot" style="background:var(--text-3)"></span>Not connected</span></div>
-                      <div class="integration-meta">Sync consultations and follow-ups with your Google Calendar</div>
-                    </div>
-                    <button class="btn-primary">Connect</button>
-                  </div>
-                  <div class="integration-card">
-                    <div class="integration-logo" style="background:linear-gradient(135deg,#6366F1,#8B5CF6)">S</div>
-                    <div class="integration-body">
-                      <div class="integration-name">Supabase <span class="integration-status"><span class="integration-status-dot"></span>Connected</span></div>
-                      <div class="integration-meta">Database, realtime sync and authentication backend</div>
-                    </div>
-                    <button class="btn-ghost">Configure</button>
-                  </div>
+          <div class="settings-section" id="sec-integrations">
+            <h2>Integrations</h2>
+            <p class="sub">Connected services and data sources</p>
+
+            <div class="integration-row">
+              <div class="integration-info">
+                <div class="integration-icon"><i data-lucide="database" style="color:#3B82F6"></i></div>
+                <div>
+                  <div style="font-weight:600;font-size:14px">Zoho Bigin</div>
+                  <div style="font-size:12px;color:var(--text-3)" id="zohoStatus">Checking connection...</div>
                 </div>
               </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <span class="badge-status" id="zohoBadge">—</span>
+                <button class="btn-secondary" id="zohoConnect" style="padding:6px 12px;font-size:12px">Connect</button>
+                <button class="btn-secondary" id="zohoSync" style="padding:6px 12px;font-size:12px;display:none">Re-sync</button>
+              </div>
+            </div>
+
+            <div class="integration-row">
+              <div class="integration-info">
+                <div class="integration-icon"><i data-lucide="shield-check" style="color:#10B981"></i></div>
+                <div>
+                  <div style="font-weight:600;font-size:14px">Supabase</div>
+                  <div style="font-size:12px;color:var(--text-3)">Authentication & data caching</div>
+                </div>
+              </div>
+              <span class="badge-status connected">● Connected</span>
+            </div>
+
+            <div class="integration-row">
+              <div class="integration-info">
+                <div class="integration-icon"><i data-lucide="sparkles" style="color:#8B5CF6"></i></div>
+                <div>
+                  <div style="font-weight:600;font-size:14px">Claude AI (for AI COO)</div>
+                  <div style="font-size:12px;color:var(--text-3)" id="aiStatus">Checking...</div>
+                </div>
+              </div>
+              <span class="badge-status" id="aiBadge">—</span>
+            </div>
+
+            <div class="integration-row">
+              <div class="integration-info">
+                <div class="integration-icon"><i data-lucide="message-square" style="color:#94A3B8"></i></div>
+                <div>
+                  <div style="font-weight:600;font-size:14px">Meta Lead Ads / WhatsApp</div>
+                  <div style="font-size:12px;color:var(--text-3)">Coming in Phase 2</div>
+                </div>
+              </div>
+              <span class="badge-status pending">Planned</span>
+            </div>
+          </div>
+
+          <!-- TEAM -->
+          <div class="settings-section" id="sec-team">
+            <h2>Team & Users</h2>
+            <p class="sub">CRM access — users are managed through Supabase</p>
+            <div class="notice-box" style="margin-bottom:14px">
+              <strong>Note:</strong> To invite new users, add them via the Supabase dashboard (Auth → Users → Add user with Auto Confirm). They'll then be able to log in here with their email/password.
+            </div>
+            <div id="teamList">
+              <div class="loading-block"><span class="spinner"></span> Loading current user...</div>
+            </div>
+          </div>
+
+          <!-- STAGES -->
+          <div class="settings-section" id="sec-stages">
+            <h2>Lead Stages</h2>
+            <p class="sub">Your 8-stage GTV pipeline — stages live in Bigin and must be edited there</p>
+            <div class="stage-list">
+              <div class="stage-list-item"><span class="order">1</span> New Inquiry</div>
+              <div class="stage-list-item"><span class="order">2</span> Attempted</div>
+              <div class="stage-list-item"><span class="order">3</span> Connected</div>
+              <div class="stage-list-item"><span class="order">4</span> Qualified</div>
+              <div class="stage-list-item"><span class="order">5</span> Consultation</div>
+              <div class="stage-list-item"><span class="order">6</span> Proposal</div>
+              <div class="stage-list-item"><span class="order">7</span> Partial Pay</div>
+              <div class="stage-list-item"><span class="order">8</span> Closed Won</div>
+              <div class="stage-list-item" style="opacity:0.6"><span class="order" style="background:#FEE2E2;color:#991B1B">×</span> Closed Lost</div>
+            </div>
+            <div class="notice-box" style="margin-top:14px">
+              To rename, reorder or add stages: open Bigin → Setup → Modules → Deals → Stages.
+            </div>
+          </div>
+
+          <!-- PAYMENTS STAGES -->
+          <div class="settings-section" id="sec-payments-stages">
+            <h2>Payment Stages</h2>
+            <p class="sub">Your 4-milestone payment plan</p>
+            <div class="stage-list">
+              <div class="stage-list-item"><span class="order">1</span> Kickstart (25% advance)</div>
+              <div class="stage-list-item"><span class="order">2</span> Profile Building (30%)</div>
+              <div class="stage-list-item"><span class="order">3</span> Endorsement Stage (30%)</div>
+              <div class="stage-list-item"><span class="order">4</span> Final Submission (15%)</div>
             </div>
           </div>
 
           <!-- NOTIFICATIONS -->
-          <div class="settings-pane" data-pane="notifications">
-            <div class="settings-panel">
-              <div class="settings-section">
-                <div class="settings-section-title">Notifications</div>
-                <div class="settings-section-sub">Choose how and when you want to be notified.</div>
-                <div class="toggle-row">
-                  <div class="toggle-info"><div class="toggle-title">Overdue follow-ups</div><div class="toggle-desc">Get notified when a follow-up becomes overdue</div></div>
-                  <div class="toggle on"></div>
-                </div>
-                <div class="toggle-row">
-                  <div class="toggle-info"><div class="toggle-title">New leads</div><div class="toggle-desc">Real-time alert when a new lead is captured from Meta Ads or manual entry</div></div>
-                  <div class="toggle on"></div>
-                </div>
-                <div class="toggle-row">
-                  <div class="toggle-info"><div class="toggle-title">Payment received</div><div class="toggle-desc">Notify me when any milestone payment is recorded</div></div>
-                  <div class="toggle on"></div>
-                </div>
-                <div class="toggle-row">
-                  <div class="toggle-info"><div class="toggle-title">Stage changes</div><div class="toggle-desc">When a lead moves to a new pipeline stage</div></div>
-                  <div class="toggle"></div>
-                </div>
-                <div class="toggle-row">
-                  <div class="toggle-info"><div class="toggle-title">AI COO daily briefing</div><div class="toggle-desc">Morning summary of priorities, risks and opportunities at 8 AM IST</div></div>
-                  <div class="toggle on"></div>
-                </div>
-                <div class="toggle-row">
-                  <div class="toggle-info"><div class="toggle-title">Browser push notifications</div><div class="toggle-desc">Show desktop notifications even when the app is in another tab</div></div>
-                  <div class="toggle on"></div>
-                </div>
-                <div class="toggle-row">
-                  <div class="toggle-info"><div class="toggle-title">Email digests</div><div class="toggle-desc">Daily 6 PM summary email with today's activity</div></div>
-                  <div class="toggle"></div>
-                </div>
+          <div class="settings-section" id="sec-notifications">
+            <h2>Notifications</h2>
+            <p class="sub">Choose what you want to be notified about</p>
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div><div style="font-weight:600;font-size:13.5px">Daily morning brief</div><div style="font-size:12px;color:var(--text-3)">Get a summary at 9 AM IST</div></div>
+                <label class="switch"><input type="checkbox" id="nf_daily" /><span class="slider"></span></label>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div><div style="font-weight:600;font-size:13.5px">Overdue follow-ups</div><div style="font-size:12px;color:var(--text-3)">Alert when tasks slip past their due date</div></div>
+                <label class="switch"><input type="checkbox" id="nf_overdue" checked /><span class="slider"></span></label>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div><div style="font-weight:600;font-size:13.5px">New lead added</div><div style="font-size:12px;color:var(--text-3)">Notify when a new contact lands in Bigin</div></div>
+                <label class="switch"><input type="checkbox" id="nf_new" checked /><span class="slider"></span></label>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div><div style="font-weight:600;font-size:13.5px">Payment received</div><div style="font-size:12px;color:var(--text-3)">Notify when a milestone is paid</div></div>
+                <label class="switch"><input type="checkbox" id="nf_pay" checked /><span class="slider"></span></label>
               </div>
             </div>
+            <div style="margin-top:18px">
+              <button class="btn-primary" id="saveNotif">Save Preferences</button>
+            </div>
+            <p class="form-hint" style="margin-top:10px">Notifications are saved to your profile. Actual delivery (email/in-app) will be wired in Phase 2.</p>
           </div>
 
           <!-- APPEARANCE -->
-          <div class="settings-pane" data-pane="appearance">
-            <div class="settings-panel">
-              <div class="settings-section">
-                <div class="settings-section-title">Appearance</div>
-                <div class="settings-section-sub">Customize how Migrizo CRM looks on your device.</div>
-                <div class="theme-options">
-                  <div class="theme-opt active"><div class="theme-preview light"></div><div class="theme-name">Light</div></div>
-                  <div class="theme-opt"><div class="theme-preview dark"></div><div class="theme-name">Dark</div></div>
-                  <div class="theme-opt"><div class="theme-preview system"></div><div class="theme-name">System</div></div>
-                </div>
-              </div>
-              <div class="settings-section">
-                <div class="settings-section-title">Density</div>
-                <div class="settings-section-sub">Adjust the spacing across the workspace.</div>
-                <div style="display:flex;gap:8px">
-                  <button class="btn-ghost" style="background:var(--primary-50);color:var(--primary-hover);border-color:var(--primary-200)"><i data-lucide="rows-3"></i> Comfortable</button>
-                  <button class="btn-ghost"><i data-lucide="rows-4"></i> Compact</button>
-                </div>
-              </div>
+          <div class="settings-section" id="sec-appearance">
+            <h2>Appearance</h2>
+            <p class="sub">Customize how the CRM looks</p>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;border:1px solid var(--border);border-radius:10px">
+              <div><div style="font-weight:600;font-size:14px">Theme</div><div style="font-size:12px;color:var(--text-3)">Light mode currently — dark mode coming soon</div></div>
+              <span class="badge-status pending">Light</span>
             </div>
           </div>
-
         </div>
       </div>
-    </div>
+    </section>
   </main>
 
   <script src="assets/app.js"></script>
-<script src="assets/auth.js"></script>
+  <script src="assets/auth.js"></script>
   <script>
-    document.querySelectorAll('.s-tab').forEach(t => t.addEventListener('click', () => {
-      document.querySelectorAll('.s-tab').forEach(x => x.classList.remove('active'));
-      t.classList.add('active');
-      document.querySelectorAll('.settings-pane').forEach(p => p.classList.remove('active'));
-      document.querySelector(`.settings-pane[data-pane="${t.dataset.pane}"]`).classList.add('active');
-    }));
-    document.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', () => t.classList.toggle('on')));
-    document.querySelectorAll('.theme-opt').forEach(t => t.addEventListener('click', () => {
-      document.querySelectorAll('.theme-opt').forEach(x => x.classList.remove('active'));
-      t.classList.add('active');
-    }));
-  </script>
-<script>
-requireAuth().then(async (session) => {
-  if (!session) return;
-  // Check Zoho connection status
-  checkBiginStatus();
-  // Handle OAuth callback messages
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('zoho_connected')) { window.showToast('Zoho Bigin connected successfully!'); checkBiginStatus(); }
-  if (params.get('zoho_error'))     { window.showToast('Zoho connection failed: ' + params.get('zoho_error')); }
-  if (params.get('reset'))          { window.showToast('Password updated successfully'); }
-});
+  let CURRENT_USER = null;
 
-async function checkBiginStatus() {
-  try {
-    const res = await fetch('/.netlify/functions/get-leads?limit=1');
-    const statusEl  = document.getElementById('biginStatus');
-    const metaEl    = document.getElementById('biginMeta');
-    const connectBtn = document.getElementById('biginConnectBtn');
-    const syncBtn    = document.getElementById('biginSyncBtn');
-    if (res.ok) {
-      const data = await res.json();
-      statusEl.innerHTML = '<span class="integration-status-dot"></span> Connected';
-      statusEl.style.cssText = 'background:var(--green-bg);color:var(--green-text)';
-      metaEl.textContent = `Live data synced · ${data.total || 0} leads loaded · Source: Bigin`;
-      connectBtn.style.display = 'none';
-      syncBtn.style.display = 'flex';
-    } else {
-      statusEl.innerHTML = '<span class="integration-status-dot" style="background:var(--text-3)"></span> Not connected';
-      statusEl.style.cssText = 'background:var(--bg);color:var(--text-3)';
-      metaEl.textContent = 'Click Connect to link your Zoho Bigin account.';
-      connectBtn.style.display = 'flex';
-      syncBtn.style.display = 'none';
-    }
-  } catch {}
-}
+  async function loadSettings() {
+    const session = await requireAuth();
+    if (!session) return;
+    CURRENT_USER = session.user;
+    const meta = CURRENT_USER.user_metadata || {};
+    document.getElementById('p_name').value  = meta.full_name || '';
+    document.getElementById('p_email').value = CURRENT_USER.email;
+    document.getElementById('p_role').value  = meta.role || 'counselor';
+    document.getElementById('p_phone').value = meta.phone || '';
 
-async function syncBigin() {
-  const btn = document.getElementById('biginSyncBtn');
-  btn.disabled = true; btn.innerHTML = '<span style="display:inline-flex;width:14px;height:14px;border:2px solid #6366F1;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite"></span> Syncing...';
-  try {
-    const res = await CRM.sync();
-    window.showToast(`Sync complete: ${res.synced?.contacts || 0} leads, ${res.synced?.tasks || 0} tasks`);
-  } catch (e) {
-    window.showToast('Sync failed: ' + e.message);
+    // Load notification prefs from metadata
+    const nf = meta.notifications || {};
+    document.getElementById('nf_daily').checked   = !!nf.daily;
+    document.getElementById('nf_overdue').checked = nf.overdue !== false;
+    document.getElementById('nf_new').checked     = nf.new !== false;
+    document.getElementById('nf_pay').checked     = nf.pay !== false;
+
+    // Show user in team
+    renderTeam();
+
+    // Check Zoho status
+    checkZohoStatus();
+    checkAiStatus();
   }
-  btn.disabled = false; btn.innerHTML = '<i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Re-sync';
-  lucide.createIcons(); checkBiginStatus();
-}
-</script>
+
+  function renderTeam() {
+    const meta = CURRENT_USER.user_metadata || {};
+    const name = meta.full_name || CURRENT_USER.email.split('@')[0];
+    document.getElementById('teamList').innerHTML = `
+      <div class="integration-row">
+        <div class="integration-info">
+          <div class="integration-icon" style="background:var(--primary-50);color:var(--primary-hover);font-weight:700">${fmt.initials(name)}</div>
+          <div>
+            <div style="font-weight:600;font-size:14px">${name} (you)</div>
+            <div style="font-size:12px;color:var(--text-3)">${CURRENT_USER.email}</div>
+          </div>
+        </div>
+        <span class="badge-status connected">● ${meta.role === 'admin' ? 'Admin' : 'Counselor'}</span>
+      </div>
+      <p style="font-size:12.5px;color:var(--text-3);margin-top:14px">Additional users you've added via Supabase will appear here automatically once they log in for the first time.</p>
+    `;
+  }
+
+  async function checkZohoStatus() {
+    try {
+      // Try a lightweight call - if it returns leads (even 0), we're connected
+      const r = await CRM.leads();
+      document.getElementById('zohoStatus').textContent  = `Connected · ${(r.leads || []).length} contacts cached`;
+      document.getElementById('zohoBadge').textContent   = '● Connected';
+      document.getElementById('zohoBadge').className     = 'badge-status connected';
+      document.getElementById('zohoConnect').style.display = 'none';
+      document.getElementById('zohoSync').style.display    = '';
+    } catch(err) {
+      document.getElementById('zohoStatus').textContent = 'Not connected';
+      document.getElementById('zohoBadge').textContent  = '○ Disconnected';
+      document.getElementById('zohoBadge').className    = 'badge-status disconnected';
+    }
+  }
+
+  async function checkAiStatus() {
+    try {
+      const r = await fetch('/.netlify/functions/ai-coo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: 'ping' })
+      });
+      if (r.status === 503) {
+        document.getElementById('aiStatus').textContent = 'ANTHROPIC_API_KEY not set in Netlify';
+        document.getElementById('aiBadge').textContent  = '○ Not configured';
+        document.getElementById('aiBadge').className    = 'badge-status disconnected';
+      } else if (r.ok) {
+        document.getElementById('aiStatus').textContent = 'Ready';
+        document.getElementById('aiBadge').textContent  = '● Connected';
+        document.getElementById('aiBadge').className    = 'badge-status connected';
+      } else {
+        document.getElementById('aiStatus').textContent = 'Error checking status';
+        document.getElementById('aiBadge').textContent  = '○ Unknown';
+        document.getElementById('aiBadge').className    = 'badge-status pending';
+      }
+    } catch(_) {
+      document.getElementById('aiStatus').textContent = 'Unable to check';
+      document.getElementById('aiBadge').textContent  = '○ Unknown';
+      document.getElementById('aiBadge').className    = 'badge-status pending';
+    }
+  }
+
+  document.getElementById('saveProfile').onclick = async () => {
+    const btn = document.getElementById('saveProfile');
+    btn.disabled = true; btn.textContent = 'Saving...';
+    try {
+      await updateProfile({
+        full_name: document.getElementById('p_name').value.trim(),
+        role:      document.getElementById('p_role').value,
+        phone:     document.getElementById('p_phone').value.trim()
+      });
+      showToast('Profile saved');
+      // Re-load to refresh display
+      const session = await requireAuth();
+      CURRENT_USER = session.user;
+      renderTeam();
+    } catch(e) {
+      showToast('Save failed: ' + e.message, 'error');
+    }
+    btn.disabled = false; btn.textContent = 'Save Profile';
+  };
+
+  document.getElementById('saveNotif').onclick = async () => {
+    const btn = document.getElementById('saveNotif');
+    btn.disabled = true; btn.textContent = 'Saving...';
+    try {
+      await updateProfile({
+        notifications: {
+          daily:   document.getElementById('nf_daily').checked,
+          overdue: document.getElementById('nf_overdue').checked,
+          new:     document.getElementById('nf_new').checked,
+          pay:     document.getElementById('nf_pay').checked
+        }
+      });
+      showToast('Preferences saved');
+    } catch(e) {
+      showToast('Save failed: ' + e.message, 'error');
+    }
+    btn.disabled = false; btn.textContent = 'Save Preferences';
+  };
+
+  document.getElementById('zohoConnect').onclick = () => {
+    window.location.href = '/.netlify/functions/zoho-auth';
+  };
+  document.getElementById('zohoSync').onclick = async () => {
+    const btn = document.getElementById('zohoSync');
+    btn.disabled = true; btn.textContent = 'Syncing...';
+    try {
+      const r = await CRM.sync();
+      showToast(`Synced ${r.synced?.contacts || 0} contacts`);
+      await checkZohoStatus();
+    } catch(e) {
+      showToast('Sync failed: ' + e.message, 'error');
+    }
+    btn.disabled = false; btn.textContent = 'Re-sync';
+  };
+
+  // Settings nav scroll
+  document.querySelectorAll('.settings-nav a').forEach(a => {
+    a.onclick = (e) => {
+      e.preventDefault();
+      document.querySelectorAll('.settings-nav a').forEach(x => x.classList.remove('active'));
+      a.classList.add('active');
+      const target = a.dataset.target;
+      document.getElementById('sec-' + target).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  });
+
+  loadSettings();
+  </script>
 </body>
 </html>

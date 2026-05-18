@@ -1,6 +1,5 @@
 // netlify/functions/write-record.js
-// Updates a record in Bigin + writes to audit_log in Supabase.
-// Used for: stage changes, payment recording, note additions, etc.
+// Unified write endpoint: create or update Contacts, Deals, Tasks in Bigin
 
 const { supabase }    = require('./utils/supabase');
 const { biginRequest, jsonResponse } = require('./utils/zoho');
@@ -14,54 +13,68 @@ exports.handler = async (event) => {
   catch { return jsonResponse(400, { error: 'Invalid JSON' }); }
 
   const {
-    module,           // 'Contacts', 'Deals', 'Tasks', 'Notes'
-    recordId,         // Zoho record ID
-    fields,           // { Stage: 'Qualified', ... }
-    action,           // 'stage_changed', 'payment_recorded', 'note_added', etc.
-    entityType,       // 'lead', 'deal', 'task'
-    entityName,       // display name for audit log
-    beforeState,      // snapshot before change
-    user_id,          // from frontend (Supabase auth)
+    module,          // 'Contacts' | 'Deals' | 'Tasks'
+    operation,       // 'create' | 'update'
+    id,              // required for update
+    data,            // payload fields
+    user_id,
     user_name,
     user_email
   } = body;
 
-  if (!module || !recordId || !fields) {
-    return jsonResponse(400, { error: 'module, recordId, and fields are required' });
+  if (!module || !operation || !data) {
+    return jsonResponse(400, { error: 'module, operation, and data are required' });
+  }
+  if (operation === 'update' && !id) {
+    return jsonResponse(400, { error: 'id is required for update' });
   }
 
   try {
-    // 1. Write to Bigin
-    const biginRes = await biginRequest(`/${module}/${recordId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ data: [fields] })
-    });
+    let biginRes, action, entityId;
 
-    // 2. Log to audit_log
-    const auditEntry = {
-      user_id:      user_id  || null,
-      user_name:    user_name || 'Unknown',
-      user_email:   user_email || '',
-      action:       action || 'record_updated',
-      entity_type:  entityType || module.toLowerCase(),
-      entity_id:    recordId,
-      entity_name:  entityName || recordId,
-      before_state: beforeState || null,
-      after_state:  fields,
-      ip_address:   event.headers['x-forwarded-for'] || event.headers['client-ip'] || null,
-      created_at:   new Date().toISOString()
-    };
-
-    await supabase.from('audit_log').insert(auditEntry);
-
-    // 3. Invalidate cache for this record
-    if (entityType === 'lead' || module === 'Contacts') {
-      await supabase.from('leads_cache')
-        .update({ stage: fields.Stage, amount_paid: fields.Amount_Paid__c, payment_phase: fields.Payment_Phase__c, synced_at: new Date().toISOString() })
-        .eq('zoho_id', recordId);
+    if (operation === 'create') {
+      biginRes = await biginRequest(`/${module}`, {
+        method: 'POST',
+        body: JSON.stringify({ data: [data] })
+      });
+      action   = `${module.toLowerCase().slice(0,-1)}_created`;
+      entityId = biginRes?.data?.[0]?.details?.id || null;
+    } else {
+      biginRes = await biginRequest(`/${module}/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ data: [data] })
+      });
+      action   = `${module.toLowerCase().slice(0,-1)}_updated`;
+      entityId = id;
     }
 
-    return jsonResponse(200, { success: true, bigin: biginRes });
+    // Audit log
+    await supabase.from('audit_log').insert({
+      user_id:      user_id || null,
+      user_name:    user_name || 'Unknown',
+      user_email:   user_email || '',
+      action,
+      entity_type:  module.toLowerCase(),
+      entity_id:    entityId,
+      entity_name:  data.Full_Name || data.Deal_Name || data.Subject || entityId,
+      after_state:  data,
+      ip_address:   event.headers['x-forwarded-for'] || event.headers['client-ip'] || null,
+      created_at:   new Date().toISOString()
+    }).catch(e => console.warn('audit log failed:', e.message));
+
+    // Invalidate cache so next fetch is fresh
+    if (module === 'Contacts') {
+      if (entityId) {
+        await supabase.from('leads_cache').delete().eq('zoho_id', entityId).catch(()=>{});
+      }
+    }
+    if (module === 'Tasks') {
+      if (entityId) {
+        await supabase.from('tasks_cache').delete().eq('zoho_id', entityId).catch(()=>{});
+      }
+    }
+
+    return jsonResponse(200, { success: true, id: entityId, bigin: biginRes });
 
   } catch (err) {
     console.error('write-record error:', err.message);

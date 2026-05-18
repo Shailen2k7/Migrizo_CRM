@@ -15,15 +15,13 @@
   .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
   .charts-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   @media (max-width: 1100px) { .charts-grid, .charts-row-2 { grid-template-columns: 1fr; } }
-  .donut-legend { display: flex; flex-direction: column; gap: 10px; }
+  .donut-layout { display: flex; align-items: center; gap: 16px; }
+  .donut-layout .chart-container { flex: 1; max-width: 200px; height: 200px; }
+  .donut-legend { flex: 1; display: flex; flex-direction: column; gap: 10px; }
   .donut-row { display: flex; align-items: center; gap: 10px; }
   .donut-dot { width: 10px; height: 10px; border-radius: 3px; }
   .donut-row-label { font-size: 12.5px; color: var(--text-2); font-weight: 500; flex: 1; }
   .donut-row-value { font-size: 13px; font-weight: 700; color: var(--text-1); }
-  .donut-row-pct { font-size: 11.5px; color: var(--text-3); margin-left: 6px; }
-  .donut-layout { display: flex; align-items: center; gap: 16px; }
-  .donut-layout .chart-container { flex: 1; max-width: 200px; height: 200px; }
-  .donut-layout .donut-legend { flex: 1; }
 </style>
 </head>
 <body>
@@ -33,7 +31,7 @@
     <nav class="nav">
       <a class="nav-item active" href="index.html"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
       <a class="nav-item" href="leads.html"><i data-lucide="users"></i><span>Leads</span></a>
-      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span><span class="nav-badge">18</span></a>
+      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span><span class="nav-badge" id="navFollowups" style="display:none">0</span></a>
       <a class="nav-item" href="payments.html"><i data-lucide="indian-rupee"></i><span>Payments</span></a>
       <a class="nav-item" href="calendar.html"><i data-lucide="calendar"></i><span>Calendar</span></a>
       <a class="nav-item" href="reports.html"><i data-lucide="bar-chart-3"></i><span>Reports</span></a>
@@ -43,207 +41,340 @@
     </nav>
     <div class="sidebar-footer">
       <div class="user-card">
-        <div class="user-avatar">MV</div>
-        <div class="user-meta"><div class="user-name">Manik Verma</div><div class="user-role">Admin</div></div>
+        <div class="user-avatar">—</div>
+        <div class="user-meta"><div class="user-name">Loading...</div><div class="user-role">—</div></div>
         <i data-lucide="chevrons-up-down" class="chev" style="width:16px;height:16px"></i>
       </div>
-      <div class="quick-add">
+      <button class="quick-add" id="quickAddLead" style="border:none;width:100%;text-align:left;cursor:pointer">
         <div class="quick-add-icon"><i data-lucide="plus" style="width:16px;height:16px"></i></div>
         <div class="quick-add-text"><strong>Quick Add Lead</strong><span>Add a new client</span></div>
-      </div>
+      </button>
     </div>
   </aside>
 
   <main class="main">
     <header class="topbar">
       <div class="greeting">
-        <h1><span id="greetingText">Good afternoon</span>, <span id="userName">Manik</span> <span class="wave">👋</span></h1>
-        <p id="greetingSub">Saturday, 17 May 2026 · Here's what's happening in your business</p>
+        <h1><span id="greetingText">Good afternoon</span>, <span id="userName">there</span> <span class="wave">👋</span></h1>
+        <p id="greetingSub">Loading...</p>
       </div>
-      <div class="search">
-        <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
-        <input type="text" placeholder="Search leads, clients, notes, phone..." />
-        <span class="search-kbd">⌘ K</span>
-      </div>
-      <div class="topbar-actions">
-        <button class="icon-btn ai-btn"><i data-lucide="sparkles" style="width:18px;height:18px"></i></button>
-        <button class="icon-btn"><i data-lucide="bell" style="width:18px;height:18px"></i><span class="dot">12</span></button>
-        <button class="icon-btn"><i data-lucide="sun" style="width:18px;height:18px"></i></button>
-        <button class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px"></i><span>Add Lead</span><span class="btn-primary-split"><i data-lucide="chevron-down" style="width:14px;height:14px;display:block"></i></span></button>
+      <div class="topbar-right">
+        <div class="search-box">
+          <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
+          <input type="text" placeholder="Search leads, clients, notes, phone..." id="globalSearch" />
+          <span class="kbd">⌘ K</span>
+        </div>
+        <button class="icon-btn ai-btn" onclick="location.href='ai-coo.html'" title="AI COO"><i data-lucide="sparkles" style="width:18px;height:18px"></i></button>
+        <button class="icon-btn" id="themeToggle" title="Toggle theme"><i data-lucide="sun" style="width:18px;height:18px"></i></button>
+        <button class="btn-add" id="addLeadBtn">
+          <i data-lucide="plus" style="width:16px;height:16px"></i> Add Lead
+        </button>
       </div>
     </header>
 
-    <div class="content with-top">
+    <section class="content">
+      <!-- KPI Cards -->
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Total Leads</span><span class="stat-icon-tiny"><i data-lucide="user-plus"></i></span></div><div class="stat-value" id="kpiLeads">—</div><div class="stat-delta muted-only"><span class="muted" id="kpiLeadsDelta">From Bigin</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Follow-ups Today</span><span class="stat-icon-tiny green"><i data-lucide="phone"></i></span></div><div class="stat-value" id="kpiFollowups">—</div><div class="stat-delta muted-only"><span class="muted">Due today</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Overdue Tasks</span><span class="stat-icon-tiny orange"><i data-lucide="alert-circle"></i></span></div><div class="stat-value" id="kpiOverdue">—</div><div class="stat-delta muted-only"><span class="muted">Need attention</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Pipeline Value</span><span class="stat-icon-tiny violet"><i data-lucide="indian-rupee"></i></span></div><div class="stat-value" id="kpiPipeline">—</div><div class="stat-delta muted-only"><span class="muted">Active deals</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Revenue Collected</span><span class="stat-icon-tiny blue"><i data-lucide="wallet"></i></span></div><div class="stat-value" id="kpiRevenue">—</div><div class="stat-delta muted-only"><span class="muted">Total paid</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Conversion Rate</span><span class="stat-icon-tiny pink"><i data-lucide="trending-up"></i></span></div><div class="stat-value" id="kpiConversion">—</div><div class="stat-delta muted-only"><span class="muted">Closed / total</span></div></div>
+      </div>
 
-      <section class="stats-grid">
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">New Leads</span><span class="stat-icon-tiny"><i data-lucide="user-plus"></i></span></div><div class="stat-value" id="kpiLeads">—</div><div class="stat-delta up" id="kpiLeadsDelta"><span class="muted">loading...</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Follow-ups Today</span><span class="stat-icon-tiny green"><i data-lucide="phone"></i></span></div><div class="stat-value" id="kpiFollowups">—</div><div class="stat-delta"><span class="muted">from Bigin</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Consultations</span><span class="stat-icon-tiny orange"><i data-lucide="calendar-check"></i></span></div><div class="stat-value" id="kpiConsultations">—</div><div class="stat-delta"><span class="muted">this week</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Payments Pending</span><span class="stat-icon-tiny violet"><i data-lucide="indian-rupee"></i></span></div><div class="stat-value" id="kpiPending">—</div><div class="stat-delta"><span class="muted">across active clients</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Revenue Closed</span><span class="stat-icon-tiny blue"><i data-lucide="wallet"></i></span></div><div class="stat-value" id="kpiRevenue">—</div><div class="stat-delta"><span class="muted">total paid</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Conversion Rate</span><span class="stat-icon-tiny pink"><i data-lucide="trending-up"></i></span></div><div class="stat-value" id="kpiConversion">—</div><div class="stat-delta"><span class="muted">lead to closed</span></div></div>
-      </section>
-
-      <section class="charts-grid">
-        <div class="chart-card">
-          <div class="chart-head"><div><h3>Lead Funnel</h3><p>Current pipeline by stage</p></div><div class="chart-pill">Last 30 days</div></div>
-          <div class="chart-container"><canvas id="funnelChart"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <div class="chart-head"><div><h3>Lead Temperature</h3><p>Distribution by quality</p></div></div>
-          <div class="donut-layout">
-            <div class="chart-container"><canvas id="tempChart"></canvas></div>
-            <div class="donut-legend">
-              <div class="donut-row"><span class="donut-dot" style="background:#EF4444"></span><span class="donut-row-label">Hot</span><span class="donut-row-value">42</span><span class="donut-row-pct">17%</span></div>
-              <div class="donut-row"><span class="donut-dot" style="background:#F97316"></span><span class="donut-row-label">Warm</span><span class="donut-row-value">78</span><span class="donut-row-pct">31%</span></div>
-              <div class="donut-row"><span class="donut-dot" style="background:#3B82F6"></span><span class="donut-row-label">Cold</span><span class="donut-row-value">96</span><span class="donut-row-pct">39%</span></div>
-              <div class="donut-row"><span class="donut-dot" style="background:#94A3B8"></span><span class="donut-row-label">Junk</span><span class="donut-row-value">32</span><span class="donut-row-pct">13%</span></div>
+      <!-- Charts -->
+      <div class="charts-grid" style="margin-top:16px">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3 class="card-title">Lead Funnel</h3>
+              <p class="card-subtitle">Current pipeline by stage</p>
             </div>
           </div>
+          <div class="card-body">
+            <div class="chart-container" style="height:280px"><canvas id="funnelChart"></canvas></div>
+            <div id="funnelEmpty" style="display:none"></div>
+          </div>
         </div>
-      </section>
 
-      <section class="charts-row-2">
-        <div class="chart-card">
-          <div class="chart-head"><div><h3>Daily New Leads</h3><p>Last 14 days inflow</p></div><div class="chart-pill up"><i data-lucide="arrow-up"></i> 23% WoW</div></div>
-          <div class="chart-container"><canvas id="inflowChart"></canvas></div>
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3 class="card-title">Lead Quality Score</h3>
+              <p class="card-subtitle">Distribution by score range</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="donut-layout">
+              <div class="chart-container"><canvas id="qualityChart"></canvas></div>
+              <div class="donut-legend" id="qualityLegend"></div>
+            </div>
+            <div id="qualityEmpty" style="display:none"></div>
+          </div>
         </div>
-        <div class="chart-card">
-          <div class="chart-head"><div><h3>Revenue Trend</h3><p>Last 6 months closed revenue</p></div><div class="chart-pill up"><i data-lucide="arrow-up"></i> 42% YoY</div></div>
-          <div class="chart-container"><canvas id="revenueChart"></canvas></div>
-        </div>
-      </section>
+      </div>
 
-      <section class="ai-section">
-        <div class="ai-section-head">
-          <div class="ai-section-icon"><i data-lucide="sparkles"></i></div>
-          <div>
-            <div class="ai-section-title">AI COO insights <span class="ai-section-beta">BETA</span></div>
-            <div class="ai-section-sub">Live recommendations from your CRM activity</div>
+      <div class="charts-row-2" style="margin-top:16px">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3 class="card-title">Recent Leads</h3>
+              <p class="card-subtitle">Latest contacts from Bigin</p>
+            </div>
+            <a href="leads.html" style="font-size:12.5px;color:var(--primary-hover);text-decoration:none;font-weight:600">View all →</a>
           </div>
-          <a href="ai-coo.html" class="ai-section-ask"><i data-lucide="message-circle"></i> Ask AI COO</a>
-        </div>
-        <div class="ai-section-grid">
-          <div class="ai-card">
-            <span class="ai-tag work-hard">⚡ Work hard</span>
-            <h4>5 hot leads need follow-up today</h4>
-            <p>Rahul, Anita, Neha, Sandeep and Divya are at score ≥7 and consultation-ready. Closing rate drops 60% after 48hr silence.</p>
-            <a class="ai-action">Open priority list <i data-lucide="arrow-right"></i></a>
-          </div>
-          <div class="ai-card">
-            <span class="ai-tag save-time">💎 Save time</span>
-            <h4>Batch your morning calls</h4>
-            <p>9 of 18 follow-ups are between 10AM–12PM. Block 90min and knock them out — saves ~2hrs vs scattered calls.</p>
-            <a class="ai-action">Show schedule <i data-lucide="arrow-right"></i></a>
-          </div>
-          <div class="ai-card">
-            <span class="ai-tag risk">⚠ Hidden risk</span>
-            <h4>₹2.45L stuck at Profile Building</h4>
-            <p>3 partial-payment clients haven't moved forward in 14+ days. One nudge could unblock ₹1.05L revenue this week.</p>
-            <a class="ai-action">Take action <i data-lucide="arrow-right"></i></a>
+          <div class="card-body" id="recentLeadsBody">
+            <div class="loading-block"><span class="spinner"></span> Loading...</div>
           </div>
         </div>
-      </section>
 
-    </div>
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3 class="card-title">Today's Follow-ups</h3>
+              <p class="card-subtitle">Calls and meetings scheduled</p>
+            </div>
+            <a href="followups.html" style="font-size:12.5px;color:var(--primary-hover);text-decoration:none;font-weight:600">View all →</a>
+          </div>
+          <div class="card-body" id="todayTasksBody">
+            <div class="loading-block"><span class="spinner"></span> Loading...</div>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script src="assets/app.js"></script>
-<script src="assets/auth.js"></script>
+  <script src="assets/auth.js"></script>
   <script>
-    Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
-    Chart.defaults.font.size = 12;
-    Chart.defaults.color = '#475569';
-    Chart.defaults.borderColor = '#F1F2F6';
+  let DATA = { leads: [], tasks: [] };
 
+  async function loadDashboard() {
+    try {
+      const [leadsResp, tasksResp] = await Promise.all([
+        CRM.leads(),
+        CRM.tasks().catch(() => ({ tasks: [] }))
+      ]);
+      DATA.leads = leadsResp.leads || [];
+      DATA.tasks = tasksResp.tasks || [];
+      renderKPIs();
+      renderFunnel();
+      renderQuality();
+      renderRecentLeads();
+      renderTodayTasks();
+    } catch(err) {
+      console.error(err);
+      showToast('Failed to load dashboard: ' + err.message, 'error');
+    }
+  }
+
+  function renderKPIs() {
+    const total       = DATA.leads.length;
+    const closedWon   = DATA.leads.filter(l => l.stage === 'Closed Won').length;
+    const paid        = DATA.leads.reduce((s, l) => s + (parseFloat(l.amount_paid) || 0), 0);
+    const totalFee    = DATA.leads.reduce((s, l) => s + (parseFloat(l.total_fee)   || 0), 0);
+    const pipeline    = totalFee - paid;
+    const convRate    = total > 0 ? ((closedWon / total) * 100).toFixed(1) : '0.0';
+
+    const today = new Date(); today.setHours(0,0,0,0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const todayTasks = DATA.tasks.filter(t => {
+      if (!t.due_date || t.status === 'Completed') return false;
+      const d = new Date(t.due_date);
+      return d >= today && d < tomorrow;
+    }).length;
+    const overdue = DATA.tasks.filter(t => {
+      if (!t.due_date || t.status === 'Completed') return false;
+      return new Date(t.due_date) < today;
+    }).length;
+
+    document.getElementById('kpiLeads').textContent      = total;
+    document.getElementById('kpiFollowups').textContent  = todayTasks;
+    document.getElementById('kpiOverdue').textContent    = overdue;
+    document.getElementById('kpiPipeline').textContent   = fmt.inrShort(pipeline);
+    document.getElementById('kpiRevenue').textContent    = fmt.inrShort(paid);
+    document.getElementById('kpiConversion').textContent = convRate + '%';
+
+    const navFu = document.getElementById('navFollowups');
+    if (todayTasks > 0) { navFu.textContent = todayTasks; navFu.style.display = ''; }
+  }
+
+  function renderFunnel() {
+    const stages = ['New Inquiry','Attempted','Connected','Qualified','Consultation','Proposal','Partial Pay','Closed Won'];
+    const counts = stages.map(s => DATA.leads.filter(l => l.stage === s).length);
+    if (counts.every(c => c === 0)) {
+      document.getElementById('funnelChart').style.display = 'none';
+      document.getElementById('funnelEmpty').style.display = '';
+      document.getElementById('funnelEmpty').innerHTML = emptyState({ icon: 'bar-chart-3', title: 'No leads yet', message: 'Sync from Bigin or add a lead to see your funnel.' });
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
     new Chart(document.getElementById('funnelChart'), {
       type: 'bar',
-      data: { labels: ['New Inquiry','Attempted','Connected','Qualified','Consultation','Proposal','Partial Pay','Closed Won'],
-        datasets: [{ data: [128,102,78,56,38,25,18,11],
-          backgroundColor: ['#C7D2FE','#A5B4FC','#818CF8','#6366F1','#8B5CF6','#F59E0B','#14B8A6','#10B981'],
-          borderRadius: 6, borderSkipped: false }] },
+      data: { labels: stages, datasets: [{ data: counts,
+        backgroundColor: ['#C7D2FE','#A5B4FC','#818CF8','#6366F1','#8B5CF6','#F59E0B','#14B8A6','#10B981'],
+        borderRadius: 6, borderSkipped: false }] },
       options: { responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false, callbacks: { label: (ctx) => `${ctx.parsed.y} leads` } } },
         scales: { x: { grid: { display: false }, ticks: { font: { size: 10.5 }, color: '#94A3B8', maxRotation: 30, minRotation: 30 } },
-          y: { beginAtZero: true, grid: { color: '#F1F2F6', drawBorder: false }, ticks: { font: { size: 11 }, color: '#94A3B8', stepSize: 30 } } } }
+          y: { beginAtZero: true, grid: { color: '#F1F2F6', drawBorder: false }, ticks: { font: { size: 11 }, color: '#94A3B8', precision: 0 } } } }
     });
-
-    new Chart(document.getElementById('tempChart'), {
-      type: 'doughnut',
-      data: { labels: ['Hot','Warm','Cold','Junk'], datasets: [{ data: [42,78,96,32], backgroundColor: ['#EF4444','#F97316','#3B82F6','#94A3B8'], borderWidth: 0, hoverOffset: 6 }] },
-      options: { responsive: true, maintainAspectRatio: false, cutout: '70%',
-        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false,
-          callbacks: { label: (ctx) => { const t = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${ctx.parsed} (${((ctx.parsed/t)*100).toFixed(0)}%)`; } } } } },
-      plugins: [{ id: 'centerText', beforeDraw: (chart) => {
-        const { ctx, chartArea: { width, height, top, left } } = chart;
-        ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#0F172A'; ctx.font = '700 22px Inter';
-        ctx.fillText('248', left + width / 2, top + height / 2 - 6);
-        ctx.fillStyle = '#94A3B8'; ctx.font = '500 11px Inter';
-        ctx.fillText('Total Leads', left + width / 2, top + height / 2 + 14);
-        ctx.restore(); } }]
-    });
-
-    const inflowLabels = [];
-    for (let i = 13; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); inflowLabels.push(d.getDate() + ' ' + d.toLocaleDateString('en-IN', { month: 'short' })); }
-    new Chart(document.getElementById('inflowChart'), {
-      type: 'bar',
-      data: { labels: inflowLabels, datasets: [{ data: [8,12,6,14,9,11,7,15,10,13,18,16,14,21],
-        backgroundColor: (ctx) => ctx.dataIndex === ctx.dataset.data.length - 1 ? '#6366F1' : '#C7D2FE', borderRadius: 5, borderSkipped: false, maxBarThickness: 22 }] },
-      options: { responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false, callbacks: { label: (ctx) => `${ctx.parsed.y} new leads` } } },
-        scales: { x: { grid: { display: false }, ticks: { font: { size: 10.5 }, color: '#94A3B8' } },
-          y: { beginAtZero: true, grid: { color: '#F1F2F6', drawBorder: false }, ticks: { font: { size: 11 }, color: '#94A3B8' } } } }
-    });
-
-    new Chart(document.getElementById('revenueChart'), {
-      type: 'line',
-      data: { labels: ['Dec','Jan','Feb','Mar','Apr','May'],
-        datasets: [{ data: [4.2,5.8,5.1,6.9,7.4,8.75], borderColor: '#6366F1',
-          backgroundColor: (ctx) => { const { chart } = ctx; const { ctx: c, chartArea } = chart; if (!chartArea) return null;
-            const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom); g.addColorStop(0,'rgba(99,102,241,0.25)'); g.addColorStop(1,'rgba(99,102,241,0)'); return g; },
-          fill: true, tension: 0.4, borderWidth: 2.5, pointBackgroundColor: '#6366F1', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6 }] },
-      options: { responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false, callbacks: { label: (ctx) => `₹${ctx.parsed.y.toFixed(2)} Lakhs` } } },
-        scales: { x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#94A3B8' } },
-          y: { beginAtZero: true, grid: { color: '#F1F2F6', drawBorder: false }, ticks: { font: { size: 11 }, color: '#94A3B8', callback: (v) => '₹' + v + 'L' } } } }
-    });
-  </script>
-<script>
-requireAuth().then(async session => {
-  if (!session) return;
-  // Update user name in greeting
-  const meta = session.user.user_metadata || {};
-  const name = (meta.full_name || session.user.email || 'there').split(' ')[0];
-  const el = document.getElementById('userName');
-  if (el) el.textContent = name;
-
-  // Load real KPIs from Bigin
-  try {
-    const data = await CRM.leads();
-    const leads = data.leads || [];
-    const total = leads.length;
-    const closed = leads.filter(l => l.stage === 'Closed Won').length;
-    const totalPaid = leads.reduce((s, l) => s + (parseFloat(l.amount_paid) || 0), 0);
-    const totalFee  = leads.reduce((s, l) => s + (parseFloat(l.total_fee) || 0), 0);
-    const pending   = totalFee - totalPaid;
-    const convRate  = total > 0 ? ((closed / total) * 100).toFixed(1) : '0.0';
-
-    document.getElementById('kpiLeads').textContent = total;
-    document.getElementById('kpiLeadsDelta').innerHTML = `<span class="muted">total in Bigin</span>`;
-    document.getElementById('kpiPending').textContent = `₹${pending.toLocaleString('en-IN')}`;
-    document.getElementById('kpiRevenue').textContent = `₹${totalPaid.toLocaleString('en-IN')}`;
-    document.getElementById('kpiConversion').textContent = convRate + '%';
-  } catch(e) {
-    console.warn('Dashboard KPI load failed:', e.message);
   }
 
-  // Load follow-ups count
-  try {
-    const t = await CRM.tasks({ status: 'Today' });
-    document.getElementById('kpiFollowups').textContent = (t.tasks || []).length;
-  } catch(e) {}
-});
-</script>
+  function renderQuality() {
+    const buckets = { Hot: 0, Warm: 0, Cold: 0, Unscored: 0 };
+    DATA.leads.forEach(l => {
+      const s = parseInt(l.score) || 0;
+      if (s === 0) buckets.Unscored++;
+      else if (s >= 8) buckets.Hot++;
+      else if (s >= 5) buckets.Warm++;
+      else buckets.Cold++;
+    });
+    const total = DATA.leads.length;
+    if (total === 0) {
+      document.getElementById('qualityChart').style.display = 'none';
+      document.getElementById('qualityEmpty').style.display = '';
+      document.getElementById('qualityEmpty').innerHTML = emptyState({ icon: 'pie-chart', title: 'No data', message: 'Add leads to see quality distribution.' });
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+    const colors = { Hot: '#EF4444', Warm: '#F97316', Cold: '#3B82F6', Unscored: '#94A3B8' };
+    const labels = Object.keys(buckets), data = Object.values(buckets);
+    new Chart(document.getElementById('qualityChart'), {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data, backgroundColor: labels.map(l => colors[l]), borderWidth: 0, hoverOffset: 6 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '70%',
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0F172A', padding: 10, cornerRadius: 8, displayColors: false } } }
+    });
+    document.getElementById('qualityLegend').innerHTML = labels.map((l, i) => `
+      <div class="donut-row">
+        <span class="donut-dot" style="background:${colors[l]}"></span>
+        <span class="donut-row-label">${l}</span>
+        <span class="donut-row-value">${data[i]}</span>
+        <span class="donut-row-pct">${total > 0 ? Math.round(data[i] / total * 100) : 0}%</span>
+      </div>`).join('');
+  }
+
+  function renderRecentLeads() {
+    const recent = [...DATA.leads]
+      .sort((a, b) => new Date(b.synced_at || 0) - new Date(a.synced_at || 0))
+      .slice(0, 5);
+    const body = document.getElementById('recentLeadsBody');
+    if (recent.length === 0) {
+      body.innerHTML = emptyState({ icon: 'users', title: 'No leads yet', message: 'Add your first lead or sync from Bigin.', action: 'Add Lead', actionId: 'recentAddLead' });
+      if (window.lucide) lucide.createIcons();
+      document.getElementById('recentAddLead').onclick = openAddLeadModal;
+      return;
+    }
+    body.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${recent.map((l, i) => `
+          <div style="display:flex;align-items:center;gap:12px;padding:10px;border-radius:8px;background:var(--bg)">
+            <div class="avatar sm a${(i % 6) + 1}">${fmt.initials(l.full_name)}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13px;color:var(--text-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.full_name || '—'}</div>
+              <div style="font-size:11.5px;color:var(--text-3)">${l.stage || '—'} · ${l.phone || l.email || '—'}</div>
+            </div>
+            <div style="font-size:11.5px;color:var(--text-3)">${fmt.dateShort(l.synced_at)}</div>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  function renderTodayTasks() {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const tasks = DATA.tasks
+      .filter(t => t.due_date && t.status !== 'Completed' && new Date(t.due_date) >= today && new Date(t.due_date) < tomorrow)
+      .slice(0, 5);
+    const body = document.getElementById('todayTasksBody');
+    if (tasks.length === 0) {
+      body.innerHTML = emptyState({ icon: 'calendar-check', title: 'No follow-ups today', message: 'All caught up. Schedule new follow-ups from the Follow-ups page.' });
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+    body.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${tasks.map(t => `
+          <div style="display:flex;align-items:center;gap:12px;padding:10px;border-radius:8px;background:var(--bg)">
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--primary-50);color:var(--primary-hover);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px">${fmt.initials(t.contact_name)}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13px;color:var(--text-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.subject || '—'}</div>
+              <div style="font-size:11.5px;color:var(--text-3)">${t.contact_name || '—'} · ${fmt.time(t.due_date)}</div>
+            </div>
+            <button class="btn-secondary" data-task-id="${t.zoho_id}" style="padding:5px 10px;font-size:11.5px" onclick="completeTask('${t.zoho_id}', this)">Done</button>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  async function completeTask(id, btn) {
+    btn.disabled = true; btn.textContent = '...';
+    try {
+      await CRM.completeTask(id);
+      showToast('Marked complete');
+      btn.closest('div[style*="background"]').style.opacity = '0.5';
+      btn.textContent = 'Done ✓';
+    } catch(e) { btn.disabled = false; btn.textContent = 'Done'; showToast(e.message, 'error'); }
+  }
+  window.completeTask = completeTask;
+
+  // ===== ADD LEAD MODAL =====
+  function openAddLeadModal() {
+    openModal({
+      title: 'Add New Lead',
+      submitLabel: 'Add to Bigin',
+      width: 520,
+      body: `
+        <div class="form-group">
+          <label class="form-label">Full Name *</label>
+          <input class="form-input" id="al_name" placeholder="e.g. Rahul Kumar" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input class="form-input" id="al_phone" placeholder="+91 98XXX XXXXX" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input class="form-input" id="al_email" type="email" placeholder="name@example.com" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description / Notes</label>
+          <textarea class="form-textarea" id="al_desc" placeholder="How did they reach out? What are they looking for?"></textarea>
+        </div>
+        <p class="form-hint">Lead will be created as a Contact in your Migrizo Consultants Bigin account.</p>`,
+      onSubmit: async () => {
+        const name  = document.getElementById('al_name').value.trim();
+        const phone = document.getElementById('al_phone').value.trim();
+        const email = document.getElementById('al_email').value.trim();
+        const desc  = document.getElementById('al_desc').value.trim();
+        if (!name) throw new Error('Name is required');
+
+        const [first, ...rest] = name.split(' ');
+        const last = rest.join(' ') || first;
+
+        const payload = {
+          First_Name:  first,
+          Last_Name:   last,
+          Phone:       phone || null,
+          Email:       email || null,
+          Description: desc || null
+        };
+        const res = await CRM.addLead(payload);
+        showToast('Lead created in Bigin');
+        await loadDashboard();
+      }
+    });
+  }
+  document.getElementById('addLeadBtn').onclick = openAddLeadModal;
+  document.getElementById('quickAddLead').onclick = openAddLeadModal;
+
+  // ===== AUTH + LOAD =====
+  requireAuth().then(session => {
+    if (!session) return;
+    loadDashboard();
+  });
+  </script>
 </body>
 </html>

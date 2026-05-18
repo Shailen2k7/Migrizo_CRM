@@ -6,61 +6,21 @@
 <title>Migrizo CRM — Follow-ups</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/styles.css">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
-  .followups-list { display: flex; flex-direction: column; gap: 10px; }
-  .fu-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px 16px;
-    display: flex; align-items: center; gap: 16px;
-    transition: all 0.15s ease;
-    position: relative;
-  }
-  .fu-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
-  .fu-card.overdue { border-left: 3px solid var(--red); }
-  .fu-card.today { border-left: 3px solid var(--orange); }
-  .fu-card.upcoming { border-left: 3px solid var(--blue); }
-  .fu-card.done { border-left: 3px solid var(--green); opacity: 0.7; }
-  .fu-time {
-    display: flex; flex-direction: column; align-items: center;
-    min-width: 64px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: var(--bg);
-  }
-  .fu-time-day { font-size: 10.5px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-  .fu-time-hr { font-size: 16px; color: var(--text-1); font-weight: 700; margin-top: 2px; letter-spacing: -0.02em; }
-  .fu-time.overdue { background: var(--red-bg); }
-  .fu-time.overdue .fu-time-day, .fu-time.overdue .fu-time-hr { color: var(--red-text); }
-  .fu-time.today { background: var(--orange-bg); }
-  .fu-time.today .fu-time-day, .fu-time.today .fu-time-hr { color: var(--orange-text); }
+  .fu-card { display: flex; align-items: center; gap: 14px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  .fu-card.overdue { border-left: 3px solid #EF4444; }
+  .fu-card.today { border-left: 3px solid #F59E0B; }
+  .fu-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--primary-50); color: var(--primary-hover); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; }
   .fu-body { flex: 1; min-width: 0; }
-  .fu-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-  .fu-name { font-size: 14px; font-weight: 600; color: var(--text-1); }
-  .fu-meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
-  .fu-notes { font-size: 12.5px; color: var(--text-2); margin-top: 6px; line-height: 1.45; }
-  .fu-actions { display: flex; align-items: center; gap: 6px; }
-  .fu-act {
-    width: 34px; height: 34px; border-radius: 8px;
-    background: var(--bg); color: var(--text-2);
-    display: flex; align-items: center; justify-content: center;
-    transition: all 0.15s ease;
-  }
-  .fu-act:hover { background: var(--primary-50); color: var(--primary); transform: translateY(-1px); }
-  .fu-act i { width: 16px; height: 16px; }
-  .fu-act.call:hover { background: var(--green-bg); color: var(--green-text); }
-  .fu-act.wa:hover { background: #DCFCE7; color: #15803D; }
-  .fu-act.done:hover { background: var(--green-bg); color: var(--green-text); }
-  .fu-act.snooze:hover { background: var(--amber-bg); color: var(--amber-text); }
-
-  .fu-section-title { font-size: 11px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 12px 4px 8px; display: flex; align-items: center; gap: 8px; }
-  .fu-section-title .count { background: var(--bg); color: var(--text-2); padding: 1px 7px; border-radius: 999px; font-size: 10.5px; }
-  .fu-empty { text-align: center; padding: 40px; color: var(--text-3); font-size: 13px; }
+  .fu-title { font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 2px; }
+  .fu-meta { font-size: 12px; color: var(--text-3); display: flex; gap: 10px; flex-wrap: wrap; }
+  .fu-actions { display: flex; gap: 6px; }
+  .fu-list { display: flex; flex-direction: column; gap: 10px; }
+  .fu-section-title { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-3); font-weight: 600; margin: 18px 0 8px; }
 </style>
 </head>
 <body>
@@ -70,7 +30,7 @@
     <nav class="nav">
       <a class="nav-item" href="index.html"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
       <a class="nav-item" href="leads.html"><i data-lucide="users"></i><span>Leads</span></a>
-      <a class="nav-item active" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span><span class="nav-badge">18</span></a>
+      <a class="nav-item active" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span></a>
       <a class="nav-item" href="payments.html"><i data-lucide="indian-rupee"></i><span>Payments</span></a>
       <a class="nav-item" href="calendar.html"><i data-lucide="calendar"></i><span>Calendar</span></a>
       <a class="nav-item" href="reports.html"><i data-lucide="bar-chart-3"></i><span>Reports</span></a>
@@ -80,244 +40,176 @@
     </nav>
     <div class="sidebar-footer">
       <div class="user-card">
-        <div class="user-avatar">MV</div>
-        <div class="user-meta"><div class="user-name">Manik Verma</div><div class="user-role">Admin</div></div>
-        <i data-lucide="chevrons-up-down" class="chev" style="width:16px;height:16px"></i>
-      </div>
-      <div class="quick-add">
-        <div class="quick-add-icon"><i data-lucide="plus" style="width:16px;height:16px"></i></div>
-        <div class="quick-add-text"><strong>Quick Add Lead</strong><span>Add a new client</span></div>
+        <div class="user-avatar">—</div>
+        <div class="user-meta"><div class="user-name">Loading...</div><div class="user-role">—</div></div>
       </div>
     </div>
   </aside>
 
   <main class="main">
     <header class="topbar">
-      <div class="page-title"><h1>Follow-ups</h1><p>Your operational pulse — never miss a callback</p></div>
-      <div class="search">
-        <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
-        <input type="text" placeholder="Search follow-ups..." />
-        <span class="search-kbd">⌘ K</span>
+      <div class="greeting">
+        <h1>Follow-ups</h1>
+        <p>Track and complete every follow-up from one place</p>
       </div>
-      <div class="topbar-actions">
-        <button class="icon-btn ai-btn"><i data-lucide="sparkles" style="width:18px;height:18px"></i></button>
-        <button class="icon-btn"><i data-lucide="bell" style="width:18px;height:18px"></i><span class="dot">12</span></button>
-        <button class="icon-btn"><i data-lucide="sun" style="width:18px;height:18px"></i></button>
-        <button class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px"></i><span>New Follow-up</span></button>
+      <div class="topbar-right">
+        <button class="btn-add" id="addTaskBtn"><i data-lucide="plus" style="width:16px;height:16px"></i> New Follow-up</button>
       </div>
     </header>
 
-    <div class="content">
-      <section class="stats-grid cols-5">
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Overdue</span><span class="stat-icon-tiny red"><i data-lucide="alert-triangle"></i></span></div><div class="stat-value">7</div><div class="stat-delta down"><i data-lucide="arrow-up"></i> 3 <span class="muted">since yesterday</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Today</span><span class="stat-icon-tiny orange"><i data-lucide="calendar"></i></span></div><div class="stat-value">8</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 12% <span class="muted">vs avg</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Tomorrow</span><span class="stat-icon-tiny blue"><i data-lucide="calendar-clock"></i></span></div><div class="stat-value">6</div><div class="stat-delta"><span class="muted">scheduled</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">This Week</span><span class="stat-icon-tiny violet"><i data-lucide="layers"></i></span></div><div class="stat-value">24</div><div class="stat-delta"><span class="muted">remaining</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Completed</span><span class="stat-icon-tiny green"><i data-lucide="check-circle"></i></span></div><div class="stat-value">12</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> today</div></div>
-      </section>
-
-      <div class="ai-mini">
-        <div class="ai-mini-icon"><i data-lucide="sparkles"></i></div>
-        <div class="ai-mini-text"><strong>AI COO insight:</strong> <span class="highlight">Block 10AM–12PM</span> — 5 of 8 today's follow-ups fall in that window. Batch them to save ~90 minutes.</div>
-        <a class="ai-mini-act">Show batching plan <i data-lucide="arrow-right"></i></a>
+    <section class="content">
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Overdue</span><span class="stat-icon-tiny orange"><i data-lucide="alert-circle"></i></span></div><div class="stat-value" id="kOverdue">—</div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Today</span><span class="stat-icon-tiny"><i data-lucide="calendar-check"></i></span></div><div class="stat-value" id="kToday">—</div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Upcoming</span><span class="stat-icon-tiny blue"><i data-lucide="calendar"></i></span></div><div class="stat-value" id="kUpcoming">—</div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Completed</span><span class="stat-icon-tiny green"><i data-lucide="check-circle"></i></span></div><div class="stat-value" id="kDone">—</div></div>
       </div>
 
-      <div class="tabs" data-tab-group="fu-tabs">
-        <div class="tab active" data-tab-target="all">All <span class="tab-count">45</span></div>
-        <div class="tab" data-tab-target="overdue">Overdue <span class="tab-count" style="background:var(--red-bg);color:var(--red-text)">7</span></div>
-        <div class="tab" data-tab-target="today">Today <span class="tab-count" style="background:var(--orange-bg);color:var(--orange-text)">8</span></div>
-        <div class="tab" data-tab-target="upcoming">Upcoming <span class="tab-count">18</span></div>
-        <div class="tab" data-tab-target="done">Completed <span class="tab-count" style="background:var(--green-bg);color:var(--green-text)">12</span></div>
+      <div id="taskList" style="margin-top:16px">
+        <div class="loading-block"><span class="spinner"></span> Loading from Bigin...</div>
       </div>
-
-      <div class="followups-list">
-
-        <div class="fu-section-title">Overdue <span class="count">7</span></div>
-
-        <div class="fu-card overdue">
-          <div class="fu-time overdue"><span class="fu-time-day">2 days ago</span><span class="fu-time-hr">3:00 PM</span></div>
-          <div class="avatar a1">RM</div>
-          <div class="fu-body">
-            <div class="fu-head"><span class="fu-name">Rajesh Mehta</span><span class="badge red">Overdue</span><span class="badge blue">Qualified</span></div>
-            <div class="fu-meta">Score 8 · +91 99876 54321 · Last: discovery call 5 days ago</div>
-            <div class="fu-notes">Promised proposal within 48hrs. Has not been contacted since. Urgent — high closing intent.</div>
-          </div>
-          <div class="fu-actions">
-            <button class="fu-act call" title="Call"><i data-lucide="phone"></i></button>
-            <button class="fu-act wa" title="WhatsApp"><i data-lucide="message-circle"></i></button>
-            <button class="fu-act snooze" title="Reschedule"><i data-lucide="clock"></i></button>
-            <button class="fu-act done" title="Mark complete"><i data-lucide="check"></i></button>
-          </div>
-        </div>
-
-        <div class="fu-card overdue">
-          <div class="fu-time overdue"><span class="fu-time-day">1 day ago</span><span class="fu-time-hr">11:00 AM</span></div>
-          <div class="avatar a5">VK</div>
-          <div class="fu-body">
-            <div class="fu-head"><span class="fu-name">Vikram Khanna</span><span class="badge red">Overdue</span><span class="badge teal">Partial Payment</span></div>
-            <div class="fu-meta">Score 7 · +91 88765 43210 · Last: Kickstart paid 18 days ago</div>
-            <div class="fu-notes">Profile docs pending for 2 weeks. Needs nudge to move to Endorsement stage.</div>
-          </div>
-          <div class="fu-actions">
-            <button class="fu-act call"><i data-lucide="phone"></i></button>
-            <button class="fu-act wa"><i data-lucide="message-circle"></i></button>
-            <button class="fu-act snooze"><i data-lucide="clock"></i></button>
-            <button class="fu-act done"><i data-lucide="check"></i></button>
-          </div>
-        </div>
-
-        <div class="fu-section-title">Today <span class="count">8</span></div>
-
-        <div class="fu-card today">
-          <div class="fu-time today"><span class="fu-time-day">Today</span><span class="fu-time-hr">10:30 AM</span></div>
-          <div class="avatar a3">AS</div>
-          <div class="fu-body">
-            <div class="fu-head"><span class="fu-name">Anita Singh</span><span class="badge orange">In 30 min</span><span class="badge blue">Qualified</span></div>
-            <div class="fu-meta">Score 7 · +91 91234 56789 · Consultation prep call</div>
-            <div class="fu-notes">Profile looks strong. Walk through consultation agenda + ask about timeline urgency.</div>
-          </div>
-          <div class="fu-actions">
-            <button class="fu-act call"><i data-lucide="phone"></i></button>
-            <button class="fu-act wa"><i data-lucide="message-circle"></i></button>
-            <button class="fu-act snooze"><i data-lucide="clock"></i></button>
-            <button class="fu-act done"><i data-lucide="check"></i></button>
-          </div>
-        </div>
-
-        <div class="fu-card today">
-          <div class="fu-time today"><span class="fu-time-day">Today</span><span class="fu-time-hr">12:00 PM</span></div>
-          <div class="avatar a4">PS</div>
-          <div class="fu-body">
-            <div class="fu-head"><span class="fu-name">Pooja Saxena</span><span class="badge orange">In 2hrs</span><span class="badge green">Connected</span></div>
-            <div class="fu-meta">Score 8 · +91 77665 44332 · Re-engage after weekend</div>
-            <div class="fu-notes">Showed strong interest on Friday. Confirm timeline + send Kickstart payment link.</div>
-          </div>
-          <div class="fu-actions">
-            <button class="fu-act call"><i data-lucide="phone"></i></button>
-            <button class="fu-act wa"><i data-lucide="message-circle"></i></button>
-            <button class="fu-act snooze"><i data-lucide="clock"></i></button>
-            <button class="fu-act done"><i data-lucide="check"></i></button>
-          </div>
-        </div>
-
-        <div class="fu-card today">
-          <div class="fu-time today"><span class="fu-time-day">Today</span><span class="fu-time-hr">2:30 PM</span></div>
-          <div class="avatar a6">RG</div>
-          <div class="fu-body">
-            <div class="fu-head"><span class="fu-name">Rohit Gupta</span><span class="badge orange">In 4hrs</span><span class="badge purple">Consultation Scheduled</span></div>
-            <div class="fu-meta">Score 9 · +91 66554 33221 · Pre-consultation reminder</div>
-            <div class="fu-notes">Consultation at 3:00 PM. Send Zoom link 30min prior.</div>
-          </div>
-          <div class="fu-actions">
-            <button class="fu-act call"><i data-lucide="phone"></i></button>
-            <button class="fu-act wa"><i data-lucide="message-circle"></i></button>
-            <button class="fu-act snooze"><i data-lucide="clock"></i></button>
-            <button class="fu-act done"><i data-lucide="check"></i></button>
-          </div>
-        </div>
-
-        <div class="fu-card today">
-          <div class="fu-time today"><span class="fu-time-day">Today</span><span class="fu-time-hr">4:00 PM</span></div>
-          <div class="avatar a7">AD</div>
-          <div class="fu-body">
-            <div class="fu-head"><span class="fu-name">Amit Das</span><span class="badge orange">Later today</span><span class="badge gray">Attempted</span></div>
-            <div class="fu-meta">Score 3 · +91 66554 43322 · 3rd attempt</div>
-            <div class="fu-notes">Two missed calls. Try WhatsApp first, then call. Disqualify if no response.</div>
-          </div>
-          <div class="fu-actions">
-            <button class="fu-act call"><i data-lucide="phone"></i></button>
-            <button class="fu-act wa"><i data-lucide="message-circle"></i></button>
-            <button class="fu-act snooze"><i data-lucide="clock"></i></button>
-            <button class="fu-act done"><i data-lucide="check"></i></button>
-          </div>
-        </div>
-
-        <div class="fu-section-title">Upcoming <span class="count">18</span></div>
-
-        <div class="fu-card upcoming">
-          <div class="fu-time"><span class="fu-time-day">Tomorrow</span><span class="fu-time-hr">10:30 AM</span></div>
-          <div class="avatar a1">RK</div>
-          <div class="fu-body">
-            <div class="fu-head"><span class="fu-name">Rahul Kumar</span><span class="badge blue">Tomorrow</span><span class="badge green">Connected</span></div>
-            <div class="fu-meta">Score 8 · +91 98765 43210 · Profile building check-in</div>
-            <div class="fu-notes">Walk through document checklist. Confirm everything submitted.</div>
-          </div>
-          <div class="fu-actions">
-            <button class="fu-act call"><i data-lucide="phone"></i></button>
-            <button class="fu-act wa"><i data-lucide="message-circle"></i></button>
-            <button class="fu-act snooze"><i data-lucide="clock"></i></button>
-            <button class="fu-act done"><i data-lucide="check"></i></button>
-          </div>
-        </div>
-
-        <div class="fu-card upcoming">
-          <div class="fu-time"><span class="fu-time-day">Wed 22</span><span class="fu-time-hr">12:30 PM</span></div>
-          <div class="avatar a4">SK</div>
-          <div class="fu-body">
-            <div class="fu-head"><span class="fu-name">Sandeep Kaur</span><span class="badge blue">In 5 days</span><span class="badge teal">Partial Payment</span></div>
-            <div class="fu-meta">Score 7 · +91 77665 54433 · Document review</div>
-            <div class="fu-notes">Confirm CV and recommendation letters received. Move to Endorsement.</div>
-          </div>
-          <div class="fu-actions">
-            <button class="fu-act call"><i data-lucide="phone"></i></button>
-            <button class="fu-act wa"><i data-lucide="message-circle"></i></button>
-            <button class="fu-act snooze"><i data-lucide="clock"></i></button>
-            <button class="fu-act done"><i data-lucide="check"></i></button>
-          </div>
-        </div>
-
-        <div class="fu-section-title">Completed Today <span class="count">12</span></div>
-
-        <div class="fu-card done">
-          <div class="fu-time"><span class="fu-time-day">Today</span><span class="fu-time-hr">9:15 AM</span></div>
-          <div class="avatar a3">NB</div>
-          <div class="fu-body">
-            <div class="fu-head"><span class="fu-name">Neha Bansal</span><span class="badge green">✓ Done</span></div>
-            <div class="fu-meta">Score 8 · Called for 18 minutes · Notes added</div>
-            <div class="fu-notes">Discussed Canada PR timeline. Sending proposal today.</div>
-          </div>
-          <div class="fu-actions">
-            <button class="fu-act"><i data-lucide="phone"></i></button>
-            <button class="fu-act"><i data-lucide="message-circle"></i></button>
-            <button class="fu-act"><i data-lucide="rotate-ccw"></i></button>
-          </div>
-        </div>
-
-      </div>
-    </div>
+    </section>
   </main>
 
   <script src="assets/app.js"></script>
-<script src="assets/auth.js"></script>
+  <script src="assets/auth.js"></script>
   <script>
-    // Mark complete with feedback
-    document.querySelectorAll('.fu-act.done').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const card = btn.closest('.fu-card');
-        if (card.classList.contains('done')) return;
-        card.classList.remove('overdue','today','upcoming');
-        card.classList.add('done');
-        const head = card.querySelector('.fu-head');
-        const existingBadges = head.querySelectorAll('.badge');
-        existingBadges.forEach(b => b.remove());
-        const doneBadge = document.createElement('span');
-        doneBadge.className = 'badge green';
-        doneBadge.textContent = '✓ Done';
-        head.appendChild(doneBadge);
-        window.showToast('Marked complete');
-      });
-    });
+  let TASKS = [], LEADS = [];
 
-    document.querySelectorAll('.fu-act.snooze').forEach(btn => {
-      btn.addEventListener('click', () => window.showToast('Rescheduled to tomorrow'));
+  async function loadAll() {
+    try {
+      const [tResp, lResp] = await Promise.all([
+        CRM.tasks(),
+        CRM.leads().catch(() => ({ leads: [] }))
+      ]);
+      TASKS = tResp.tasks || [];
+      LEADS = lResp.leads || [];
+      render();
+    } catch(err) {
+      document.getElementById('taskList').innerHTML = `<div class="loading-block" style="color:#DC2626">⚠️ ${err.message}</div>`;
+    }
+  }
+
+  function render() {
+    const today    = new Date(); today.setHours(0,0,0,0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const overdue   = TASKS.filter(t => t.due_date && t.status !== 'Completed' && new Date(t.due_date) < today);
+    const todayList = TASKS.filter(t => t.due_date && t.status !== 'Completed' && new Date(t.due_date) >= today && new Date(t.due_date) < tomorrow);
+    const upcoming  = TASKS.filter(t => t.due_date && t.status !== 'Completed' && new Date(t.due_date) >= tomorrow);
+    const done      = TASKS.filter(t => t.status === 'Completed');
+
+    document.getElementById('kOverdue').textContent  = overdue.length;
+    document.getElementById('kToday').textContent    = todayList.length;
+    document.getElementById('kUpcoming').textContent = upcoming.length;
+    document.getElementById('kDone').textContent     = done.length;
+
+    const list = document.getElementById('taskList');
+    if (TASKS.length === 0) {
+      list.innerHTML = emptyState({ icon: 'calendar-clock', title: 'No follow-ups yet', message: 'Create your first follow-up task. It will sync to Bigin Tasks.', action: 'New Follow-up', actionId: 'emptyAdd' });
+      if (window.lucide) lucide.createIcons();
+      document.getElementById('emptyAdd').onclick = openAddTask;
+      return;
+    }
+
+    let html = '';
+    if (overdue.length) html += renderSection('Overdue', overdue, 'overdue');
+    if (todayList.length) html += renderSection('Today', todayList, 'today');
+    if (upcoming.length) html += renderSection('Upcoming', upcoming, '');
+    if (done.length) html += renderSection('Completed (recent)', done.slice(0, 10), '');
+    list.innerHTML = html;
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function renderSection(title, tasks, cls) {
+    return `<div class="fu-section-title">${title} (${tasks.length})</div>
+      <div class="fu-list">
+        ${tasks.map(t => `
+          <div class="fu-card ${cls}">
+            <div class="fu-avatar">${fmt.initials(t.contact_name)}</div>
+            <div class="fu-body">
+              <div class="fu-title">${t.subject || 'Follow-up'}</div>
+              <div class="fu-meta">
+                <span>${t.contact_name || '—'}</span>
+                <span>•</span>
+                <span>${fmt.date(t.due_date)} ${fmt.time(t.due_date)}</span>
+                ${t.priority ? `<span>•</span><span>Priority: ${t.priority}</span>` : ''}
+              </div>
+            </div>
+            <div class="fu-actions">
+              ${t.status !== 'Completed' ? `<button class="btn-secondary" style="padding:6px 10px;font-size:12px" onclick="markDone('${t.zoho_id}', this)">Mark Done</button>` : `<span style="font-size:12px;color:var(--text-3)">✓ Completed</span>`}
+            </div>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  window.markDone = async function(id, btn) {
+    btn.disabled = true; btn.textContent = '...';
+    try {
+      await CRM.completeTask(id);
+      showToast('Marked complete');
+      await loadAll();
+    } catch(e) { showToast(e.message, 'error'); btn.disabled = false; btn.textContent = 'Mark Done'; }
+  };
+
+  function openAddTask() {
+    openModal({
+      title: 'New Follow-up',
+      submitLabel: 'Create in Bigin',
+      width: 480,
+      body: `
+        <div class="form-group">
+          <label class="form-label">Subject *</label>
+          <input class="form-input" id="t_subject" placeholder="e.g. Call about visa documents" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Linked Lead</label>
+          <select class="form-select" id="t_contact">
+            <option value="">— None —</option>
+            ${LEADS.map(l => `<option value="${l.zoho_id}">${l.full_name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Due Date *</label>
+            <input class="form-input" id="t_date" type="date" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Priority</label>
+            <select class="form-select" id="t_priority">
+              <option>Normal</option><option>High</option><option>Highest</option><option>Low</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea class="form-textarea" id="t_desc"></textarea>
+        </div>`,
+      onSubmit: async () => {
+        const subject = document.getElementById('t_subject').value.trim();
+        const contactId = document.getElementById('t_contact').value;
+        const date = document.getElementById('t_date').value;
+        const priority = document.getElementById('t_priority').value;
+        const desc = document.getElementById('t_desc').value.trim();
+        if (!subject) throw new Error('Subject is required');
+        if (!date)    throw new Error('Due date is required');
+        const payload = {
+          Subject:     subject,
+          Due_Date:    date,
+          Priority:    priority,
+          Status:      'Not Started',
+          Description: desc || null
+        };
+        if (contactId) payload.Who_Id = { id: contactId };
+        await CRM.addTask(payload);
+        showToast('Follow-up created');
+        await loadAll();
+      }
     });
-    document.querySelectorAll('.fu-act.call').forEach(btn => {
-      btn.addEventListener('click', () => window.showToast('Opening dialer...'));
-    });
-    document.querySelectorAll('.fu-act.wa').forEach(btn => {
-      btn.addEventListener('click', () => window.showToast('Opening WhatsApp...'));
-    });
+  }
+  document.getElementById('addTaskBtn').onclick = openAddTask;
+
+  requireAuth().then(s => { if (s) loadAll(); });
   </script>
-<script>requireAuth();</script>
 </body>
 </html>
