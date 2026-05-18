@@ -1,11 +1,17 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
+const PLACEHOLDER_URL = 'https://placeholder.supabase.co';
+const PLACEHOLDER_KEY = 'placeholder-anon-key';
+
 export async function createClient() {
   const cookieStore = await cookies();
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || PLACEHOLDER_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || PLACEHOLDER_KEY;
+
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    key,
     {
       cookies: {
         getAll() {
@@ -17,7 +23,7 @@ export async function createClient() {
               cookieStore.set(name, value, options)
             );
           } catch {
-            // Setting cookies from Server Components is fine but Next throws if called outside response context.
+            // Server Components can't set cookies outside response context. Safe to ignore.
           }
         },
       },

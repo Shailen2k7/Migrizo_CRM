@@ -2,13 +2,18 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 const PUBLIC_PATHS = ['/login', '/auth/callback'];
+const PLACEHOLDER_URL = 'https://placeholder.supabase.co';
+const PLACEHOLDER_KEY = 'placeholder-anon-key';
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || PLACEHOLDER_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || PLACEHOLDER_KEY;
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    key,
     {
       cookies: {
         getAll() {
@@ -25,25 +30,24 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // IMPORTANT: getUser() refreshes the session and writes new cookies.
+  // If env vars are placeholder, skip auth checks (build phase or misconfigured)
+  if (url === PLACEHOLDER_URL) return response;
+
   const { data: { user } } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
-
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
 
-  // Not logged in + not on a public route → /login
   if (!user && !isPublic) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
-    url.searchParams.set('next', path);
-    return NextResponse.redirect(url);
+    const u = request.nextUrl.clone();
+    u.pathname = '/login';
+    u.searchParams.set('next', path);
+    return NextResponse.redirect(u);
   }
 
-  // Logged in + on /login → /dashboard
   if (user && path === '/login') {
-    const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
-    return NextResponse.redirect(url);
+    const u = request.nextUrl.clone();
+    u.pathname = '/dashboard';
+    return NextResponse.redirect(u);
   }
 
   return response;
