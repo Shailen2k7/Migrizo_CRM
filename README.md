@@ -1,141 +1,207 @@
-# Migrizo CRM — Operations OS
+# Migrizo CRM
 
-> A world-class operational CRM for visa consultancy. **Not a traditional CRM** — this is an **Operations OS** that sits on top of Zoho Bigin and gives the team a fast, collaborative, realtime execution layer.
+A production-grade visa consultancy CRM with multi-user support, built on **Next.js 15** + **Supabase**.
 
-Built for Migrizo, UK Global Talent Visa consulting.
+## Features
 
----
+**Dashboard** — Live KPIs, lead funnel, temperature donut, daily inflow, revenue trend, AI insights, recent activity, quick actions.
+**Leads** — Sortable/filterable table, inline stage editing, lead drawer with notes & payments tabs, segment filters (Hot / Today / Overdue / Proposal / Won), CSV export.
+**Payments** — Milestone tracking (Kickstart 25% → Profile Building 35% → Endorsement 25% → Post Approval 15%), client payment rows with progress dots, overdue detection.
+**CSV/Excel Import** — Auto-detects Zoho Bigin fields, normalizes phone/email/stages/dates, detects duplicates, shows preview with errors before importing.
+**Settings** — Theme toggle, danger zone with "Clear sample data" and "Reset workspace" (typed confirmation).
+**AI COO** — Computed insights from live data (overdue follow-ups, hot leads, stale clients, conversion rate, suggested actions).
+**Auth** — Google OAuth + email magic link via Supabase Auth.
+**Multi-user** — Each signup gets an isolated workspace via DB trigger. RLS policies enforce workspace scoping on every query.
+**Realtime** — Changes from other users on the same workspace appear instantly via Supabase realtime subscriptions.
 
-## Philosophy
+## Stack
 
-Zoho Bigin remains the **source of truth** for contacts, deals, tasks and document storage. This frontend is the **operational layer** — designed for speed, clarity and zero-click execution.
+- Next.js 15 (App Router) + React 19
+- TypeScript (strict)
+- Supabase (Auth + Postgres + Realtime + RLS)
+- TailwindCSS + custom design tokens with full dark mode
+- TanStack Table v8 for the leads table
+- Framer Motion for drawer / modal animations
+- Papa Parse (CSV) + SheetJS (Excel) for imports
+- Sonner for toasts
+- Lucide icons
 
-**Design language:** Attio · Linear · Notion · Stripe Dashboard. Clean white interface, soft shadows, premium typography, elegant tables, AI-first.
+## Setup
 
----
+### 1. Install
 
-## Project Structure
+```bash
+cd migrizo-crm
+npm install
+```
+
+### 2. Create a Supabase project
+
+1. Go to https://supabase.com → New project.
+2. Once it's provisioned, go to **SQL Editor** → New query.
+3. Open `supabase/migrations/001_initial_schema.sql` from this repo, paste the entire contents into the editor, and click **Run**. This creates all tables, RLS policies, the auto-workspace trigger, and the reset RPC.
+4. Go to **Project Settings → API**. Copy:
+   - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
+   - `anon public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+### 3. Configure Google OAuth (optional but recommended)
+
+1. In Supabase: **Authentication → Providers → Google**. Toggle on.
+2. Get OAuth credentials from https://console.cloud.google.com (Create OAuth client → Web). Set the authorized redirect URI to the one Supabase shows (looks like `https://<project>.supabase.co/auth/v1/callback`).
+3. Paste the Client ID and Client Secret into Supabase. Save.
+
+For email magic links, no extra config is needed — it works out of the box.
+
+### 4. Environment variables
+
+Copy `.env.local.example` to `.env.local`:
+
+```bash
+cp .env.local.example .env.local
+```
+
+Fill in:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
+
+### 5. Run locally
+
+```bash
+npm run dev
+```
+
+Open http://localhost:3000 → you'll be redirected to `/login`. Sign in with Google or request a magic link. A workspace is created automatically.
+
+### 6. Deploy to Netlify
+
+1. Push to GitHub.
+2. On https://app.netlify.com → **Add new site → Import from Git**.
+3. Pick your repo. Netlify auto-detects Next.js.
+4. Add environment variables (same as `.env.local`) under **Site settings → Environment variables**. Update `NEXT_PUBLIC_SITE_URL` to your Netlify URL.
+5. In your Supabase project: **Authentication → URL Configuration**. Add your Netlify URL to **Site URL** and to **Redirect URLs** (e.g. `https://your-site.netlify.app/**`).
+6. Deploy.
+
+## Multi-user setup
+
+Anyone who signs up gets their own isolated workspace. Their data is invisible to others — RLS enforces this at the database layer, not just in app code.
+
+To invite a teammate into the **same** workspace (future feature), you'd need to:
+1. Run an `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (...)` from a server-side admin context.
+2. (A team invite UI is planned for v2.)
+
+## Database structure
+
+- `workspaces` — One per signup (auto-created via trigger).
+- `workspace_members` — Maps users to workspaces with a role (`admin` or `member`). Admins can delete leads/payments and reset workspace data.
+- `leads` — All client records, scoped by `workspace_id`.
+- `notes` — History attached to each lead.
+- `payments` — Milestone-based payments with status (pending / paid / overdue).
+- `activity` — Audit log of every action.
+
+All tables have RLS enabled. Every policy uses the `user_workspaces()` helper function so users only see rows from their own workspaces.
+
+## CSV/Excel import
+
+The importer auto-detects these column names (case- and space-insensitive):
+
+| Canonical field   | Detected from                                                                |
+|-------------------|------------------------------------------------------------------------------|
+| Full name         | Full Name, Name, Contact Name, Lead Name, or First Name + Last Name combined |
+| Phone             | Phone, Phone Number, Mobile, Mobile Number, Contact Number, Cell             |
+| Email             | Email, Email Address, E-mail                                                 |
+| Visa type         | Visa Type, Visa, Product, Service, Category                                  |
+| Stage             | Stage, Lead Stage, Status, Lead Status, Deal Stage                           |
+| Last note         | Notes, Description, Comments, Remarks                                        |
+| Next follow-up    | Next Follow-up, Follow-up Date, Next Action Date                             |
+| Payment status    | Payment Status, Paid Status                                                  |
+| Amount paid       | Amount, Amount Paid, Paid Amount, Revenue, Value                             |
+
+It also normalizes:
+- **Phone** → `+91 XXXXX XXXXX` Indian format
+- **Stage** → mapped to canonical stages (won, lost, proposal, qualified, etc.)
+- **Dates** → ISO, accepts DD/MM/YYYY and DD-MM-YYYY
+- **Duplicates** → detected by phone OR email match against existing leads
+
+## Resetting data
+
+Settings → Danger zone has two options:
+
+1. **Clear samples** — Deletes only leads marked `is_sample = true` (none by default since this build doesn't ship with sample data).
+2. **Reset workspace** — Deletes ALL leads, payments, notes, and activity. Requires typing `RESET` to confirm. Admin-only.
+
+Both call the `reset_workspace(ws_id, sample_only)` RPC which enforces admin role server-side.
+
+## Project structure
 
 ```
 migrizo-crm/
-├── index.html              Dashboard — KPIs, charts, AI insights
-├── leads.html              Master Leads Workspace (heart of system)
-├── followups.html          Follow-up Center — overdue, today, upcoming
-├── payments.html           Payment Tracker — milestone pipeline
-├── calendar.html           Unified calendar — all events
-├── reports.html            Deep analytics & funnel reporting
-├── ai-coo.html             AI COO — daily briefing + chat
-├── settings.html           Profile, team, stages, integrations
-├── assets/
-│   ├── styles.css          Shared design system (single source)
-│   └── app.js              Shared interactions (sidebar, toast, tabs)
-├── README.md
-├── INTEGRATION_ZOHO_BIGIN.md
-├── DEPLOYMENT.md
-├── _redirects              Netlify clean URLs
-├── netlify.toml            Netlify config + security headers
-└── .gitignore
+├── app/
+│   ├── login/page.tsx          ← Google + magic link login
+│   ├── auth/callback/route.ts  ← OAuth callback
+│   ├── (app)/                  ← Protected routes (require auth)
+│   │   ├── layout.tsx          ← Fetches user/workspace, mounts shell
+│   │   ├── dashboard/page.tsx
+│   │   ├── leads/page.tsx
+│   │   ├── payments/page.tsx
+│   │   ├── settings/page.tsx
+│   │   └── ai/page.tsx
+│   ├── layout.tsx              ← Root layout (Inter font, Sonner)
+│   ├── globals.css             ← Design tokens + dark mode
+│   └── page.tsx                ← Redirects to /dashboard
+├── components/
+│   ├── shared/
+│   │   ├── app-provider.tsx    ← Global state, CRUD, realtime
+│   │   ├── app-shell.tsx       ← Wraps everything, owns modals/drawers
+│   │   └── modal.tsx
+│   ├── leads/
+│   │   ├── leads-table.tsx
+│   │   ├── lead-drawer.tsx
+│   │   ├── add-lead-dialog.tsx
+│   │   └── import-dialog.tsx   ← THE big import system
+│   ├── payments/record-payment-dialog.tsx
+│   ├── dashboard/
+│   │   ├── charts.tsx          ← Funnel, donut, daily, revenue
+│   │   └── dashboard-bits.tsx  ← KPIs, AI strip, activity feed
+│   ├── sidebar.tsx
+│   └── topbar.tsx
+├── lib/
+│   ├── supabase/
+│   │   ├── client.ts           ← Browser client
+│   │   ├── server.ts           ← Server client (RSC)
+│   │   └── middleware.ts       ← Session refresh + route guard
+│   ├── types.ts                ← All TS types + display metadata
+│   ├── utils.ts                ← formatINR, timeAgo, normalizePhone, etc.
+│   └── csv-import.ts           ← Zoho Bigin auto-detection + preview
+├── supabase/migrations/001_initial_schema.sql
+├── middleware.ts               ← Routes Supabase session check
+├── tailwind.config.ts
+├── next.config.js
+├── netlify.toml
+├── package.json
+├── tsconfig.json
+└── .env.local.example
 ```
 
----
+## Production checklist
 
-## Current State
+- [ ] Ran SQL migration in Supabase
+- [ ] Set environment variables in Netlify
+- [ ] Added Netlify URL to Supabase **Site URL** and **Redirect URLs**
+- [ ] Tested signup → workspace auto-created
+- [ ] Tested CSV import with a real Zoho Bigin export
+- [ ] Tested reset workspace (typed RESET, data cleared)
+- [ ] Tested with a second user → confirmed they cannot see the first user's data (RLS working)
 
-| Page | Status | Notes |
-|---|---|---|
-| Dashboard | ✅ Complete | 6 KPI cards, 4 charts, AI COO insights panel |
-| Leads | ✅ Complete | Inline editing, drawer, popovers, bulk actions, 7-stage pipeline |
-| Follow-ups | ✅ Complete | Tabs (overdue/today/upcoming/done), quick actions, urgency colors |
-| Payments | ✅ Complete | Pipeline kanban + table view, milestone phases |
-| Calendar | ✅ Complete | Month grid + today's schedule sidebar |
-| Reports | ✅ Complete | Funnel, revenue, aging, conversion, time-per-stage, ROI |
-| AI COO | ✅ Complete | Daily briefing, 6 insight cards, chat interface |
-| Settings | ✅ Complete | 7 panes — profile, team, stages, integrations, notifications, appearance |
+## Troubleshooting
 
-All pages share `assets/styles.css` and `assets/app.js` — change once, applies everywhere.
+**"Workspace not found" after signup** — The DB trigger didn't run. Confirm `001_initial_schema.sql` was executed without errors in Supabase SQL Editor.
 
----
+**OAuth redirect mismatch** — Add the exact Netlify URL (with `https://` and no trailing slash) to Supabase's redirect allowlist.
 
-## Tech Stack
+**Import not detecting fields** — Make sure your CSV column headers match the patterns in the table above. Unknown columns are listed under "Ignored columns" in the preview.
 
-### Phase 1 — what's here (this MVP)
-Static HTML + vanilla CSS + vanilla JS. Chart.js for charts, Lucide for icons, Inter from Google Fonts. Drag-and-drop deployable to Netlify in 30 seconds. **Zero build step.**
-
-### Phase 2 — production rebuild (recommended)
-- **Framework:** Next.js 15 + React 19 + TypeScript
-- **Styling:** TailwindCSS + shadcn/ui (preserve the existing design tokens — they're already calibrated)
-- **Animation:** Framer Motion
-- **Tables:** TanStack Table (for the Leads workspace)
-- **State:** Zustand (UI state) + TanStack Query (server state)
-- **Backend:** Supabase (Postgres + Auth + Realtime + Edge Functions)
-- **CRM Source of Truth:** Zoho Bigin (synced both ways via API)
-- **Hosting:** Netlify (frontend) + Netlify Functions (proxy for Bigin OAuth and webhooks)
-- **Auth:** Google Login + Email (via Supabase Auth)
-
----
-
-## Design Tokens (from `assets/styles.css`)
-
-```css
---primary: #6366F1
---primary-hover: #4F46E5
---primary-50: #EEF2FF
---bg: #F7F8FB
---surface: #FFFFFF
---border: #ECEEF2
-
-/* Text scale */
---text-1: #0F172A  /* headings */
---text-2: #475569  /* body */
---text-3: #94A3B8  /* muted */
-
-/* Status pairs */
---green-bg/text, --blue-bg/text, --amber-bg/text, --red-bg/text,
---purple-bg/text, --orange-bg/text, --pink-bg/text, --teal-bg/text
-```
-
-**Typography:** Inter 400/500/600/700/800/900
-**Radius:** 8px / 10px / 12px / 999px
-**Sidebar:** 256px fixed, sticky full-height
-**Stat card icons:** 11px lucide, stroke-width 1.5
-
----
-
-## Persistent Build Rules
-
-Constraints already baked into every page — preserve in Phase 2:
-
-- **Do not show:** Visa Type column, Lead ID column, Source column, Counselor column, Priority column
-- **Single counselor mode:** Manik Verma is the only counselor — don't add per-counselor filtering yet
-- **Single source:** Meta Ads is the only lead source — don't add source filter yet
-- **Single visa type:** UK Global Talent Visa — don't add visa-type filtering yet
-- **Visa Pipeline stages (locked, 7):**
-  1. New Inquiry · 2. Attempted Contact · 3. Connected · 4. Qualified · 5. Consultation Scheduled · 6. Proposal Shared · 7. Partial Payment → Closed Won
-- **Payment phases (locked, 4):**
-  Kickstart · Profile Building · Endorsement Submission · Post Approval
-- **Score:** 1–10 conic ring · ≤3 red · 4–6 amber · ≥7 green
-- **Currency:** INR Indian comma format (₹12,45,000)
-- **Phone:** +91 XXXXX XXXXX
-- **AI COO is everywhere:** topbar gradient button + dedicated sidebar item + dashboard insights + leads mini banner
-
----
-
-## Roadmap
-
-| Phase | Scope | Effort |
-|---|---|---|
-| Phase 1 (now) | Static HTML mockup — visual + interaction fidelity | ✅ Done |
-| Phase 2 | Next.js + Supabase rebuild · auth · realtime · Bigin sync | 3–4 weeks |
-| Phase 3 | AI COO live (Claude/GPT integration) · automated nudges · WhatsApp send-from-app | 2 weeks |
-| Phase 4 | Mobile responsive · iOS/Android web app · push notifications | 2 weeks |
-| Phase 5 | Multi-counselor support · role-based access · team analytics | 1 week |
-
----
-
-## Quick Start (Phase 1)
-
-1. Open `index.html` directly in any browser — works locally with no server.
-2. To deploy: drag the entire `migrizo-crm/` folder onto [app.netlify.com](https://app.netlify.com) → done.
-3. For a custom domain (e.g. `crm.migrizo.com`), see `DEPLOYMENT.md`.
-
-For the Bigin integration architecture and Phase 2 backend wiring, see `INTEGRATION_ZOHO_BIGIN.md`.
+**Realtime not working** — Check that Supabase has realtime enabled for `leads`, `payments`, `activity` tables (Project → Database → Replication).

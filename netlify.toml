@@ -1,29 +1,9 @@
 [build]
-  publish = "."
-  command = "npm install"
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
 
 [build.environment]
-  NODE_VERSION = "18"
-
-[functions]
-  directory    = "netlify/functions"
-  node_bundler = "esbuild"
-
-[[headers]]
-  for = "/*.html"
-  [headers.values]
-    Cache-Control = "public, max-age=0, must-revalidate"
-
-# Assets: short cache, NO immutable — so updates actually reach the browser
-[[headers]]
-  for = "/assets/*"
-  [headers.values]
-    Cache-Control = "public, max-age=300, must-revalidate"
-
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Frame-Options        = "DENY"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy        = "strict-origin-when-cross-origin"
-    X-XSS-Protection       = "1; mode=block"
+  NEXT_USE_NETLIFY_EDGE = "true"
