@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/styles.css">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
@@ -75,12 +76,12 @@
     <div class="content with-top">
 
       <section class="stats-grid">
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">New Leads</span><span class="stat-icon-tiny"><i data-lucide="user-plus"></i></span></div><div class="stat-value">128</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 18% <span class="muted">vs yesterday</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Follow-ups Today</span><span class="stat-icon-tiny green"><i data-lucide="phone"></i></span></div><div class="stat-value">24</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 12% <span class="muted">vs yesterday</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Consultations</span><span class="stat-icon-tiny orange"><i data-lucide="calendar-check"></i></span></div><div class="stat-value">15</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 20% <span class="muted">vs yesterday</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Payments Pending</span><span class="stat-icon-tiny violet"><i data-lucide="indian-rupee"></i></span></div><div class="stat-value">₹12,45,000</div><div class="stat-delta down"><i data-lucide="arrow-down"></i> 8% <span class="muted">vs yesterday</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Revenue Closed</span><span class="stat-icon-tiny blue"><i data-lucide="wallet"></i></span></div><div class="stat-value">₹8,75,000</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 15% <span class="muted">vs yesterday</span></div></div>
-        <div class="stat-card"><div class="stat-head"><span class="stat-label">Conversion Rate</span><span class="stat-icon-tiny pink"><i data-lucide="trending-up"></i></span></div><div class="stat-value">23.6%</div><div class="stat-delta up"><i data-lucide="arrow-up"></i> 5% <span class="muted">vs yesterday</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">New Leads</span><span class="stat-icon-tiny"><i data-lucide="user-plus"></i></span></div><div class="stat-value" id="kpiLeads">—</div><div class="stat-delta up" id="kpiLeadsDelta"><span class="muted">loading...</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Follow-ups Today</span><span class="stat-icon-tiny green"><i data-lucide="phone"></i></span></div><div class="stat-value" id="kpiFollowups">—</div><div class="stat-delta"><span class="muted">from Bigin</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Consultations</span><span class="stat-icon-tiny orange"><i data-lucide="calendar-check"></i></span></div><div class="stat-value" id="kpiConsultations">—</div><div class="stat-delta"><span class="muted">this week</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Payments Pending</span><span class="stat-icon-tiny violet"><i data-lucide="indian-rupee"></i></span></div><div class="stat-value" id="kpiPending">—</div><div class="stat-delta"><span class="muted">across active clients</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Revenue Closed</span><span class="stat-icon-tiny blue"><i data-lucide="wallet"></i></span></div><div class="stat-value" id="kpiRevenue">—</div><div class="stat-delta"><span class="muted">total paid</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Conversion Rate</span><span class="stat-icon-tiny pink"><i data-lucide="trending-up"></i></span></div><div class="stat-value" id="kpiConversion">—</div><div class="stat-delta"><span class="muted">lead to closed</span></div></div>
       </section>
 
       <section class="charts-grid">
@@ -148,7 +149,6 @@
   </main>
 
   <script src="assets/app.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="assets/auth.js"></script>
   <script>
     Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
@@ -209,6 +209,41 @@
           y: { beginAtZero: true, grid: { color: '#F1F2F6', drawBorder: false }, ticks: { font: { size: 11 }, color: '#94A3B8', callback: (v) => '₹' + v + 'L' } } } }
     });
   </script>
-<script>requireAuth();</script>
+<script>
+requireAuth().then(async session => {
+  if (!session) return;
+  // Update user name in greeting
+  const meta = session.user.user_metadata || {};
+  const name = (meta.full_name || session.user.email || 'there').split(' ')[0];
+  const el = document.getElementById('userName');
+  if (el) el.textContent = name;
+
+  // Load real KPIs from Bigin
+  try {
+    const data = await CRM.leads();
+    const leads = data.leads || [];
+    const total = leads.length;
+    const closed = leads.filter(l => l.stage === 'Closed Won').length;
+    const totalPaid = leads.reduce((s, l) => s + (parseFloat(l.amount_paid) || 0), 0);
+    const totalFee  = leads.reduce((s, l) => s + (parseFloat(l.total_fee) || 0), 0);
+    const pending   = totalFee - totalPaid;
+    const convRate  = total > 0 ? ((closed / total) * 100).toFixed(1) : '0.0';
+
+    document.getElementById('kpiLeads').textContent = total;
+    document.getElementById('kpiLeadsDelta').innerHTML = `<span class="muted">total in Bigin</span>`;
+    document.getElementById('kpiPending').textContent = `₹${pending.toLocaleString('en-IN')}`;
+    document.getElementById('kpiRevenue').textContent = `₹${totalPaid.toLocaleString('en-IN')}`;
+    document.getElementById('kpiConversion').textContent = convRate + '%';
+  } catch(e) {
+    console.warn('Dashboard KPI load failed:', e.message);
+  }
+
+  // Load follow-ups count
+  try {
+    const t = await CRM.tasks({ status: 'Today' });
+    document.getElementById('kpiFollowups').textContent = (t.tasks || []).length;
+  } catch(e) {}
+});
+</script>
 </body>
 </html>

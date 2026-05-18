@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/styles.css">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   /* Page-specific: toolbar, table, popovers, drawer */
   .smart-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
@@ -236,7 +237,7 @@
           <button class="view-dropdown-btn" id="viewBtn">
             <i data-lucide="inbox" style="width:15px;height:15px;color:var(--primary)"></i>
             <span class="view-name">All Leads</span>
-            <span class="view-count">248</span>
+            <span class="view-count" id="leadsCount">...</span>
             <i data-lucide="chevron-down" class="chev"></i>
           </button>
           <div class="view-popover" id="viewPopover">
@@ -251,9 +252,7 @@
           </div>
         </div>
 
-        <button class="filter-btn has-filters"><i data-lucide="sliders-horizontal"></i><span>Filters</span><span class="filter-count">2</span></button>
-        <span class="active-chip"><span>Score: <strong>≥ 6</strong></span><button class="active-chip-x"><i data-lucide="x"></i></button></span>
-        <span class="active-chip"><span>Last 30 days</span><button class="active-chip-x"><i data-lucide="x"></i></button></span>
+        <button class="filter-btn"><i data-lucide="sliders-horizontal"></i><span>Filters</span></button>
 
         <div class="view-toggle">
           <button class="view-btn active"><i data-lucide="list"></i>List</button>
@@ -288,7 +287,7 @@
           </table>
         </div>
         <div class="pagination">
-          <div class="pagination-info">Showing 1 to 8 of 248 leads</div>
+          <div class="pagination-info" id="paginationInfo">Loading leads...</div>
           <div class="pagination-nav">
             <button class="page-btn disabled"><i data-lucide="chevron-left" style="width:16px;height:16px"></i></button>
             <button class="page-btn active">1</button><button class="page-btn">2</button><button class="page-btn">3</button>
@@ -382,7 +381,6 @@
   </div>
 
   <script src="assets/app.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="assets/auth.js"></script>
   <script>
     // ── Live data from Bigin / Supabase cache ──────────────────
@@ -433,6 +431,9 @@
         const data = await CRM.leads(params);
         LEADS = (data.leads || []).map(normalizeApiLead);
         document.querySelector('.view-count').textContent = LEADS.length;
+        document.getElementById('leadsCount').textContent = LEADS.length;
+        const pi = document.getElementById('paginationInfo');
+        if (pi) pi.textContent = `Showing ${Math.min(LEADS.length, 25)} of ${LEADS.length} leads`;
         renderLeads();
       } catch (err) {
         body.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--red-text)">⚠ ${err.message}. <a href="settings.html" style="color:var(--primary)">Connect Zoho Bigin in Settings →</a></td></tr>`;
