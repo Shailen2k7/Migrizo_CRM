@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Sun, Moon, Plus, Sparkles, Upload } from 'lucide-react';
 import type { Lead, Payment } from '@/lib/types';
-import { STAGE_META } from '@/lib/types';
+import { STAGE_META, getStageMeta } from '@/lib/types';
 import { initials, avatarColor } from '@/lib/utils';
 import { NotificationDropdown } from '@/components/notification-dropdown';
 
@@ -86,7 +86,7 @@ export function Topbar({ leads, payments, onAddLead, onImport, onOpenLead }: Pro
               <div className="p-1.5">
                 <div className="text-[10.5px] uppercase tracking-wider text-faint font-semibold px-2.5 py-1.5">Leads · {results.length}</div>
                 {results.map((l) => {
-                  const stage = STAGE_META[l.stage];
+                  const stage = getStageMeta(l.stage);
                   return (
                     <button
                       key={l.id}

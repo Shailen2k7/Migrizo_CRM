@@ -8,7 +8,7 @@ import {
 import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Search } from 'lucide-react';
 import { useApp } from '@/components/shared/app-provider';
 import type { Lead, LeadStage } from '@/lib/types';
-import { STAGE_META, STAGE_ORDER, PAYMENT_META } from '@/lib/types';
+import { STAGE_META, STAGE_ORDER, PAYMENT_META, getStageMeta } from '@/lib/types';
 import { initials, avatarColor, formatINRFull, scoreColor, timeAgo, cn } from '@/lib/utils';
 
 type Segment = 'all' | LeadStage;
@@ -86,7 +86,7 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
     {
       id: 'stage', accessorKey: 'stage', header: 'Tag',
       cell: ({ row }) => {
-        const l = row.original; const s = STAGE_META[l.stage];
+        const l = row.original; const s = getStageMeta(l.stage);
         return (
           <button onClick={(e) => { e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setStageMenu({ leadId: l.id, x: r.left, y: r.bottom + 4 }); }}
             className="stage-pill" style={{ background: s.bg, color: s.fg }}>
