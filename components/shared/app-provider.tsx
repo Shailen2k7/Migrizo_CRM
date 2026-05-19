@@ -81,19 +81,30 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
   }, [supabase]);
 
   const refreshMembers = useCallback(async () => {
-    const { data } = await supabase.rpc('list_workspace_members', { p_workspace_id: workspace.id });
+    const { data, error } = await supabase.rpc('list_workspace_members', { p_workspace_id: workspace.id });
+    if (error) {
+      console.error('[Migrizo] list_workspace_members failed:', error.message);
+      return;
+    }
     if (data) setMembers(data as Member[]);
   }, [supabase, workspace.id]);
 
-  // Load members on mount
-  useEffect(() => { refreshMembers(); }, [refreshMembers]);
+  // Load members on mount and when window regains focus (catches new signups)
+  useEffect(() => {
+    refreshMembers();
+    const onFocus = () => refreshMembers();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshMembers]);
 
   // Helper: map a user_id to a display name
+  // Falls back gracefully: null → "Team", unknown user → "Team member" (was "Unknown")
   const memberNameById = useCallback((userId: string | null | undefined): string => {
-    if (!userId) return 'Unknown';
+    if (!userId) return 'Team';
     if (userId === user.id) return 'You';
     const m = members.find((x) => x.user_id === userId);
-    return m ? m.full_name : 'Unknown';
+    if (m && m.full_name) return m.full_name;
+    return 'Team member';
   }, [members, user.id]);
 
   // Incremental realtime

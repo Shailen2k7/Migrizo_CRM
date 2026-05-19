@@ -49,19 +49,18 @@ export function FunnelChart({ leads }: { leads: Lead[] }) {
 // =========================================
 export function TemperatureDonut({ leads }: { leads: Lead[] }) {
   const data = useMemo(() => {
-    const buckets = { hot: 0, warm: 0, cold: 0, junk: 0 };
+    const buckets: Record<string, number> = { hot: 0, cold: 0, mr_coming_soon: 0, invoice_sent: 0, won: 0, junk: 0 };
     leads.forEach((l) => {
-      if (l.score === 0) buckets.junk++;
-      else if (l.score >= 75) buckets.hot++;
-      else if (l.score >= 50) buckets.warm++;
-      else buckets.cold++;
+      if (l.stage in buckets) buckets[l.stage]++;
     });
     const total = leads.length || 1;
     return [
-      { label: 'Hot', value: buckets.hot, color: '#10B981' },
-      { label: 'Warm', value: buckets.warm, color: '#6366F1' },
-      { label: 'Cold', value: buckets.cold, color: '#F59E0B' },
-      { label: 'Junk', value: buckets.junk, color: '#9CA3AF' },
+      { label: 'Hot',             value: buckets.hot,            color: '#EF4444' },
+      { label: 'Cold',            value: buckets.cold,           color: '#3B82F6' },
+      { label: 'Mr. Coming Soon', value: buckets.mr_coming_soon, color: '#F59E0B' },
+      { label: 'Invoice Sent',    value: buckets.invoice_sent,   color: '#7C3AED' },
+      { label: 'Won',             value: buckets.won,            color: '#10B981' },
+      { label: 'Junk',            value: buckets.junk,           color: '#9CA3AF' },
     ].map((d) => ({ ...d, pct: (d.value / total) * 100 }));
   }, [leads]);
 
