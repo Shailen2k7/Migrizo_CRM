@@ -6,6 +6,15 @@ import type { Lead, Payment, Activity, Workspace, Note } from '@/lib/types';
 import { buildSampleLeads } from '@/lib/sample-data';
 import { toast } from 'sonner';
 
+export interface Member {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: 'admin' | 'member';
+  status: 'pending' | 'active' | 'paused';
+  joined_at: string;
+}
+
 interface AppData {
   user: { id: string; email: string; name: string };
   workspace: Workspace;
@@ -13,8 +22,11 @@ interface AppData {
   leads: Lead[];
   payments: Payment[];
   activity: Activity[];
+  members: Member[];
   loading: boolean;
   refresh: () => Promise<void>;
+  refreshMembers: () => Promise<void>;
+  memberNameById: (userId: string | null | undefined) => string;
   createLead: (input: Partial<Lead>) => Promise<Lead | null>;
   updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
@@ -49,6 +61,7 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [payments, setPayments] = useState<Payment[]>(initialPayments);
   const [activity, setActivity] = useState<Activity[]>(initialActivity);
+  const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -67,11 +80,26 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     }
   }, [supabase]);
 
-  // INCREMENTAL realtime — only patch the changed row, no full refetches
+  const refreshMembers = useCallback(async () => {
+    const { data } = await supabase.rpc('list_workspace_members', { p_workspace_id: workspace.id });
+    if (data) setMembers(data as Member[]);
+  }, [supabase, workspace.id]);
+
+  // Load members on mount
+  useEffect(() => { refreshMembers(); }, [refreshMembers]);
+
+  // Helper: map a user_id to a display name
+  const memberNameById = useCallback((userId: string | null | undefined): string => {
+    if (!userId) return 'Unknown';
+    if (userId === user.id) return 'You';
+    const m = members.find((x) => x.user_id === userId);
+    return m ? m.full_name : 'Unknown';
+  }, [members, user.id]);
+
+  // Incremental realtime
   useEffect(() => {
     const ch = supabase
       .channel('ws-' + workspace.id)
-      // Leads: INSERT / UPDATE / DELETE
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'leads', filter: `workspace_id=eq.${workspace.id}` },
         (payload) => {
@@ -90,7 +118,6 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
           const id = (payload.old as { id?: string }).id;
           if (id) setLeads((prev) => prev.filter((l) => l.id !== id));
         })
-      // Payments
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'payments', filter: `workspace_id=eq.${workspace.id}` },
         (payload) => {
@@ -103,16 +130,19 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
           const row = payload.new as Payment;
           setPayments((prev) => prev.map((p) => p.id === row.id ? row : p));
         })
-      // Activity (insert only — append to feed)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'activity', filter: `workspace_id=eq.${workspace.id}` },
         (payload) => {
           const row = payload.new as Activity;
           setActivity((prev) => prev.some((a) => a.id === row.id) ? prev : [row, ...prev].slice(0, 50));
         })
+      // Member changes — refresh full list so admins see pending requests in realtime
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'workspace_members', filter: `workspace_id=eq.${workspace.id}` },
+        () => { refreshMembers(); })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [supabase, workspace.id]);
+  }, [supabase, workspace.id, refreshMembers]);
 
   const logActivity = useCallback(async (action: string, leadId: string | null = null, meta: Record<string, unknown> = {}) => {
     await supabase.from('activity').insert({ workspace_id: workspace.id, user_id: user.id, lead_id: leadId, action, meta });
@@ -162,7 +192,7 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
   }, [supabase, leads, logActivity]);
 
   const deleteLead = useCallback(async (id: string) => {
-    if (role !== 'admin') { toast.error('Only admins can delete leads'); return; }
+    if (role !== 'admin') { toast.error('Only the admin can delete leads'); return; }
     const before = leads;
     setLeads((prev) => prev.filter((l) => l.id !== id));
     const { error } = await supabase.from('leads').delete().eq('id', id);
@@ -275,8 +305,9 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
   }, [supabase, workspace.id, user.id, leads, logActivity]);
 
   const value: AppData = {
-    user, workspace, role, leads, payments, activity, loading,
-    refresh, createLead, updateLead, deleteLead, addNote, getNotes, recordPayment, bulkInsertLeads, resetWorkspace, loadSampleData,
+    user, workspace, role, leads, payments, activity, members, loading,
+    refresh, refreshMembers, memberNameById,
+    createLead, updateLead, deleteLead, addNote, getNotes, recordPayment, bulkInsertLeads, resetWorkspace, loadSampleData,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
