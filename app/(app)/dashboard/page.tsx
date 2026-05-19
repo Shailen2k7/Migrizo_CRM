@@ -12,26 +12,8 @@ import { greeting, todayDateString, timeAgo } from '@/lib/utils';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { leads, payments, activity, user } = useApp();
+  const { leads, payments, activity, user, memberNameById } = useApp();
   const ui = useUI();
-  const [notifOpen, setNotifOpen] = useState(false);
-
-  const notifications = useMemo(() => {
-    const out: { id: string; type: 'overdue-fu' | 'overdue-pay' | 'hot'; text: string; leadId?: string; time: string }[] = [];
-    const now = Date.now();
-    leads.forEach((l) => {
-      if (l.next_follow_up && new Date(l.next_follow_up).getTime() < now && !['won', 'lost'].includes(l.stage)) {
-        out.push({ id: 'fu-' + l.id, type: 'overdue-fu', text: `Follow-up overdue for ${l.full_name}`, leadId: l.id, time: timeAgo(l.next_follow_up) });
-      }
-    });
-    payments.forEach((p) => {
-      if (p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < now)) {
-        const lead = leads.find((l) => l.id === p.lead_id);
-        out.push({ id: 'pay-' + p.id, type: 'overdue-pay', text: `Payment overdue for ${lead?.full_name || 'client'}`, leadId: p.lead_id, time: timeAgo(p.due_date) });
-      }
-    });
-    return out.slice(0, 20);
-  }, [leads, payments]);
 
   const followUpsToday = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -50,7 +32,7 @@ export default function DashboardPage() {
           </h1>
           <p className="text-[13.5px] text-muted mt-2">{todayDateString()}</p>
         </div>
-        <Topbar leads={leads} notifCount={notifications.length} onAddLead={ui.openAddLead} onImport={ui.openImport} onOpenNotifs={() => setNotifOpen((v) => !v)} onOpenLead={ui.openLeadDrawer} />
+        <Topbar leads={leads} payments={payments} onAddLead={ui.openAddLead} onImport={ui.openImport} onOpenLead={ui.openLeadDrawer} />
       </div>
 
       {/* KPIs */}
@@ -82,7 +64,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-3">
         <div className="panel panel-pad">
           <div className="section-h mb-2"><div><h2>Recent Activity</h2><div className="sub">Latest movements across the team</div></div><button onClick={() => router.push('/leads')} className="btn btn-ghost btn-sm">View all <ArrowRight className="w-3.5 h-3.5" /></button></div>
-          <ActivityFeed activity={activity} leads={leads} />
+          <ActivityFeed activity={activity} leads={leads} memberNameById={memberNameById} />
         </div>
         <div className="space-y-3">
           <div className="section-h"><h2 className="text-[14px] font-semibold">Quick Access</h2></div>
@@ -93,33 +75,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Notifications panel */}
-      {notifOpen && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setNotifOpen(false)} />
-          <div className="fixed top-[88px] right-8 w-[360px] panel shadow-lg z-40">
-            <div className="panel-pad pb-3 flex items-center justify-between border-b border-border">
-              <h3 className="text-[14px] font-semibold">Notifications</h3>
-              <button onClick={() => setNotifOpen(false)} className="text-muted hover:text-ink"><X className="w-4 h-4" /></button>
-            </div>
-            <div className="p-2 max-h-[440px] overflow-y-auto">
-              {notifications.length === 0 ? (
-                <div className="py-10 text-center text-[12.5px] text-muted">All clear ✨</div>
-              ) : (
-                notifications.map((n) => (
-                  <button key={n.id} onClick={() => { if (n.leadId) ui.openLeadDrawer(n.leadId); setNotifOpen(false); }} className="w-full flex items-start gap-3 p-3 rounded-md hover:bg-surface-2 text-left">
-                    <div className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: 'hsl(var(--rose-soft))', color: '#B91C1C' }}><AlertTriangle className="w-4 h-4" /></div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[12.5px] font-medium leading-tight">{n.text}</div>
-                      <div className="text-[11px] text-muted mt-0.5">{n.time}</div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </>
-      )}
+      {/* Notifications now in topbar bell — full-featured dropdown */}
     </div>
   );
 }
