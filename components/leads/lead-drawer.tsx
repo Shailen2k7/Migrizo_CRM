@@ -15,7 +15,7 @@ interface Props {
 }
 
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
-  const { leads, payments, updateLead, deleteLead, addNote, getNotes, role } = useApp();
+  const { leads, payments, updateLead, deleteLead, addNote, getNotes, role, memberNameById } = useApp();
   const [tab, setTab] = useState<'overview' | 'notes' | 'payments'>('overview');
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
@@ -87,7 +87,28 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     <Row label="Phone"><EditText value={lead.phone} onSave={(v) => updateLead(lead.id, { phone: v })} placeholder="+91…" /></Row>
                     <Row label="Email"><EditText value={lead.email} onSave={(v) => updateLead(lead.id, { email: v })} placeholder="email@…" /></Row>
                     <Row label="Amount paid"><span className="num font-semibold text-[13px]">{formatINRFull(lead.amount_paid)}</span></Row>
-                    <Row label="Created"><span className="text-[13px] text-ink-2">{new Date(lead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}<span className="text-muted"> · {timeAgo(lead.created_at)}</span></span></Row>
+                    <Row label="Created">
+                      <span className="text-[13px] text-ink-2">
+                        {new Date(lead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        <span className="text-muted"> · {timeAgo(lead.created_at)}</span>
+                      </span>
+                    </Row>
+                    {lead.created_by && (
+                      <Row label="Added by">
+                        <span className="inline-flex items-center gap-1.5 text-[13px] text-ink-2">
+                          <div className="av" style={{ background: avatarColor(lead.created_by), width: 18, height: 18, fontSize: 8 }}>{initials(memberNameById(lead.created_by))}</div>
+                          {memberNameById(lead.created_by)}
+                        </span>
+                      </Row>
+                    )}
+                    {lead.last_note_author_id && lead.last_note_at && (
+                      <Row label="Last note by">
+                        <span className="inline-flex items-center gap-1.5 text-[13px] text-ink-2">
+                          <div className="av" style={{ background: avatarColor(lead.last_note_author_id), width: 18, height: 18, fontSize: 8 }}>{initials(memberNameById(lead.last_note_author_id))}</div>
+                          {memberNameById(lead.last_note_author_id)}<span className="text-muted">· {timeAgo(lead.last_note_at)}</span>
+                        </span>
+                      </Row>
+                    )}
                   </div>
                 </>
               )}
@@ -103,8 +124,15 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     {notes.length === 0 ? <div className="text-center py-10 text-[12.5px] text-muted">No notes yet</div> :
                       notes.map((n) => (
                         <div key={n.id} className="rounded-xl border border-border p-3.5">
-                          <div className="flex items-center justify-between mb-1.5"><span className="text-[11px] text-muted">{timeAgo(n.created_at)}</span></div>
-                          <div className="text-[12.5px] text-ink-2 leading-relaxed whitespace-pre-wrap">{n.body}</div>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <div className="av" style={{ background: avatarColor(n.author_id || 'unknown'), width: 22, height: 22, fontSize: 9 }}>
+                              {initials(memberNameById(n.author_id))}
+                            </div>
+                            <span className="text-[12px] font-semibold text-ink">{memberNameById(n.author_id)}</span>
+                            <span className="text-[11px] text-muted">· {timeAgo(n.created_at)}</span>
+                            <span className="text-[10.5px] text-faint ml-auto">{new Date(n.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span>
+                          </div>
+                          <div className="text-[12.5px] text-ink-2 leading-relaxed whitespace-pre-wrap pl-7">{n.body}</div>
                         </div>
                       ))}
                   </div>
