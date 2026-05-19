@@ -27,13 +27,13 @@ export function KPICards({ leads, payments }: { leads: Lead[]; payments: Payment
       return t >= today.getTime() && t < tomorrow.getTime();
     }).length;
 
-    const overdue = leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < now && l.stage !== 'won' && l.stage !== 'lost').length;
+    const overdue = leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < now && l.stage !== 'won' && l.stage !== 'junk').length;
 
     const revenueThisMonth = payments.filter((p) => p.status === 'paid' && p.paid_at && now - new Date(p.paid_at).getTime() < monthMs).reduce((s, p) => s + p.amount, 0);
     const revenueAllTime = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
 
     const wonCount = leads.filter((l) => l.stage === 'won').length;
-    const closableCount = leads.filter((l) => !['new', 'lost'].includes(l.stage)).length;
+    const closableCount = leads.filter((l) => !['won', 'junk'].includes(l.stage)).length;
     const conversion = closableCount === 0 ? 0 : (wonCount / (wonCount + closableCount)) * 100;
 
     return { newThisWeek, weekDelta, followUpsToday, overdue, revenueThisMonth, revenueAllTime, conversion, wonCount };
@@ -44,7 +44,7 @@ export function KPICards({ leads, payments }: { leads: Lead[]; payments: Payment
     { label: 'Follow-ups today', value: stats.followUpsToday, sub: stats.overdue > 0 ? `${stats.overdue} overdue` : 'On track', deltaPositive: stats.overdue === 0, icon: Clock },
     { label: 'Revenue this month', value: formatINR(stats.revenueThisMonth), sub: `${formatINR(stats.revenueAllTime)} all-time`, deltaPositive: true, icon: IndianRupee, isMoney: true },
     { label: 'Closed won', value: stats.wonCount, sub: `${stats.conversion.toFixed(0)}% conversion`, deltaPositive: stats.conversion >= 20, icon: Target },
-    { label: 'Active pipeline', value: leads.filter((l) => !['new', 'lost', 'won'].includes(l.stage)).length, sub: 'In active stages', deltaPositive: true, icon: BarChart3 },
+    { label: 'Active pipeline', value: leads.filter((l) => !['won', 'junk', 'won'].includes(l.stage)).length, sub: 'In active stages', deltaPositive: true, icon: BarChart3 },
   ];
 
   return (
@@ -76,15 +76,15 @@ export function KPICards({ leads, payments }: { leads: Lead[]; payments: Payment
 // =========================================
 export function computeInsight(leads: Lead[], payments: Payment[]): string {
   const now = Date.now();
-  const overdueFu = leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < now && l.stage !== 'won' && l.stage !== 'lost');
+  const overdueFu = leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < now && l.stage !== 'won' && l.stage !== 'junk');
   if (overdueFu.length > 0) {
     return `${overdueFu.length} lead${overdueFu.length > 1 ? 's' : ''} have overdue follow-ups. The longer you wait, the colder they get — consider clearing this list before noon.`;
   }
-  const proposals = leads.filter((l) => l.stage === 'proposal');
+  const proposals = leads.filter((l) => l.stage === 'invoice_sent');
   if (proposals.length >= 3) {
     return `${proposals.length} clients are at proposal stage. Following up within 48hrs of sending a proposal increases close rates by ~30%.`;
   }
-  const hot = leads.filter((l) => l.score >= 75 && !['won', 'lost'].includes(l.stage));
+  const hot = leads.filter((l) => l.score >= 75 && !['won', 'junk'].includes(l.stage));
   if (hot.length > 0) {
     return `You have ${hot.length} hot lead${hot.length > 1 ? 's' : ''} in your pipeline. Prioritize these — they're 3x more likely to close.`;
   }

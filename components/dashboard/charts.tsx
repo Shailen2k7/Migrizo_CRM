@@ -11,17 +11,15 @@ import { formatINR } from '@/lib/utils';
 export function FunnelChart({ leads }: { leads: Lead[] }) {
   const data = useMemo(() => {
     const stages: { key: string; label: string; color: string }[] = [
-      { key: 'new', label: 'New', color: '#9CA3AF' },
-      { key: 'qualified', label: 'Qualified', color: '#7C3AED' },
-      { key: 'consultation', label: 'Consultation', color: '#6366F1' },
-      { key: 'proposal', label: 'Proposal', color: '#F59E0B' },
-      { key: 'won', label: 'Won', color: '#10B981' },
+      { key: 'hot',            label: 'Hot',             color: '#EF4444' },
+      { key: 'cold',           label: 'Cold',            color: '#3B82F6' },
+      { key: 'mr_coming_soon', label: 'Mr. Coming Soon', color: '#F59E0B' },
+      { key: 'invoice_sent',   label: 'Invoice Sent',    color: '#7C3AED' },
+      { key: 'won',            label: 'Won',             color: '#10B981' },
+      { key: 'junk',           label: 'Junk',            color: '#9CA3AF' },
     ];
     const counts: Record<string, number> = {};
     leads.forEach((l) => { counts[l.stage] = (counts[l.stage] || 0) + 1; });
-    // Group "attempted" + "connected" into "qualified" bucket for visual simplicity
-    counts.qualified = (counts.qualified || 0) + (counts.attempted || 0) + (counts.connected || 0);
-    counts.proposal = (counts.proposal || 0) + (counts.partial || 0);
     const max = Math.max(1, ...stages.map((s) => counts[s.key] || 0));
     return stages.map((s) => ({ ...s, count: counts[s.key] || 0, max }));
   }, [leads]);

@@ -2,21 +2,21 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Bell, Sun, Moon, Plus, Sparkles, Upload } from 'lucide-react';
-import type { Lead } from '@/lib/types';
-import { STAGE_META, PAYMENT_META } from '@/lib/types';
-import { initials, avatarColor, formatINR } from '@/lib/utils';
+import { Search, Sun, Moon, Plus, Sparkles, Upload } from 'lucide-react';
+import type { Lead, Payment } from '@/lib/types';
+import { STAGE_META } from '@/lib/types';
+import { initials, avatarColor } from '@/lib/utils';
+import { NotificationDropdown } from '@/components/notification-dropdown';
 
 interface Props {
   leads: Lead[];
-  notifCount: number;
+  payments: Payment[];
   onAddLead: () => void;
   onImport: () => void;
-  onOpenNotifs: () => void;
   onOpenLead: (id: string) => void;
 }
 
-export function Topbar({ leads, notifCount, onAddLead, onImport, onOpenNotifs, onOpenLead }: Props) {
+export function Topbar({ leads, payments, onAddLead, onImport, onOpenLead }: Props) {
   const router = useRouter();
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [query, setQuery] = useState('');
@@ -35,7 +35,6 @@ export function Topbar({ leads, notifCount, onAddLead, onImport, onOpenNotifs, o
     localStorage.setItem('migrizo-theme', next);
   };
 
-  // ⌘K shortcut + click outside
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -113,14 +112,7 @@ export function Topbar({ leads, notifCount, onAddLead, onImport, onOpenNotifs, o
         <Sparkles className="w-[18px] h-[18px] text-indigo-600" />
       </button>
 
-      <button onClick={onOpenNotifs} className="relative p-2.5 rounded-md hover:bg-surface-2 transition" title="Notifications">
-        <Bell className="w-[18px] h-[18px] text-ink-2" />
-        {notifCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1.5 bg-danger text-white rounded-full text-[10px] font-semibold flex items-center justify-center border-2 border-surface">
-            {notifCount}
-          </span>
-        )}
-      </button>
+      <NotificationDropdown leads={leads} payments={payments} onOpenLead={onOpenLead} />
 
       <button onClick={toggleTheme} className="p-2.5 rounded-md hover:bg-surface-2 transition" title="Toggle theme">
         {theme === 'light' ? <Sun className="w-[18px] h-[18px] text-ink-2" /> : <Moon className="w-[18px] h-[18px] text-ink-2" />}

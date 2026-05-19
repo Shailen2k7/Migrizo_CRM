@@ -18,13 +18,13 @@ export function AddLeadDialog({ open, onClose }: Props) {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [visaType, setVisaType] = useState('');
-  const [stage, setStage] = useState<LeadStage>('new');
+  const [stage, setStage] = useState<LeadStage>('cold');
   const [nextFollowUp, setNextFollowUp] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
   const reset = () => {
-    setFullName(''); setPhone(''); setEmail(''); setVisaType(''); setStage('new'); setNextFollowUp(''); setNote('');
+    setFullName(''); setPhone(''); setEmail(''); setVisaType(''); setStage('cold'); setNextFollowUp(''); setNote('');
   };
 
   const submit = async () => {

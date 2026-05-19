@@ -5,13 +5,13 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel,
   flexRender, type ColumnDef, type SortingState
 } from '@tanstack/react-table';
-import { ChevronDown, MoreHorizontal, Phone, Mail, ArrowUp, ArrowDown, Filter, Search } from 'lucide-react';
+import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Search } from 'lucide-react';
 import { useApp } from '@/components/shared/app-provider';
 import type { Lead, LeadStage } from '@/lib/types';
-import { STAGE_META, PAYMENT_META } from '@/lib/types';
-import { initials, avatarColor, formatINRFull, scoreColor, formatFollowUp, timeAgo, cn } from '@/lib/utils';
+import { STAGE_META, STAGE_ORDER, PAYMENT_META } from '@/lib/types';
+import { initials, avatarColor, formatINRFull, scoreColor, timeAgo, cn } from '@/lib/utils';
 
-type Segment = 'all' | 'hot' | 'today' | 'overdue' | 'proposal' | 'won';
+type Segment = 'all' | LeadStage;
 
 interface Props {
   initialSegment?: Segment;
@@ -27,45 +27,17 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
 
   useEffect(() => setSegment(initialSegment), [initialSegment]);
 
-  // Apply segment filter
   const segmented = useMemo(() => {
-    const now = Date.now();
-    const dayMs = 86400000;
-    return leads.filter((l) => {
-      switch (segment) {
-        case 'hot': return l.score >= 75;
-        case 'today': {
-          if (!l.next_follow_up) return false;
-          const t = new Date(l.next_follow_up).getTime();
-          const d = Math.floor((t - now) / dayMs);
-          return d <= 0 && d >= -1;
-        }
-        case 'overdue': {
-          if (!l.next_follow_up) return false;
-          return new Date(l.next_follow_up).getTime() < now;
-        }
-        case 'proposal': return l.stage === 'proposal' || l.stage === 'partial';
-        case 'won': return l.stage === 'won';
-        default: return true;
-      }
-    });
+    if (segment === 'all') return leads;
+    return leads.filter((l) => l.stage === segment);
   }, [leads, segment]);
 
-  // Segment counts (always computed against full leads)
   const counts = useMemo(() => {
-    const now = Date.now(); const dayMs = 86400000;
-    return {
-      all: leads.length,
-      hot: leads.filter((l) => l.score >= 75).length,
-      today: leads.filter((l) => {
-        if (!l.next_follow_up) return false;
-        const d = Math.floor((new Date(l.next_follow_up).getTime() - now) / dayMs);
-        return d <= 0 && d >= -1;
-      }).length,
-      overdue: leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < now).length,
-      proposal: leads.filter((l) => l.stage === 'proposal' || l.stage === 'partial').length,
-      won: leads.filter((l) => l.stage === 'won').length,
+    const c: Record<Segment, number> = {
+      all: leads.length, hot: 0, cold: 0, mr_coming_soon: 0, invoice_sent: 0, won: 0, junk: 0,
     };
+    leads.forEach((l) => { c[l.stage] = (c[l.stage] || 0) + 1; });
+    return c;
   }, [leads]);
 
   const columns = useMemo<ColumnDef<Lead>[]>(() => [
@@ -91,7 +63,28 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
       },
     },
     {
-      id: 'stage', accessorKey: 'stage', header: 'Stage',
+      id: 'contact', header: 'Contact',
+      cell: ({ row }) => {
+        const l = row.original;
+        const stop = (e: React.MouseEvent) => e.stopPropagation();
+        return (
+          <div className="flex items-center gap-3">
+            {l.phone ? (
+              <a href={`tel:${l.phone}`} onClick={stop} className="inline-flex items-center gap-1 text-[12.5px] text-ink-2 hover:text-indigo-600 font-medium transition-colors" title={`Call ${l.phone}`}>
+                <Phone className="w-3.5 h-3.5" /> Call
+              </a>
+            ) : <span className="text-faint text-[12.5px]">—</span>}
+            {l.email && (
+              <a href={`mailto:${l.email}`} onClick={stop} className="inline-flex items-center gap-1 text-[12.5px] text-ink-2 hover:text-indigo-600 transition-colors" title={`Email ${l.email}`}>
+                <Mail className="w-3.5 h-3.5" />
+              </a>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      id: 'stage', accessorKey: 'stage', header: 'Tag',
       cell: ({ row }) => {
         const l = row.original; const s = STAGE_META[l.stage];
         return (
@@ -101,17 +94,7 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
           </button>
         );
       },
-      sortingFn: (a, b) => {
-        const order: LeadStage[] = ['new', 'attempted', 'connected', 'qualified', 'consultation', 'proposal', 'partial', 'won', 'lost'];
-        return order.indexOf(a.original.stage) - order.indexOf(b.original.stage);
-      },
-    },
-    {
-      id: 'next', accessorKey: 'next_follow_up', header: 'Next follow-up',
-      cell: ({ row }) => {
-        const { text, overdue } = formatFollowUp(row.original.next_follow_up);
-        return <span className={cn('text-[13px]', overdue ? 'text-danger font-semibold' : 'text-ink-2')}>{text}</span>;
-      },
+      sortingFn: (a, b) => STAGE_ORDER.indexOf(a.original.stage) - STAGE_ORDER.indexOf(b.original.stage),
     },
     {
       id: 'score', accessorKey: 'score', header: 'Score',
@@ -167,7 +150,6 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
     initialState: { pagination: { pageSize: 25 }, columnVisibility: { updated_at: false } },
   });
 
-  // Close stage menu on outside click
   useEffect(() => {
     if (!stageMenu) return;
     const onClick = () => setStageMenu(null);
@@ -175,15 +157,21 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
     return () => window.removeEventListener('click', onClick);
   }, [stageMenu]);
 
+  const segments: Segment[] = ['all', ...STAGE_ORDER];
+
   return (
     <>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        {(['all', 'hot', 'today', 'overdue', 'proposal', 'won'] as Segment[]).map((s) => (
-          <button key={s} onClick={() => setSegment(s)} className={cn('filter-chip', segment === s && 'active')}>
-            {s === 'hot' && '🔥 '}{s === 'all' ? 'All' : s === 'today' ? 'Today' : s === 'overdue' ? 'Overdue' : s === 'proposal' ? 'Proposal' : s === 'won' ? 'Closed won' : 'Hot'}
-            <span className="count" style={s === 'overdue' ? { background: 'hsl(var(--rose-soft))', color: '#B91C1C' } : {}}>{counts[s]}</span>
-          </button>
-        ))}
+        {segments.map((s) => {
+          const meta = s === 'all' ? null : STAGE_META[s];
+          const label = s === 'all' ? 'All' : meta!.label;
+          return (
+            <button key={s} onClick={() => setSegment(s)} className={cn('filter-chip', segment === s && 'active')}>
+              {meta && <span className="chip-dot" style={{ background: meta.dot, marginRight: 4 }} />}{label}
+              <span className="count">{counts[s]}</span>
+            </button>
+          );
+        })}
         <div className="ml-auto flex items-center gap-2">
           <div className="relative">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
@@ -197,7 +185,7 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
         <div className="panel py-16 text-center">
           <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-surface-2"><Filter className="w-7 h-7 text-faint" /></div>
           <h3 className="text-[15px] font-semibold mb-1">No leads match this view</h3>
-          <p className="text-[12.5px] text-muted mb-5">Try a different filter or import leads</p>
+          <p className="text-[12.5px] text-muted mb-5">Try a different tag or import leads</p>
           <button onClick={() => setSegment('all')} className="btn btn-outline">Show all leads</button>
         </div>
       ) : (
@@ -250,7 +238,7 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
       {stageMenu && (
         <div className="fixed z-[90] bg-surface border border-border rounded-md shadow-lg p-1 min-w-[180px] animate-fadeIn"
           style={{ left: stageMenu.x, top: stageMenu.y }} onClick={(e) => e.stopPropagation()}>
-          {(Object.keys(STAGE_META) as LeadStage[]).map((k) => {
+          {STAGE_ORDER.map((k) => {
             const s = STAGE_META[k];
             return (
               <button key={k} onClick={() => { updateLead(stageMenu.leadId, { stage: k }); setStageMenu(null); }}
