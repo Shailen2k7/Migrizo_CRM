@@ -3,15 +3,12 @@
 // =========================================
 
 export type LeadStage =
-  | 'new'
-  | 'attempted'
-  | 'connected'
-  | 'qualified'
-  | 'consultation'
-  | 'proposal'
-  | 'partial'
+  | 'hot'
+  | 'cold'
+  | 'mr_coming_soon'
+  | 'invoice_sent'
   | 'won'
-  | 'lost';
+  | 'junk';
 
 export type PaymentStatus = 'none' | 'partial' | 'paid' | 'overdue';
 
@@ -97,16 +94,16 @@ export interface Activity {
 // =========================================
 
 export const STAGE_META: Record<LeadStage, { label: string; bg: string; fg: string; dot: string }> = {
-  new:          { label: 'New inquiry',   bg: '#F4F4F6', fg: '#3A3A40', dot: '#9CA3AF' },
-  attempted:    { label: 'Attempted',     bg: '#FEF3C7', fg: '#92400E', dot: '#F59E0B' },
-  connected:    { label: 'Connected',     bg: '#DBEAFE', fg: '#1E40AF', dot: '#3B82F6' },
-  qualified:    { label: 'Qualified',     bg: '#EDE9FE', fg: '#5B21B6', dot: '#7C3AED' },
-  consultation: { label: 'Consultation',  bg: '#EEF0FF', fg: '#4338CA', dot: '#6366F1' },
-  proposal:     { label: 'Proposal sent', bg: '#FEF3C7', fg: '#B45309', dot: '#F59E0B' },
-  partial:      { label: 'Partial pay',   bg: '#CFFAFE', fg: '#155E75', dot: '#06B6D4' },
-  won:          { label: 'Closed won',    bg: '#E6F7EE', fg: '#047857', dot: '#10B981' },
-  lost:         { label: 'Closed lost',   bg: '#FEE2E2', fg: '#B91C1C', dot: '#EF4444' },
+  hot:            { label: 'Hot',             bg: '#FEE2E2', fg: '#B91C1C', dot: '#EF4444' },
+  cold:           { label: 'Cold',            bg: '#DBEAFE', fg: '#1E40AF', dot: '#3B82F6' },
+  mr_coming_soon: { label: 'Mr. Coming Soon', bg: '#FEF3C7', fg: '#B45309', dot: '#F59E0B' },
+  invoice_sent:   { label: 'Invoice Sent',    bg: '#EDE9FE', fg: '#5B21B6', dot: '#7C3AED' },
+  won:            { label: 'Won',             bg: '#E6F7EE', fg: '#047857', dot: '#10B981' },
+  junk:           { label: 'Junk',            bg: '#F4F4F6', fg: '#6B7280', dot: '#9CA3AF' },
 };
+
+// Tag order used for dropdowns + filters (logical sales-funnel order)
+export const STAGE_ORDER: LeadStage[] = ['hot', 'cold', 'mr_coming_soon', 'invoice_sent', 'won', 'junk'];
 
 export const PAYMENT_META: Record<PaymentStatus, { label: string; bg: string; fg: string }> = {
   none:    { label: 'Not paid', bg: '#F4F4F6', fg: '#7A7A82' },
@@ -121,7 +118,3 @@ export const MILESTONE_META: Record<Milestone, { label: string; pct: number; ord
   endorsement:      { label: 'Endorsement',      pct: 25, order: 3 },
   post_approval:    { label: 'Post Approval',    pct: 15, order: 4 },
 };
-
-export const STAGE_ORDER: LeadStage[] = [
-  'new', 'attempted', 'connected', 'qualified', 'consultation', 'proposal', 'partial', 'won', 'lost'
-];
