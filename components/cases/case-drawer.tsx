@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronDown, Plus, Trash2, CheckCircle2, Circle, Clock, Ban, FileText, Phone, Mail, Pencil, Briefcase, Save, Undo2 } from 'lucide-react';
 import { useApp } from '@/components/shared/app-provider';
@@ -88,6 +88,41 @@ export function CaseDrawer({ caseId, onClose }: Props) {
     return totals.total === 0 ? 0 : Math.round((totals.done / totals.total) * 100);
   }, [stageProgress]);
 
+  // Compute the furthest stage we can advance to based on which stages are 100% complete.
+  // A stage with 0 required items (all N/A or empty) is treated as "skippable" — we move past it.
+  // A stage with required items NOT all done blocks further advancement.
+  const computeAdvancedStage = useCallback((fromStage: CaseStage): CaseStage => {
+    let idx = CASE_STAGE_ORDER.indexOf(fromStage);
+    let target: CaseStage = fromStage;
+    while (idx < CASE_STAGE_ORDER.length - 1) {
+      const prog = stageProgress[target];
+      // Block if there are required items that aren't done
+      if (prog.required > 0 && prog.requiredDone < prog.required) break;
+      idx++;
+      target = CASE_STAGE_ORDER[idx];
+    }
+    return target;
+  }, [stageProgress]);
+
+  // Sync current_stage if the checklist indicates we should be further along.
+  // Runs once per case-open. Handles existing cases that got stuck.
+  const syncedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!caseId) { syncedRef.current = null; return; }
+    if (syncedRef.current === caseId) return;
+    if (!caseData || items.length === 0) return;
+    if (isDirty) { syncedRef.current = caseId; return; }
+
+    const target = computeAdvancedStage(caseData.current_stage);
+    syncedRef.current = caseId;
+
+    if (target !== caseData.current_stage) {
+      updateCase(caseData.id, { current_stage: target });
+      toast.info(`Stage synced to ${CASE_STAGE_META[target].label}`);
+      setExpandedStage(target);
+    }
+  }, [caseId, caseData, items.length, isDirty, computeAdvancedStage, updateCase]);
+
   const setItemPending = (itemId: string, patch: Partial<CaseChecklistItem>) => {
     setPendingItems((prev) => {
       const original = items.find((i) => i.id === itemId);
@@ -148,12 +183,14 @@ export function CaseDrawer({ caseId, onClose }: Props) {
       );
 
       const caseUpdates: Partial<Case> = { ...pendingCase };
-      const currentStage = effectiveCase.current_stage;
-      const prog = stageProgress[currentStage];
-      const currentIdx = CASE_STAGE_ORDER.indexOf(currentStage);
-      const isLastStage = currentIdx === CASE_STAGE_ORDER.length - 1;
-      if (prog.required > 0 && prog.requiredDone === prog.required && !isLastStage && !pendingCase.current_stage) {
-        caseUpdates.current_stage = CASE_STAGE_ORDER[currentIdx + 1];
+      const beforeStage = effectiveCase.current_stage;
+
+      // Loop-advance through ALL completed stages — not just one step.
+      if (!pendingCase.current_stage) {
+        const target = computeAdvancedStage(beforeStage);
+        if (target !== beforeStage) {
+          caseUpdates.current_stage = target;
+        }
       }
 
       if (Object.keys(caseUpdates).length > 0) {
@@ -164,7 +201,7 @@ export function CaseDrawer({ caseId, onClose }: Props) {
       setPendingCase({});
       await reload();
 
-      if (caseUpdates.current_stage && caseUpdates.current_stage !== currentStage) {
+      if (caseUpdates.current_stage && caseUpdates.current_stage !== beforeStage) {
         toast.success(`Saved · advanced to ${CASE_STAGE_META[caseUpdates.current_stage].label}`);
         setExpandedStage(caseUpdates.current_stage);
       } else {
