@@ -122,7 +122,7 @@ const ACTION_LABEL: Record<string, { icon: React.ComponentType<{ className?: str
   imported_leads:    { icon: Users, verb: 'imported', color: '#F59E0B' },
 };
 
-export function ActivityFeed({ activity, leads }: { activity: Activity[]; leads: Lead[] }) {
+export function ActivityFeed({ activity, leads, memberNameById }: { activity: Activity[]; leads: Lead[]; memberNameById: (id: string | null | undefined) => string }) {
   if (activity.length === 0) return <div className="py-10 text-center text-[12.5px] text-muted">No activity yet</div>;
   return (
     <div>
@@ -130,19 +130,20 @@ export function ActivityFeed({ activity, leads }: { activity: Activity[]; leads:
         const meta = ACTION_LABEL[a.action] || { icon: Sparkles, verb: a.action, color: '#9CA3AF' };
         const Icon = meta.icon;
         const lead = a.lead_id ? leads.find((l) => l.id === a.lead_id) : null;
+        const actor = memberNameById(a.user_id);
         const label = (() => {
-          if (a.action === 'created_lead') return <>Added new lead <span className="font-semibold">{(a.meta as { name?: string }).name || lead?.full_name || '—'}</span></>;
+          if (a.action === 'created_lead') return <><span className="font-semibold">{actor}</span> added new lead <span className="font-semibold">{(a.meta as { name?: string }).name || lead?.full_name || '—'}</span></>;
           if (a.action === 'moved_stage') {
             const m = a.meta as { from?: string; to?: string };
-            return <>Moved <span className="font-semibold">{lead?.full_name || 'a lead'}</span> from <span className="text-muted">{m.from}</span> → <span className="font-medium">{m.to}</span></>;
+            return <><span className="font-semibold">{actor}</span> moved <span className="font-semibold">{lead?.full_name || 'a lead'}</span> from <span className="text-muted">{m.from}</span> → <span className="font-medium">{m.to}</span></>;
           }
-          if (a.action === 'added_note') return <>Added note on <span className="font-semibold">{lead?.full_name || 'a lead'}</span></>;
+          if (a.action === 'added_note') return <><span className="font-semibold">{actor}</span> added a note on <span className="font-semibold">{lead?.full_name || 'a lead'}</span></>;
           if (a.action === 'recorded_payment') {
             const m = a.meta as { amount?: number };
-            return <>Logged <span className="font-semibold">{formatINR(m.amount || 0)}</span> payment for <span className="font-semibold">{lead?.full_name || 'client'}</span></>;
+            return <><span className="font-semibold">{actor}</span> logged <span className="font-semibold">{formatINR(m.amount || 0)}</span> payment for <span className="font-semibold">{lead?.full_name || 'client'}</span></>;
           }
-          if (a.action === 'imported_leads') return <>Imported <span className="font-semibold">{(a.meta as { count?: number }).count || 0}</span> leads</>;
-          return a.action;
+          if (a.action === 'imported_leads') return <><span className="font-semibold">{actor}</span> imported <span className="font-semibold">{(a.meta as { count?: number }).count || 0}</span> leads</>;
+          return <><span className="font-semibold">{actor}</span> · {a.action}</>;
         })();
         return (
           <div key={a.id} className="flex gap-3 py-3 border-b border-border last:border-0">
@@ -151,7 +152,11 @@ export function ActivityFeed({ activity, leads }: { activity: Activity[]; leads:
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-[12.5px] text-ink-2 leading-snug">{label}</div>
-              <div className="text-[11px] text-muted mt-0.5">{timeAgo(a.created_at)}</div>
+              <div className="text-[11px] text-muted mt-0.5 flex items-center gap-1.5">
+                <span>{timeAgo(a.created_at)}</span>
+                <span className="text-faint">·</span>
+                <span className="text-faint">{new Date(a.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span>
+              </div>
             </div>
           </div>
         );
