@@ -41,9 +41,9 @@ export default function AIPage() {
   const insights = useMemo(() => {
     const now = Date.now();
     const dayMs = 86400000;
-    const overdueFu = leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < now && !['won', 'lost'].includes(l.stage));
-    const hot = leads.filter((l) => l.score >= 75 && !['won', 'lost'].includes(l.stage));
-    const proposals = leads.filter((l) => l.stage === 'proposal');
+    const overdueFu = leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < now && !['won', 'junk'].includes(l.stage));
+    const hot = leads.filter((l) => l.score >= 75 && !['won', 'junk'].includes(l.stage));
+    const proposals = leads.filter((l) => l.stage === 'invoice_sent');
     const overduePay = payments.filter((p) => p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < now));
     const overduePayAmt = overduePay.reduce((s, p) => s + p.amount, 0);
     return [

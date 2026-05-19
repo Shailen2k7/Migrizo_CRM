@@ -21,7 +21,7 @@ export default function DashboardPage() {
     return leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() >= today.getTime() && new Date(l.next_follow_up).getTime() < tomorrow.getTime()).length;
   }, [leads]);
 
-  const overdueCount = useMemo(() => leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < Date.now() && !['won', 'lost'].includes(l.stage)).length, [leads]);
+  const overdueCount = useMemo(() => leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < Date.now() && !['won', 'junk'].includes(l.stage)).length, [leads]);
 
   return (
     <div className="max-w-[1480px] mx-auto px-8 pt-7 pb-10 animate-pageIn">

@@ -10,14 +10,13 @@ import { toast } from 'sonner';
 
 function LeadsPageInner() {
   const params = useSearchParams();
-  const seg = (params.get('segment') as 'all' | 'hot' | 'today' | 'overdue' | 'proposal' | 'won') || 'all';
-  const { leads } = useApp();
+  const seg = (params.get('segment') as 'all' | 'hot' | 'cold' | 'mr_coming_soon' | 'invoice_sent' | 'won' | 'junk') || 'all';
+  const { leads, payments } = useApp();
   const ui = useUI();
-  const [notifOpen, setNotifOpen] = useState(false);
 
   const summary = useMemo(() => {
     const won = leads.filter((l) => l.stage === 'won').length;
-    const active = leads.filter((l) => !['new', 'won', 'lost'].includes(l.stage)).length;
+    const active = leads.filter((l) => !['won', 'junk'].includes(l.stage)).length;
     return `${leads.length} total · ${active} active · ${won} closed won`;
   }, [leads]);
 
@@ -42,7 +41,7 @@ function LeadsPageInner() {
         </div>
         <div className="flex items-center gap-2.5">
           <button onClick={exportCsv} className="btn btn-outline">Export CSV</button>
-          <Topbar leads={leads} notifCount={0} onAddLead={ui.openAddLead} onImport={ui.openImport} onOpenNotifs={() => setNotifOpen(!notifOpen)} onOpenLead={ui.openLeadDrawer} />
+          <Topbar leads={leads} payments={payments} onAddLead={ui.openAddLead} onImport={ui.openImport} onOpenLead={ui.openLeadDrawer} />
         </div>
       </div>
       <LeadsTable initialSegment={seg} onRowClick={ui.openLeadDrawer} />

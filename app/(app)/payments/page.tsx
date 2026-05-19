@@ -25,7 +25,7 @@ export default function PaymentsPage() {
       const collected = pays.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
       const hasOverdue = pays.some((p) => p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < Date.now()));
       const completed = pays.length >= 4 && pays.every((p) => p.status === 'paid');
-      if (pays.length > 0 || l.stage === 'won' || l.stage === 'partial' || l.amount_paid > 0) {
+      if (pays.length > 0 || l.stage === 'won' || l.stage === 'invoice_sent' || l.amount_paid > 0) {
         map.set(l.id, {
           lead: l,
           payments: pays,
