@@ -6,6 +6,7 @@ import { useApp } from '@/components/shared/app-provider';
 import { MILESTONE_META } from '@/lib/types';
 import type { Milestone } from '@/lib/types';
 import { formatINRFull } from '@/lib/utils';
+import { Select } from '@/components/shared/select';
 
 interface Props { open: boolean; onClose: () => void; presetLeadId?: string | null; }
 
@@ -42,17 +43,23 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
       <div className="space-y-4">
         <div>
           <label className="input-label">Client *</label>
-          <select className="input" value={leadId} onChange={(e) => setLeadId(e.target.value)}>
-            {leads.length === 0 && <option value="">No clients yet</option>}
-            {leads.map((l) => <option key={l.id} value={l.id}>{l.full_name} {l.phone ? `· ${l.phone}` : ''}</option>)}
-          </select>
+          <Select<string>
+            value={leadId}
+            onChange={setLeadId}
+            options={leads.length === 0
+              ? [{ value: '', label: 'No clients yet' }]
+              : leads.map((l) => ({ value: l.id, label: l.full_name, hint: l.phone || l.email || undefined }))}
+            placeholder="Select a client"
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="input-label">Milestone *</label>
-            <select className="input" value={milestone} onChange={(e) => setMilestone(e.target.value as Milestone)}>
-              {(Object.keys(MILESTONE_META) as Milestone[]).map((m) => <option key={m} value={m}>{MILESTONE_META[m].label} ({MILESTONE_META[m].pct}%)</option>)}
-            </select>
+            <Select<Milestone>
+              value={milestone}
+              onChange={setMilestone}
+              options={(Object.keys(MILESTONE_META) as Milestone[]).map((m) => ({ value: m, label: `${MILESTONE_META[m].label} (${MILESTONE_META[m].pct}%)` }))}
+            />
           </div>
           <div>
             <label className="input-label">Amount (₹) *</label>
@@ -61,7 +68,7 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
           </div>
         </div>
         <div>
-          <label className="input-label">Note</label>
+          <label className="input-label">Note <span className="text-faint">(visible on this payment row)</span></label>
           <textarea className="input" rows={2} placeholder="Reference, mode of payment, etc." value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
       </div>

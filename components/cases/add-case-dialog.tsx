@@ -6,6 +6,7 @@ import { useApp } from '@/components/shared/app-provider';
 import type { Lead } from '@/lib/types';
 import { initials, avatarColor } from '@/lib/utils';
 import { Search, User } from 'lucide-react';
+import { Select } from '@/components/shared/select';
 
 interface Props {
   open: boolean;
@@ -114,13 +115,17 @@ export function AddCaseDialog({ open, onClose, leads, onCreated }: Props) {
 
         <div>
           <label className="input-label">Visa type</label>
-          <select className="input" value={visaType} onChange={(e) => setVisaType(e.target.value)}>
-            <option>Global Talent Visa</option>
-            <option>Innovator Founder Visa</option>
-            <option>Skilled Worker Visa</option>
-            <option>High Potential Individual Visa</option>
-            <option>Scale-up Visa</option>
-          </select>
+          <Select<string>
+            value={visaType}
+            onChange={(v) => setVisaType(v)}
+            options={[
+              { value: 'Global Talent Visa', label: 'Global Talent Visa' },
+              { value: 'Innovator Founder Visa', label: 'Innovator Founder Visa' },
+              { value: 'Skilled Worker Visa', label: 'Skilled Worker Visa' },
+              { value: 'High Potential Individual Visa', label: 'High Potential Individual Visa' },
+              { value: 'Scale-up Visa', label: 'Scale-up Visa' },
+            ]}
+          />
         </div>
 
         <div className="rounded-md border border-border bg-surface-2 p-3 flex items-start gap-2.5 text-[11.5px] text-muted leading-relaxed">
