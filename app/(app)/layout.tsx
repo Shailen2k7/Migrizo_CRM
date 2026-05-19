@@ -23,7 +23,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     .maybeSingle();
 
   // 3. If no membership row at all, the signup trigger didn't fire — fail gracefully
-  if (!member || !member.workspaces) {
+  if (!member) {
     return (
       <div className="min-h-screen flex items-center justify-center p-8" style={{ background: 'hsl(var(--bg))' }}>
         <div className="panel p-8 max-w-md text-center">
@@ -40,7 +40,8 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     );
   }
 
-  // 4. Gate based on status
+  // 4. Gate based on status — check BEFORE workspace data
+  //    (pending/paused users may not be able to read the workspaces row via RLS, which is OK)
   if (member.status === 'pending') {
     return <AuthStatusScreen status="pending" userEmail={user.email || ''} userName={displayName} />;
   }
@@ -48,7 +49,19 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     return <AuthStatusScreen status="paused" userEmail={user.email || ''} userName={displayName} />;
   }
 
-  // 5. Active member — load workspace data and render the app
+  // 5. Active member — need workspace data to render the app
+  if (!member.workspaces) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-8" style={{ background: 'hsl(var(--bg))' }}>
+        <div className="panel p-8 max-w-md text-center">
+          <h2 className="text-lg font-semibold mb-2">Workspace not found</h2>
+          <p className="text-[13px] text-muted mb-4">Your workspace data couldn't be loaded. Try signing out and back in.</p>
+          <a href="/login" className="btn btn-primary inline-flex">Back to sign in</a>
+        </div>
+      </div>
+    );
+  }
+
   const workspace = member.workspaces as unknown as Workspace;
   const role = (member.role as 'admin' | 'member') || 'member';
 
