@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Migrizo CRM — Cases</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css?v=20260518">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  /* ====== Page-specific tokens ====== */
+  .cases-page { --s1:#6366F1; --s1bg:#EEF2FF; --s2:#8B5CF6; --s2bg:#EDE9FE; --s3:#F59E0B; --s3bg:#FEF3C7; --s4:#14B8A6; --s4bg:#CCFBF1; --s5:#3B82F6; --s5bg:#DBEAFE; --s6:#10B981; --s6bg:#DCFCE7; }
+
+  /* ====== Toolbar ====== */
+  .cases-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:12px; }
+  .cases-toolbar .search-box { flex:1; min-width:220px; }
+  .cases-toolbar select { height:36px; padding:0 32px 0 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text-1); font-weight:500; font-size:13px; cursor:pointer; -webkit-appearance:none; -moz-appearance:none; appearance:none; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.5'><polyline points='6 9 12 15 18 9'/></svg>"); background-repeat:no-repeat; background-position:right 10px center; }
+  .cases-toolbar select:focus { outline:none; border-color:var(--primary-200); }
+  .cases-count { font-size:12.5px; color:var(--text-2); margin-left:auto; }
+  .cases-count strong { color:var(--text-1); font-weight:700; }
+
+  /* ====== Case cards grid ====== */
+  .case-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:14px; margin-top:14px; }
+  .case-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; cursor:pointer; transition:all 0.15s ease; display:flex; flex-direction:column; gap:12px; }
+  .case-card:hover { border-color:var(--border-strong); box-shadow:var(--shadow-md); transform:translateY(-1px); }
+  .case-card-top { display:flex; align-items:flex-start; gap:10px; }
+  .case-card-name { font-weight:700; font-size:14px; color:var(--text-1); margin-bottom:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .case-card-meta { font-size:11.5px; color:var(--text-3); display:flex; gap:8px; flex-wrap:wrap; }
+  .case-card-meta .dot { color:var(--text-4); }
+  .case-status { font-size:10.5px; font-weight:600; padding:2px 8px; border-radius:999px; text-transform:uppercase; letter-spacing:0.03em; }
+
+  /* Mini stepper (compact 6-dot indicator on cards) */
+  .mini-stepper { display:flex; align-items:center; gap:0; }
+  .mini-step { flex:1; display:flex; align-items:center; }
+  .mini-dot { width:18px; height:18px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:9.5px; font-weight:700; color:#fff; background:#E2E8F0; color:#94A3B8; border:1.5px solid transparent; }
+  .mini-dot.done { background:#10B981; color:#fff; }
+  .mini-dot.current { background:#fff; border-color:currentColor; box-shadow:0 0 0 3px rgba(99,102,241,0.18); }
+  .mini-line { flex:1; height:2px; background:#F1F5F9; }
+  .mini-line.done { background:#10B981; }
+  .mini-step:last-child .mini-line { display:none; }
+
+  .case-current { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-2); }
+  .case-current .stage-pill-sm { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:999px; font-weight:600; font-size:11px; }
+  .case-progress-row { display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--text-3); }
+  .case-progress-row .progress-bar { flex:1; }
+
+  /* ====== Drawer ====== */
+  .drawer-backdrop { position:fixed; inset:0; background:rgba(15,23,42,0.45); opacity:0; visibility:hidden; transition:opacity 0.2s ease, visibility 0.2s ease; z-index:1000; }
+  .drawer-backdrop.show { opacity:1; visibility:visible; }
+  .case-drawer { position:fixed; top:0; right:0; bottom:0; width:min(720px, 100vw); background:var(--surface); box-shadow:-12px 0 32px rgba(15,23,42,0.16); transform:translateX(100%); transition:transform 0.28s cubic-bezier(0.32, 0.72, 0, 1); z-index:1001; display:flex; flex-direction:column; }
+  .case-drawer.show { transform:translateX(0); }
+
+  .drawer-head { padding:18px 22px; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; gap:14px; flex-shrink:0; }
+  .drawer-head .avatar.lg { font-weight:700; }
+  .drawer-head-main { flex:1; min-width:0; }
+  .drawer-head-name { font-size:17px; font-weight:700; color:var(--text-1); margin-bottom:4px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .drawer-head-meta { font-size:12.5px; color:var(--text-3); display:flex; gap:10px; flex-wrap:wrap; }
+  .drawer-head-meta .dot { color:var(--text-4); }
+  .drawer-actions { display:flex; gap:6px; align-items:center; }
+  .drawer-action-btn { width:34px; height:34px; border-radius:8px; background:transparent; border:1px solid transparent; display:flex; align-items:center; justify-content:center; color:var(--text-3); cursor:pointer; transition:all 0.15s; }
+  .drawer-action-btn:hover { background:var(--bg); color:var(--text-1); border-color:var(--border); }
+  .drawer-action-btn i { width:18px; height:18px; }
+
+  .drawer-body { flex:1; overflow-y:auto; padding:22px; }
+  .drawer-foot { padding:14px 22px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-shrink:0; background:var(--surface); }
+
+  /* Big stepper */
+  .stage-stepper { display:flex; align-items:flex-start; gap:0; margin-bottom:22px; padding:18px 8px; background:linear-gradient(180deg, var(--bg) 0%, transparent 100%); border-radius:12px; }
+  .stage-step { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; position:relative; min-width:0; }
+  .stage-step .step-line { position:absolute; top:14px; left:50%; right:-50%; height:2px; background:#E2E8F0; z-index:0; }
+  .stage-step.done .step-line { background:#10B981; }
+  .stage-step:last-child .step-line { display:none; }
+  .stage-circle { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; background:#F1F5F9; color:#94A3B8; border:2px solid transparent; position:relative; z-index:1; flex-shrink:0; }
+  .stage-circle i { width:14px; height:14px; }
+  .stage-step.done .stage-circle { background:#10B981; color:#fff; }
+  .stage-step.current .stage-circle { background:#fff; color:var(--text-1); border-color:currentColor; box-shadow:0 0 0 4px rgba(99,102,241,0.16); }
+  .stage-step.current { animation:pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity:1; } 50% { opacity:0.92; } }
+  .step-label { font-size:10.5px; font-weight:600; color:var(--text-3); text-align:center; padding:0 4px; line-height:1.3; }
+  .stage-step.done .step-label, .stage-step.current .step-label { color:var(--text-1); }
+
+  /* Accordion sections */
+  .stage-section { background:var(--surface); border:1px solid var(--border); border-radius:12px; margin-bottom:12px; overflow:hidden; }
+  .stage-section.is-current { border-color:var(--border-strong); box-shadow:var(--shadow-sm); }
+  .stage-header { width:100%; display:flex; align-items:center; gap:12px; padding:14px 16px; background:transparent; cursor:pointer; text-align:left; border:none; }
+  .stage-header:hover { background:var(--bg); }
+  .stage-chev { width:16px; height:16px; color:var(--text-3); transition:transform 0.2s ease; flex-shrink:0; }
+  .stage-section.open .stage-chev { transform:rotate(90deg); }
+  .stage-dot { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+  .stage-name { font-size:13.5px; font-weight:600; color:var(--text-1); flex:1; min-width:0; }
+  .stage-name .stage-num { color:var(--text-3); font-weight:500; margin-right:6px; }
+  .stage-progress-text { font-size:12px; font-weight:600; color:var(--text-2); padding:3px 9px; background:var(--bg); border-radius:999px; }
+  .stage-progress-text.complete { background:#DCFCE7; color:#15803D; }
+  .current-pill { font-size:10px; font-weight:700; padding:2px 7px; border-radius:6px; background:var(--primary-50); color:var(--primary-hover); text-transform:uppercase; letter-spacing:0.04em; margin-right:4px; }
+
+  .stage-body { display:none; padding:0 16px 16px; }
+  .stage-section.open .stage-body { display:block; }
+
+  /* Task rows */
+  .task-row { display:flex; align-items:flex-start; gap:10px; padding:10px 10px; border-radius:8px; transition:background 0.12s; position:relative; }
+  .task-row:hover { background:var(--bg); }
+  .task-row + .task-row { border-top:1px solid var(--divider); }
+  .task-status-pill { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; padding:4px 9px; border-radius:999px; cursor:pointer; border:1px solid transparent; flex-shrink:0; min-width:88px; justify-content:center; transition:all 0.15s; user-select:none; }
+  .task-status-pill:hover { transform:scale(1.04); }
+  .task-status-pill i { width:11px; height:11px; }
+  .task-status-pill.s-not_started { background:#F1F5F9; color:#64748B; }
+  .task-status-pill.s-in_progress { background:#FEF3C7; color:#B45309; }
+  .task-status-pill.s-done        { background:#DCFCE7; color:#15803D; }
+  .task-status-pill.s-na          { background:#E2E8F0; color:#475569; }
+  .task-content { flex:1; min-width:0; }
+  .task-label { font-size:13px; color:var(--text-1); line-height:1.4; }
+  .task-label.done { color:var(--text-3); text-decoration:line-through; text-decoration-color:#10B981; }
+  .task-label[contenteditable=true] { outline:1.5px solid var(--primary-200); border-radius:4px; padding:2px 6px; background:#fff; }
+  .task-notes-preview { font-size:11.5px; color:var(--text-3); margin-top:3px; font-style:italic; white-space:pre-wrap; word-break:break-word; }
+  .task-custom-tag { display:inline-block; font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:4px; background:var(--primary-50); color:var(--primary-hover); margin-left:6px; text-transform:uppercase; letter-spacing:0.04em; vertical-align:middle; }
+  .task-actions { display:flex; gap:2px; opacity:0; transition:opacity 0.12s; flex-shrink:0; }
+  .task-row:hover .task-actions, .task-row.editing .task-actions { opacity:1; }
+  .task-action-btn { width:28px; height:28px; border-radius:6px; background:transparent; border:none; color:var(--text-3); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .task-action-btn:hover { background:var(--surface); color:var(--text-1); }
+  .task-action-btn.danger:hover { color:#DC2626; }
+  .task-action-btn i { width:14px; height:14px; }
+  .task-action-btn.has-notes { color:var(--primary-hover); opacity:1; }
+
+  /* Status menu (popover when clicking pill) */
+  .status-menu { position:absolute; background:var(--surface); border:1px solid var(--border); border-radius:8px; box-shadow:var(--shadow-lg); padding:4px; z-index:50; display:flex; flex-direction:column; min-width:140px; }
+  .status-menu button { display:flex; align-items:center; gap:8px; padding:7px 10px; background:transparent; border:none; font-size:12.5px; color:var(--text-1); cursor:pointer; text-align:left; border-radius:6px; width:100%; }
+  .status-menu button:hover { background:var(--bg); }
+  .status-menu .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+  /* Notes editor (expands inline) */
+  .task-notes-editor { padding:0 10px 10px 100px; }
+  .task-notes-editor textarea { width:100%; min-height:60px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:12.5px; color:var(--text-1); resize:vertical; outline:none; }
+  .task-notes-editor textarea:focus { border-color:var(--primary-200); box-shadow:0 0 0 3px var(--primary-50); }
+  .task-notes-editor-actions { display:flex; gap:8px; margin-top:6px; justify-content:flex-end; }
+  .task-notes-editor-actions button { padding:5px 12px; font-size:12px; border-radius:6px; cursor:pointer; }
+  .task-notes-editor-actions .save { background:var(--primary); color:#fff; border:none; font-weight:600; }
+  .task-notes-editor-actions .cancel { background:transparent; color:var(--text-2); border:1px solid var(--border); }
+
+  /* Add custom task button */
+  .add-task-btn { display:flex; align-items:center; gap:8px; padding:9px 12px; margin-top:8px; background:transparent; border:1.5px dashed var(--border-strong); border-radius:8px; color:var(--text-3); cursor:pointer; font-size:12.5px; font-weight:500; width:100%; justify-content:center; transition:all 0.15s; }
+  .add-task-btn:hover { border-color:var(--primary-200); color:var(--primary-hover); background:var(--primary-50); }
+  .add-task-btn i { width:14px; height:14px; }
+
+  /* Stage footer (advance button) */
+  .stage-footer { margin-top:14px; padding-top:14px; border-top:1px solid var(--divider); display:flex; justify-content:flex-end; gap:8px; }
+  .advance-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; background:var(--primary); color:#fff; border:none; font-weight:600; font-size:12.5px; cursor:pointer; }
+  .advance-btn:hover { background:var(--primary-hover); }
+  .advance-btn:disabled { opacity:0.5; cursor:not-allowed; }
+  .advance-btn i { width:14px; height:14px; }
+
+  /* Empty drawer state */
+  .drawer-loading { padding:60px 22px; text-align:center; }
+
+  /* Mobile */
+  @media (max-width: 720px) {
+    .case-drawer { width:100vw; }
+    .case-grid { grid-template-columns:1fr; }
+    .drawer-head { padding:14px 16px; }
+    .drawer-body { padding:14px; }
+    .step-label { font-size:9.5px; }
+    .stage-stepper { padding:14px 4px; }
+    .task-notes-editor { padding-left:10px; }
+  }
+</style>
+</head>
+<body class="cases-page">
+
+  <aside class="sidebar">
+    <div class="logo"><div class="logo-mark">M</div><div class="logo-text">Migrizo</div></div>
+    <nav class="nav">
+      <a class="nav-item" href="index.html"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
+      <a class="nav-item" href="leads.html"><i data-lucide="users"></i><span>Leads</span></a>
+      <a class="nav-item active" href="cases.html"><i data-lucide="briefcase"></i><span>Cases</span></a>
+      <a class="nav-item" href="followups.html"><i data-lucide="calendar-clock"></i><span>Follow-ups</span></a>
+      <a class="nav-item" href="payments.html"><i data-lucide="indian-rupee"></i><span>Payments</span></a>
+      <a class="nav-item" href="calendar.html"><i data-lucide="calendar"></i><span>Calendar</span></a>
+      <a class="nav-item" href="reports.html"><i data-lucide="bar-chart-3"></i><span>Reports</span></a>
+      <div class="nav-divider"></div>
+      <a class="nav-item" href="ai-coo.html"><i data-lucide="sparkles"></i><span>AI COO</span></a>
+      <a class="nav-item" href="settings.html"><i data-lucide="settings"></i><span>Settings</span></a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar">—</div>
+        <div class="user-meta"><div class="user-name">Loading...</div><div class="user-role">—</div></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="greeting">
+        <h1>Cases</h1>
+        <p>Track every active client journey through the 6-stage pipeline</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn-add" id="newCaseBtn"><i data-lucide="plus" style="width:16px;height:16px"></i> New Case</button>
+      </div>
+    </header>
+
+    <section class="content">
+      <!-- KPI Cards -->
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Active Cases</span><span class="stat-icon-tiny"><i data-lucide="briefcase"></i></span></div><div class="stat-value" id="kActive">—</div><div class="stat-delta muted-only"><span class="muted">In progress</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Profile Building</span><span class="stat-icon-tiny violet"><i data-lucide="file-text"></i></span></div><div class="stat-value" id="kProfile">—</div><div class="stat-delta muted-only"><span class="muted">Currently in Stage 2</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Awaiting Endorsement</span><span class="stat-icon-tiny teal"><i data-lucide="hourglass"></i></span></div><div class="stat-value" id="kEndorse">—</div><div class="stat-delta muted-only"><span class="muted">Stage 3 or 4</span></div></div>
+        <div class="stat-card"><div class="stat-head"><span class="stat-label">Visa & Post Arrival</span><span class="stat-icon-tiny green"><i data-lucide="plane-takeoff"></i></span></div><div class="stat-value" id="kArrived">—</div><div class="stat-delta muted-only"><span class="muted">Stage 5 or 6</span></div></div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="cases-toolbar" style="margin-top:16px">
+        <div class="search-box">
+          <i data-lucide="search" class="search-icon" style="width:16px;height:16px"></i>
+          <input type="text" placeholder="Search client name, phone, email..." id="caseSearch" />
+        </div>
+        <select id="filterStatus">
+          <option value="">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="on_hold">On Hold</option>
+          <option value="completed">Completed</option>
+          <option value="withdrawn">Withdrawn</option>
+        </select>
+        <select id="filterStage">
+          <option value="">All Stages</option>
+          <option value="1">Stage 1 — Roadmap Building</option>
+          <option value="2">Stage 2 — Profile Building</option>
+          <option value="3">Stage 3 — Final Mapping & Testing</option>
+          <option value="4">Stage 4 — Endorsement Submission</option>
+          <option value="5">Stage 5 — Visa Application</option>
+          <option value="6">Stage 6 — Post Arrival Services</option>
+        </select>
+        <div class="cases-count">Total: <strong id="casesCount">—</strong></div>
+      </div>
+
+      <!-- Cases Grid -->
+      <div id="caseGrid" class="case-grid">
+        <div class="loading-block" style="grid-column:1/-1"><span class="spinner"></span> Loading cases...</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Drawer -->
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+  <aside class="case-drawer" id="caseDrawer">
+    <div class="drawer-head" id="drawerHead">
+      <!-- populated dynamically -->
+    </div>
+    <div class="drawer-body" id="drawerBody">
+      <div class="drawer-loading"><span class="spinner"></span> Loading case...</div>
+    </div>
+    <div class="drawer-foot" id="drawerFoot" style="display:none">
+      <button class="btn-secondary" style="color:#DC2626;border-color:#FCA5A5" id="deleteCaseBtn">
+        <i data-lucide="trash-2" style="width:14px;height:14px"></i> Delete Case
+      </button>
+      <button class="btn-secondary" id="closeDrawerBtn">Close</button>
+    </div>
+  </aside>
+
+  <script src="assets/app.js?v=20260518"></script>
+  <script src="assets/auth.js?v=20260518"></script>
+  <script>
+  // ─────────────────────────────────────────────────────────────
+  // CONSTANTS
+  // ─────────────────────────────────────────────────────────────
+  const STAGE_META = [
+    { n:1, name:'Roadmap Building',         short:'Roadmap',     color:'#6366F1', bg:'#EEF2FF' },
+    { n:2, name:'Profile Building',         short:'Profile',     color:'#8B5CF6', bg:'#EDE9FE' },
+    { n:3, name:'Final Mapping & Testing',  short:'Mapping',     color:'#F59E0B', bg:'#FEF3C7' },
+    { n:4, name:'Endorsement Submission',   short:'Endorsement', color:'#14B8A6', bg:'#CCFBF1' },
+    { n:5, name:'Visa Application',         short:'Visa',        color:'#3B82F6', bg:'#DBEAFE' },
+    { n:6, name:'Post Arrival Services',    short:'Post Arrival',color:'#10B981', bg:'#DCFCE7' }
+  ];
+  const STATUS_META = {
+    active:    { label:'Active',    color:'#15803D', bg:'#DCFCE7' },
+    on_hold:   { label:'On Hold',   color:'#B45309', bg:'#FEF3C7' },
+    completed: { label:'Completed', color:'#1D4ED8', bg:'#DBEAFE' },
+    withdrawn: { label:'Withdrawn', color:'#64748B', bg:'#F1F5F9' }
+  };
+  const TASK_STATUS = {
+    not_started: { label:'Not Started', icon:'circle',      next:'in_progress' },
+    in_progress: { label:'In Progress', icon:'circle-dot',  next:'done' },
+    done:        { label:'Done',        icon:'circle-check',next:'not_started' },
+    na:          { label:'N/A',         icon:'minus-circle',next:'not_started' }
+  };
+  const STAGE_BY_N = Object.fromEntries(STAGE_META.map(s => [s.n, s]));
+
+  // ─────────────────────────────────────────────────────────────
+  // STATE
+  // ─────────────────────────────────────────────────────────────
+  let CASES = [];
+  let CURRENT = null;          // { case: {}, tasks: [] }
+  let LEADS_PICKER = null;     // lazy-loaded for New Case modal
+  let openStages = new Set();
+  let searchQuery = '', statusFilter = '', stageFilter = '';
+  let openStatusMenu = null;   // currently-open status popover
+
+  // ─────────────────────────────────────────────────────────────
+  // LIST VIEW
+  // ─────────────────────────────────────────────────────────────
+  async function loadCases() {
+    try {
+      const r = await CRM.cases();
+      CASES = r.cases || [];
+      applyFilters();
+    } catch (err) {
+      console.error(err);
+      document.getElementById('caseGrid').innerHTML = `<div class="loading-block" style="grid-column:1/-1;color:#DC2626">⚠️ ${err.message}</div>`;
+    }
+  }
+
+  function applyFilters() {
+    let filtered = CASES.slice();
+    if (statusFilter) filtered = filtered.filter(c => c.status === statusFilter);
+    if (stageFilter) filtered = filtered.filter(c => String(c.current_stage) === stageFilter);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(c =>
+        (c.client_name || '').toLowerCase().includes(q) ||
+        (c.client_phone || '').toLowerCase().includes(q) ||
+        (c.client_email || '').toLowerCase().includes(q)
+      );
+    }
+    renderStats();
+    renderCaseGrid(filtered);
+  }
+
+  function renderStats() {
+    const activeCases = CASES.filter(c => c.status === 'active');
+    document.getElementById('kActive').textContent  = activeCases.length;
+    document.getElementById('kProfile').textContent = activeCases.filter(c => c.current_stage === 2).length;
+    document.getElementById('kEndorse').textContent = activeCases.filter(c => c.current_stage === 3 || c.current_stage === 4).length;
+    document.getElementById('kArrived').textContent = activeCases.filter(c => c.current_stage === 5 || c.current_stage === 6).length;
+  }
+
+  function renderCaseGrid(list) {
+    const grid = document.getElementById('caseGrid');
+    document.getElementById('casesCount').textContent = list.length;
+
+    if (list.length === 0) {
+      grid.innerHTML = `<div style="grid-column:1/-1">${emptyState({
+        icon: 'briefcase',
+        title: CASES.length === 0 ? 'No cases yet' : 'No cases match your filters',
+        message: CASES.length === 0 ? 'When a client pays the kickstart fee, create their case here to start tracking the 6-stage journey.' : 'Try clearing the search or filters.',
+        action: CASES.length === 0 ? 'Create First Case' : null,
+        actionId: 'emptyNewCase'
+      })}</div>`;
+      if (window.lucide) lucide.createIcons();
+      const ea = document.getElementById('emptyNewCase');
+      if (ea) ea.onclick = openNewCaseModal;
+      return;
+    }
+
+    grid.innerHTML = list.map((c, i) => caseCardHtml(c, i)).join('');
+    if (window.lucide) lucide.createIcons();
+
+    grid.querySelectorAll('.case-card').forEach(card => {
+      card.onclick = () => openCaseDrawer(card.dataset.id);
+    });
+  }
+
+  function caseCardHtml(c, i) {
+    const stage = STAGE_BY_N[c.current_stage];
+    const stat = STATUS_META[c.status] || STATUS_META.active;
+    const prog = c.progress || { byStage:{}, totalDone:0, totalAll:0 };
+    const currentStageProg = prog.byStage?.[c.current_stage] || { done:0, total:0 };
+    const overallPct = prog.totalAll > 0 ? Math.round((prog.totalDone / prog.totalAll) * 100) : 0;
+    const stagePct = currentStageProg.total > 0 ? Math.round((currentStageProg.done / currentStageProg.total) * 100) : 0;
+
+    return `
+      <div class="case-card" data-id="${c.id}">
+        <div class="case-card-top">
+          <div class="avatar a${(i % 9) + 1}">${fmt.initials(c.client_name)}</div>
+          <div style="flex:1;min-width:0">
+            <div class="case-card-name">${escapeHtml(c.client_name)}</div>
+            <div class="case-card-meta">
+              ${c.client_phone ? `<span>${fmt.phone(c.client_phone)}</span><span class="dot">·</span>` : ''}
+              <span>Started ${fmt.dateShort(c.started_at)}</span>
+            </div>
+          </div>
+          <span class="case-status" style="background:${stat.bg};color:${stat.color}">${stat.label}</span>
+        </div>
+
+        <div class="mini-stepper" style="color:${stage.color}">
+          ${STAGE_META.map(s => {
+            const sProg = prog.byStage?.[s.n] || { done:0, total:0 };
+            const isComplete = sProg.total > 0 && sProg.done === sProg.total && s.n < c.current_stage;
+            const isPast = s.n < c.current_stage;
+            const isCurrent = s.n === c.current_stage;
+            const dotClass = isPast ? 'done' : (isCurrent ? 'current' : '');
+            const lineClass = isPast ? 'done' : '';
+            const content = isPast ? '<i data-lucide="check" style="width:10px;height:10px;color:#fff"></i>' : s.n;
+            return `<div class="mini-step"><span class="mini-dot ${dotClass}">${content}</span><span class="mini-line ${lineClass}"></span></div>`;
+          }).join('')}
+        </div>
+
+        <div class="case-current">
+          <span class="stage-pill-sm" style="background:${stage.bg};color:${stage.color}">Stage ${stage.n} · ${stage.short}</span>
+          <span style="color:var(--text-3);font-size:11.5px">${currentStageProg.done}/${currentStageProg.total} tasks</span>
+        </div>
+
+        <div class="case-progress-row">
+          <div class="progress-bar" style="--p:${stagePct}%;--c:${stage.color}"></div>
+          <span style="font-weight:600;color:var(--text-2);min-width:34px;text-align:right">${stagePct}%</span>
+        </div>
+      </div>`;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // DRAWER
+  // ─────────────────────────────────────────────────────────────
+  async function openCaseDrawer(caseId) {
+    document.getElementById('drawerBackdrop').classList.add('show');
+    document.getElementById('caseDrawer').classList.add('show');
+    document.getElementById('drawerBody').innerHTML = '<div class="drawer-loading"><span class="spinner"></span> Loading case...</div>';
+    document.getElementById('drawerHead').innerHTML = '';
+    document.getElementById('drawerFoot').style.display = 'none';
+
+    try {
+      const r = await CRM.case(caseId);
+      CURRENT = { case: r.case, tasks: r.tasks || [] };
+      openStages = new Set([CURRENT.case.current_stage]);  // current stage open by default
+      renderDrawer();
+    } catch (err) {
+      document.getElementById('drawerBody').innerHTML = `<div class="loading-block" style="color:#DC2626">⚠️ ${err.message}</div>`;
+    }
+  }
+
+  function closeCaseDrawer() {
+    document.getElementById('drawerBackdrop').classList.remove('show');
+    document.getElementById('caseDrawer').classList.remove('show');
+    closeStatusMenu();
+    CURRENT = null;
+  }
+
+  function renderDrawer() {
+    if (!CURRENT) return;
+    const c = CURRENT.case;
+    const stage = STAGE_BY_N[c.current_stage];
+    const stat = STATUS_META[c.status] || STATUS_META.active;
+
+    // Header
+    document.getElementById('drawerHead').innerHTML = `
+      <div class="avatar lg a${(c.client_name.charCodeAt(0) % 9) + 1}">${fmt.initials(c.client_name)}</div>
+      <div class="drawer-head-main">
+        <div class="drawer-head-name">
+          ${escapeHtml(c.client_name)}
+          <span class="case-status" style="background:${stat.bg};color:${stat.color}">${stat.label}</span>
+        </div>
+        <div class="drawer-head-meta">
+          ${c.client_phone ? `<span>${fmt.phone(c.client_phone)}</span><span class="dot">·</span>` : ''}
+          ${c.client_email ? `<span>${escapeHtml(c.client_email)}</span><span class="dot">·</span>` : ''}
+          <span>${escapeHtml(c.visa_route)}</span>
+          <span class="dot">·</span>
+          <span>Started ${fmt.date(c.started_at)}</span>
+          ${c.target_endorsement_date ? `<span class="dot">·</span><span>Target endorsement: ${fmt.date(c.target_endorsement_date)}</span>` : ''}
+        </div>
+      </div>
+      <div class="drawer-actions">
+        <button class="drawer-action-btn" title="Edit case details" id="editCaseBtn"><i data-lucide="pencil"></i></button>
+        <button class="drawer-action-btn" title="Close" id="closeDrawerX"><i data-lucide="x"></i></button>
+      </div>
+    `;
+
+    // Body: stepper + accordions
+    document.getElementById('drawerBody').innerHTML = `
+      <div class="stage-stepper">${STAGE_META.map(s => stepperStepHtml(s, c)).join('')}</div>
+      ${c.case_notes ? `<div style="padding:12px 14px;margin-bottom:16px;background:var(--bg);border-radius:10px;font-size:12.5px;color:var(--text-2);white-space:pre-wrap"><strong style="color:var(--text-1)">Case notes:</strong> ${escapeHtml(c.case_notes)}</div>` : ''}
+      ${STAGE_META.map(s => stageSectionHtml(s)).join('')}
+    `;
+
+    // Footer
+    document.getElementById('drawerFoot').style.display = '';
+
+    if (window.lucide) lucide.createIcons();
+
+    // Wire up
+    document.getElementById('editCaseBtn').onclick = openEditCaseModal;
+    document.getElementById('closeDrawerX').onclick = closeCaseDrawer;
+  }
+
+  function stepperStepHtml(s, c) {
+    const stageProg = (CURRENT.tasks || []).filter(t => t.stage === s.n && t.status !== 'na');
+    const stageDone = stageProg.filter(t => t.status === 'done').length;
+    const isPast = s.n < c.current_stage;
+    const isCurrent = s.n === c.current_stage;
+    const cls = isPast ? 'done' : (isCurrent ? 'current' : 'future');
+    const content = isPast ? '<i data-lucide="check"></i>' : s.n;
+    return `
+      <div class="stage-step ${cls}" style="color:${s.color}" title="${s.name} — ${stageDone}/${stageProg.length}">
+        <div class="stage-circle">${content}</div>
+        <div class="step-label">${s.short}</div>
+        <div class="step-line"></div>
+      </div>`;
+  }
+
+  function stageSectionHtml(s) {
+    const c = CURRENT.case;
+    const tasks = (CURRENT.tasks || []).filter(t => t.stage === s.n);
+    const activeTasks = tasks.filter(t => t.status !== 'na');
+    const done = activeTasks.filter(t => t.status === 'done').length;
+    const isOpen = openStages.has(s.n);
+    const isCurrent = s.n === c.current_stage;
+    const isComplete = activeTasks.length > 0 && done === activeTasks.length;
+
+    return `
+      <div class="stage-section ${isOpen ? 'open' : ''} ${isCurrent ? 'is-current' : ''}" data-stage="${s.n}">
+        <button class="stage-header" data-toggle-stage="${s.n}">
+          <i data-lucide="chevron-right" class="stage-chev"></i>
+          <span class="stage-dot" style="background:${s.color}"></span>
+          <span class="stage-name"><span class="stage-num">Stage ${s.n}</span>${s.name}</span>
+          ${isCurrent ? '<span class="current-pill">Current</span>' : ''}
+          <span class="stage-progress-text ${isComplete ? 'complete' : ''}">${done} / ${activeTasks.length} done</span>
+        </button>
+        <div class="stage-body">
+          ${tasks.length === 0 ? `<p style="font-size:12.5px;color:var(--text-3);padding:8px 10px">No tasks yet. Add a custom task to get started.</p>` : ''}
+          ${tasks.map(t => taskRowHtml(t)).join('')}
+          <button class="add-task-btn" data-add-task-stage="${s.n}"><i data-lucide="plus"></i> Add custom task</button>
+          ${isCurrent && s.n < 6 ? `
+            <div class="stage-footer">
+              <button class="advance-btn" data-advance-to="${s.n + 1}">
+                Mark Stage Complete & Advance <i data-lucide="arrow-right"></i>
+              </button>
+            </div>` : ''}
+          ${isCurrent && s.n === 6 ? `
+            <div class="stage-footer">
+              <button class="advance-btn" data-mark-completed="1" style="background:#10B981">
+                <i data-lucide="check"></i> Mark Case Completed
+              </button>
+            </div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  function taskRowHtml(t) {
+    const st = TASK_STATUS[t.status] || TASK_STATUS.not_started;
+    const notesPreview = (t.notes || '').trim();
+    return `
+      <div class="task-row" data-task-id="${t.id}">
+        <button class="task-status-pill s-${t.status}" data-status-pill="${t.id}">
+          <i data-lucide="${st.icon}"></i> ${st.label}
+        </button>
+        <div class="task-content">
+          <div class="task-label ${t.status === 'done' ? 'done' : ''}" data-task-label="${t.id}">${escapeHtml(t.label)}${t.is_custom ? '<span class="task-custom-tag">Custom</span>' : ''}</div>
+          ${notesPreview ? `<div class="task-notes-preview">${escapeHtml(notesPreview)}</div>` : ''}
+        </div>
+        <div class="task-actions">
+          <button class="task-action-btn ${notesPreview ? 'has-notes' : ''}" data-toggle-notes="${t.id}" title="Notes"><i data-lucide="message-square"></i></button>
+          <button class="task-action-btn" data-edit-label="${t.id}" title="Edit label"><i data-lucide="pencil"></i></button>
+          <button class="task-action-btn danger" data-delete-task="${t.id}" title="Delete"><i data-lucide="trash-2"></i></button>
+        </div>
+      </div>`;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // DRAWER INTERACTIONS (event delegation on the drawer body)
+  // ─────────────────────────────────────────────────────────────
+  document.getElementById('drawerBody').addEventListener('click', async (e) => {
+    const t = e.target;
+
+    // Toggle stage accordion
+    const toggleStage = t.closest('[data-toggle-stage]');
+    if (toggleStage) {
+      const n = parseInt(toggleStage.dataset.toggleStage);
+      if (openStages.has(n)) openStages.delete(n); else openStages.add(n);
+      const section = toggleStage.closest('.stage-section');
+      section.classList.toggle('open');
+      return;
+    }
+
+    // Status pill clicked → open status menu
+    const pill = t.closest('[data-status-pill]');
+    if (pill) {
+      e.stopPropagation();
+      openStatusMenuFor(pill);
+      return;
+    }
+
+    // Toggle notes editor
+    const notesBtn = t.closest('[data-toggle-notes]');
+    if (notesBtn) {
+      const taskId = notesBtn.dataset.toggleNotes;
+      toggleNotesEditor(taskId);
+      return;
+    }
+
+    // Edit label
+    const editLabel = t.closest('[data-edit-label]');
+    if (editLabel) {
+      startEditLabel(editLabel.dataset.editLabel);
+      return;
+    }
+
+    // Delete task
+    const delTask = t.closest('[data-delete-task]');
+    if (delTask) {
+      if (!confirm('Delete this task? This cannot be undone.')) return;
+      await callApi(CRM.deleteTask(delTask.dataset.deleteTask), 'Task deleted');
+      return;
+    }
+
+    // Add custom task
+    const addTask = t.closest('[data-add-task-stage]');
+    if (addTask) {
+      const stage = parseInt(addTask.dataset.addTaskStage);
+      promptCustomTask(stage);
+      return;
+    }
+
+    // Advance stage
+    const adv = t.closest('[data-advance-to]');
+    if (adv) {
+      const newStage = parseInt(adv.dataset.advanceTo);
+      const meta = STAGE_BY_N[newStage];
+      if (!confirm(`Advance to Stage ${newStage} — ${meta.name}?`)) return;
+      await callApi(CRM.advanceStage(CURRENT.case.id, newStage), `Advanced to ${meta.name}`);
+      return;
+    }
+
+    // Mark case completed (from stage 6)
+    const markDone = t.closest('[data-mark-completed]');
+    if (markDone) {
+      if (!confirm('Mark this case as Completed?')) return;
+      await callApi(CRM.updateCase(CURRENT.case.id, { status: 'completed' }), 'Case marked complete');
+      return;
+    }
+  });
+
+  // Click outside status menu closes it
+  document.addEventListener('click', (e) => {
+    if (openStatusMenu && !e.target.closest('.status-menu') && !e.target.closest('[data-status-pill]')) {
+      closeStatusMenu();
+    }
+  });
+
+  function openStatusMenuFor(pill) {
+    closeStatusMenu();
+    const taskId = pill.dataset.statusPill;
+    const menu = document.createElement('div');
+    menu.className = 'status-menu';
+    menu.innerHTML = ['not_started','in_progress','done','na'].map(s => {
+      const st = TASK_STATUS[s];
+      const color = ({not_started:'#94A3B8',in_progress:'#F59E0B',done:'#10B981',na:'#64748B'})[s];
+      return `<button data-set-status="${s}"><span class="dot" style="background:${color}"></span> ${st.label}</button>`;
+    }).join('');
+    document.body.appendChild(menu);
+    const r = pill.getBoundingClientRect();
+    menu.style.left = r.left + 'px';
+    menu.style.top = (r.bottom + 4) + 'px';
+    menu.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-set-status]');
+      if (!btn) return;
+      const newStatus = btn.dataset.setStatus;
+      closeStatusMenu();
+      await setTaskStatus(taskId, newStatus);
+    });
+    openStatusMenu = menu;
+  }
+  function closeStatusMenu() {
+    if (openStatusMenu) { openStatusMenu.remove(); openStatusMenu = null; }
+  }
+
+  async function setTaskStatus(taskId, status) {
+    // Optimistic update
+    const task = CURRENT.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const old = task.status;
+    task.status = status;
+    renderDrawer();
+    try {
+      await CRM.updateTask(taskId, { status });
+      // Refresh list view in background so progress bars update
+      loadCases();
+    } catch (err) {
+      task.status = old;
+      renderDrawer();
+      showToast('Update failed: ' + err.message, 'error');
+    }
+  }
+
+  function toggleNotesEditor(taskId) {
+    const row = document.querySelector(`[data-task-id="${taskId}"]`);
+    if (!row) return;
+    const existing = row.parentElement.querySelector(`[data-notes-for="${taskId}"]`);
+    if (existing) { existing.remove(); row.classList.remove('editing'); return; }
+
+    const task = CURRENT.tasks.find(t => t.id === taskId);
+    const editor = document.createElement('div');
+    editor.className = 'task-notes-editor';
+    editor.setAttribute('data-notes-for', taskId);
+    editor.innerHTML = `
+      <textarea placeholder="Add notes about this task...">${escapeHtml(task.notes || '')}</textarea>
+      <div class="task-notes-editor-actions">
+        <button class="cancel">Cancel</button>
+        <button class="save">Save Notes</button>
+      </div>`;
+    row.insertAdjacentElement('afterend', editor);
+    row.classList.add('editing');
+    const ta = editor.querySelector('textarea');
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+
+    editor.querySelector('.cancel').onclick = () => { editor.remove(); row.classList.remove('editing'); };
+    editor.querySelector('.save').onclick = async () => {
+      const newNotes = ta.value;
+      try {
+        await CRM.updateTask(taskId, { notes: newNotes });
+        task.notes = newNotes;
+        renderDrawer();
+        showToast('Notes saved');
+      } catch (err) {
+        showToast('Save failed: ' + err.message, 'error');
+      }
+    };
+    ta.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') editor.querySelector('.save').click();
+      if (e.key === 'Escape') editor.querySelector('.cancel').click();
+    });
+  }
+
+  function startEditLabel(taskId) {
+    const labelEl = document.querySelector(`[data-task-label="${taskId}"]`);
+    if (!labelEl) return;
+    const task = CURRENT.tasks.find(t => t.id === taskId);
+    labelEl.setAttribute('contenteditable', 'true');
+    labelEl.innerText = task.label;  // strip custom tag span for editing
+    labelEl.focus();
+    const range = document.createRange();
+    range.selectNodeContents(labelEl);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+
+    const finish = async (save) => {
+      labelEl.removeAttribute('contenteditable');
+      const newLabel = labelEl.innerText.trim();
+      if (save && newLabel && newLabel !== task.label) {
+        try {
+          await CRM.updateTask(taskId, { label: newLabel });
+          task.label = newLabel;
+          renderDrawer();
+          showToast('Label updated');
+        } catch (err) {
+          showToast('Update failed: ' + err.message, 'error');
+          renderDrawer();
+        }
+      } else {
+        renderDrawer();
+      }
+    };
+    labelEl.addEventListener('blur', () => finish(true), { once: true });
+    labelEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); labelEl.blur(); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+  }
+
+  function promptCustomTask(stage) {
+    const stageMeta = STAGE_BY_N[stage];
+    openModal({
+      title: `Add custom task to Stage ${stage} — ${stageMeta.name}`,
+      submitLabel: 'Add Task',
+      width: 480,
+      body: `
+        <div class="form-group">
+          <label class="form-label">Task description *</label>
+          <input class="form-input" id="ct_label" placeholder="e.g. Custom mentor intro to John Doe" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes (optional)</label>
+          <textarea class="form-textarea" id="ct_notes" placeholder="Any context for this task..."></textarea>
+        </div>`,
+      onSubmit: async () => {
+        const label = document.getElementById('ct_label').value.trim();
+        const notes = document.getElementById('ct_notes').value.trim();
+        if (!label) throw new Error('Task description is required');
+        await CRM.createTask(CURRENT.case.id, { stage, label, notes });
+        showToast('Task added');
+        await openCaseDrawer(CURRENT.case.id);
+        loadCases();
+      }
+    });
+  }
+
+  async function callApi(promise, successMsg) {
+    try {
+      await promise;
+      if (successMsg) showToast(successMsg);
+      await openCaseDrawer(CURRENT.case.id);  // refresh drawer
+      loadCases();                            // refresh list in background
+    } catch (err) {
+      showToast(err.message || 'Action failed', 'error');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // NEW CASE / EDIT CASE / DELETE CASE
+  // ─────────────────────────────────────────────────────────────
+  async function openNewCaseModal() {
+    // Prefetch leads for the picker (one-time)
+    if (!LEADS_PICKER) {
+      try {
+        const r = await CRM.leads();
+        LEADS_PICKER = r.leads || [];
+      } catch (_) { LEADS_PICKER = []; }
+    }
+
+    openModal({
+      title: 'New Case',
+      submitLabel: 'Create Case',
+      width: 560,
+      body: `
+        <div class="form-group">
+          <label class="form-label">Link to existing lead (optional)</label>
+          <select class="form-select" id="nc_lead">
+            <option value="">— Add manually below —</option>
+            ${LEADS_PICKER.map(l => `<option value="${l.zoho_id}" data-name="${escapeAttr(l.full_name)}" data-phone="${escapeAttr(l.phone || '')}" data-email="${escapeAttr(l.email || '')}">${escapeHtml(l.full_name)}${l.phone ? ' — ' + fmt.phone(l.phone) : ''}</option>`).join('')}
+          </select>
+          <p class="form-hint">Selecting a lead auto-fills the fields below from Bigin.</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Client name *</label>
+          <input class="form-input" id="nc_name" placeholder="e.g. Rahul Kumar" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input class="form-input" id="nc_phone" placeholder="+91 98XXX XXXXX" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input class="form-input" id="nc_email" type="email" placeholder="name@example.com" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Visa route</label>
+            <input class="form-input" id="nc_route" value="UK Global Talent Visa" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target endorsement date</label>
+            <input class="form-input" id="nc_target" type="date" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Case notes</label>
+          <textarea class="form-textarea" id="nc_notes" placeholder="Anything specific about this client's journey..."></textarea>
+        </div>
+        <p class="form-hint">The case will start at <strong>Stage 1 — Roadmap Building</strong> with all default tasks seeded across the 6 stages.</p>`,
+      onSubmit: async () => {
+        const name = document.getElementById('nc_name').value.trim();
+        if (!name) throw new Error('Client name is required');
+        const leadSel = document.getElementById('nc_lead');
+        const biginId = leadSel.value || null;
+        const payload = {
+          bigin_contact_id: biginId,
+          client_name: name,
+          client_phone: document.getElementById('nc_phone').value.trim() || null,
+          client_email: document.getElementById('nc_email').value.trim() || null,
+          visa_route:   document.getElementById('nc_route').value.trim() || 'UK Global Talent Visa',
+          target_endorsement_date: document.getElementById('nc_target').value || null,
+          case_notes:   document.getElementById('nc_notes').value.trim() || ''
+        };
+        const r = await CRM.createCase(payload);
+        showToast('Case created');
+        await loadCases();
+        if (r.case?.id) openCaseDrawer(r.case.id);
+      }
+    });
+
+    // Wire up auto-fill from lead picker
+    setTimeout(() => {
+      const sel = document.getElementById('nc_lead');
+      if (!sel) return;
+      sel.addEventListener('change', () => {
+        const opt = sel.options[sel.selectedIndex];
+        if (!opt.value) return;
+        document.getElementById('nc_name').value  = opt.dataset.name || '';
+        document.getElementById('nc_phone').value = opt.dataset.phone || '';
+        document.getElementById('nc_email').value = opt.dataset.email || '';
+      });
+    }, 30);
+  }
+
+  function openEditCaseModal() {
+    if (!CURRENT) return;
+    const c = CURRENT.case;
+    openModal({
+      title: 'Edit Case Details',
+      submitLabel: 'Save Changes',
+      width: 520,
+      body: `
+        <div class="form-group">
+          <label class="form-label">Client name</label>
+          <input class="form-input" id="ec_name" value="${escapeAttr(c.client_name)}" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input class="form-input" id="ec_phone" value="${escapeAttr(c.client_phone || '')}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input class="form-input" id="ec_email" value="${escapeAttr(c.client_email || '')}" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select class="form-select" id="ec_status">
+              <option value="active"    ${c.status==='active'?'selected':''}>Active</option>
+              <option value="on_hold"   ${c.status==='on_hold'?'selected':''}>On Hold</option>
+              <option value="completed" ${c.status==='completed'?'selected':''}>Completed</option>
+              <option value="withdrawn" ${c.status==='withdrawn'?'selected':''}>Withdrawn</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Current stage</label>
+            <select class="form-select" id="ec_stage">
+              ${STAGE_META.map(s => `<option value="${s.n}" ${c.current_stage===s.n?'selected':''}>Stage ${s.n} — ${s.name}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Visa route</label>
+            <input class="form-input" id="ec_route" value="${escapeAttr(c.visa_route || '')}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target endorsement date</label>
+            <input class="form-input" id="ec_target" type="date" value="${c.target_endorsement_date || ''}" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Case notes</label>
+          <textarea class="form-textarea" id="ec_notes">${escapeHtml(c.case_notes || '')}</textarea>
+        </div>`,
+      onSubmit: async () => {
+        const updates = {
+          client_name:  document.getElementById('ec_name').value.trim(),
+          client_phone: document.getElementById('ec_phone').value.trim() || null,
+          client_email: document.getElementById('ec_email').value.trim() || null,
+          status:       document.getElementById('ec_status').value,
+          current_stage:parseInt(document.getElementById('ec_stage').value),
+          visa_route:   document.getElementById('ec_route').value.trim(),
+          target_endorsement_date: document.getElementById('ec_target').value || null,
+          case_notes:   document.getElementById('ec_notes').value.trim()
+        };
+        if (!updates.client_name) throw new Error('Client name is required');
+        await CRM.updateCase(c.id, updates);
+        showToast('Case updated');
+        await openCaseDrawer(c.id);
+        loadCases();
+      }
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // HELPERS
+  // ─────────────────────────────────────────────────────────────
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+  }
+  function escapeAttr(s) { return escapeHtml(s).replace(/\n/g, ' '); }
+
+  // ─────────────────────────────────────────────────────────────
+  // WIRE-UP
+  // ─────────────────────────────────────────────────────────────
+  document.getElementById('newCaseBtn').onclick = openNewCaseModal;
+
+  document.getElementById('drawerBackdrop').onclick = closeCaseDrawer;
+  document.getElementById('closeDrawerBtn').onclick = closeCaseDrawer;
+  document.getElementById('deleteCaseBtn').onclick = async () => {
+    if (!CURRENT) return;
+    if (!confirm(`Delete the case for ${CURRENT.case.client_name}? This permanently deletes the case and all its tasks. This cannot be undone.`)) return;
+    try {
+      await CRM.deleteCase(CURRENT.case.id);
+      showToast('Case deleted');
+      closeCaseDrawer();
+      loadCases();
+    } catch (err) {
+      showToast('Delete failed: ' + err.message, 'error');
+    }
+  };
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('caseDrawer').classList.contains('show')) {
+      if (openStatusMenu) closeStatusMenu();
+      else closeCaseDrawer();
+    }
+  });
+
+  document.getElementById('caseSearch').addEventListener('input', (e) => {
+    searchQuery = e.target.value;
+    applyFilters();
+  });
+  document.getElementById('filterStatus').onchange = (e) => { statusFilter = e.target.value; applyFilters(); };
+  document.getElementById('filterStage').onchange  = (e) => { stageFilter  = e.target.value; applyFilters(); };
+
+  // Auth & load
+  requireAuth().then(s => { if (s) loadCases(); });
+  </script>
+</body>
+</html>
