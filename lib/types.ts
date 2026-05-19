@@ -118,3 +118,9 @@ export const MILESTONE_META: Record<Milestone, { label: string; pct: number; ord
   endorsement:      { label: 'Endorsement',      pct: 25, order: 3 },
   post_approval:    { label: 'Post Approval',    pct: 15, order: 4 },
 };
+
+// Safe accessor — returns a Junk-styled fallback for unknown stages so the app never crashes on stale data
+export function getStageMeta(stage: string | null | undefined): { label: string; bg: string; fg: string; dot: string } {
+  if (stage && stage in STAGE_META) return STAGE_META[stage as LeadStage];
+  return { label: stage ? stage.toString() : 'Unknown', bg: '#F4F4F6', fg: '#6B7280', dot: '#9CA3AF' };
+}
