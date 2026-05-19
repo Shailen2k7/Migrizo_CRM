@@ -239,9 +239,23 @@ function TeamSection() {
 
   return (
     <div className="space-y-3">
-      {/* Pending */}
-      {pending.length > 0 && (
-        <Card title={`Pending approval · ${pending.length}`} subtitle="New signups waiting for your approval to access the CRM">
+      {/* Pending — ALWAYS visible with helpful empty state */}
+      <Card
+        title={pending.length > 0 ? `Pending approval · ${pending.length}` : 'Pending approval'}
+        subtitle={pending.length > 0 ? 'New signups waiting for your approval' : 'When someone signs up for the CRM, they\'ll appear here for you to approve'}
+      >
+        {pending.length === 0 ? (
+          <div className="py-8 px-4 text-center bg-surface-2 rounded-md">
+            <div className="w-12 h-12 rounded-full bg-surface mx-auto mb-3 flex items-center justify-center">
+              <Hourglass className="w-5 h-5 text-muted" />
+            </div>
+            <div className="text-[13px] font-medium text-ink-2 mb-1">No pending requests right now</div>
+            <div className="text-[11.5px] text-muted leading-relaxed max-w-[400px] mx-auto">
+              Share <span className="font-mono text-ink-2">{typeof window !== 'undefined' ? window.location.origin : ''}/login</span> with your team.
+              Anyone who signs up will appear here for you to <span className="font-semibold text-ink-2">Approve</span> or <span className="font-semibold text-ink-2">Reject</span>.
+            </div>
+          </div>
+        ) : (
           <div className="-mx-1">
             {pending.map((m) => (
               <MemberRow key={m.user_id} m={m} isOwner={false} isSelf={false} canManage={isAdmin}>
@@ -254,8 +268,8 @@ function TeamSection() {
               </MemberRow>
             ))}
           </div>
-        </Card>
-      )}
+        )}
+      </Card>
 
       {/* Active */}
       <Card title={`Active members · ${active.length}`} subtitle={pending.length === 0 ? "Everyone who currently has access" : "Currently approved with access"}>
@@ -535,11 +549,30 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
-    <button onClick={() => !disabled && onChange(!on)} disabled={disabled}
-      className={cn('relative w-10 h-6 rounded-full transition-colors flex-shrink-0', disabled && 'opacity-50 cursor-not-allowed')}
-      style={{ background: on && !disabled ? '#4F46E5' : 'hsl(var(--surface-2))' }}
+    <button
+      role="switch"
+      aria-checked={on}
+      onClick={() => !disabled && onChange(!on)}
+      disabled={disabled}
+      className={cn(
+        'relative inline-flex h-[26px] w-[46px] flex-shrink-0 rounded-full transition-all duration-200 ease-out',
+        'focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:ring-offset-2',
+        disabled && 'opacity-40 cursor-not-allowed'
+      )}
+      style={{
+        background: on && !disabled
+          ? 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)'
+          : 'hsl(var(--surface-2))',
+        boxShadow: on && !disabled ? '0 1px 3px rgba(79,70,229,.35), inset 0 1px 0 rgba(255,255,255,.18)' : 'inset 0 1px 2px rgba(0,0,0,.05)',
+      }}
     >
-      <span className={cn('absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform', on ? 'translate-x-[18px]' : 'translate-x-0.5')} />
+      <span
+        className="absolute top-[3px] left-[3px] inline-flex h-5 w-5 items-center justify-center rounded-full bg-white transition-transform duration-200 ease-out"
+        style={{
+          transform: on ? 'translateX(20px)' : 'translateX(0)',
+          boxShadow: '0 2px 6px rgba(0,0,0,.18), 0 0 0 0.5px rgba(0,0,0,.05)',
+        }}
+      />
     </button>
   );
 }

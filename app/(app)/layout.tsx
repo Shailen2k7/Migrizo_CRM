@@ -55,7 +55,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   const [leadsRes, paymentsRes, activityRes] = await Promise.all([
     supabase.from('leads').select('*').order('updated_at', { ascending: false }),
     supabase.from('payments').select('*').order('created_at', { ascending: false }),
-    supabase.from('activity').select('*').order('created_at', { ascending: false }).limit(50),
+    supabase.from('activity').select('*').order('created_at', { ascending: false }).limit(30),
   ]);
 
   return (
