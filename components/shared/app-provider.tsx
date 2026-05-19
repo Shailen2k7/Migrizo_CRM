@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { Lead, Payment, Activity, Workspace, Note } from '@/lib/types';
+import type { Lead, Payment, Activity, Workspace, Note, Case, CaseChecklistItem, CaseActivity, CaseStage, ChecklistStatus } from '@/lib/types';
 import { buildSampleLeads } from '@/lib/sample-data';
 import { toast } from 'sonner';
 
@@ -22,10 +22,12 @@ interface AppData {
   leads: Lead[];
   payments: Payment[];
   activity: Activity[];
+  cases: Case[];
   members: Member[];
   loading: boolean;
   refresh: () => Promise<void>;
   refreshMembers: () => Promise<void>;
+  refreshCases: () => Promise<void>;
   memberNameById: (userId: string | null | undefined) => string;
   createLead: (input: Partial<Lead>) => Promise<Lead | null>;
   updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
@@ -36,6 +38,15 @@ interface AppData {
   bulkInsertLeads: (rows: Partial<Lead>[]) => Promise<{ inserted: number }>;
   resetWorkspace: (sampleOnly: boolean) => Promise<void>;
   loadSampleData: () => Promise<void>;
+  // Cases
+  createCase: (input: { lead_id: string | null; client_name: string; visa_type: string }) => Promise<string | null>;
+  updateCase: (caseId: string, patch: Partial<Case>) => Promise<void>;
+  deleteCase: (caseId: string) => Promise<void>;
+  getChecklist: (caseId: string) => Promise<CaseChecklistItem[]>;
+  updateChecklistItem: (itemId: string, patch: Partial<CaseChecklistItem>) => Promise<void>;
+  addChecklistItem: (caseId: string, item: Partial<CaseChecklistItem>) => Promise<void>;
+  deleteChecklistItem: (itemId: string) => Promise<void>;
+  getCaseActivity: (caseId: string) => Promise<CaseActivity[]>;
 }
 
 const AppContext = createContext<AppData | null>(null);
@@ -62,6 +73,7 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
   const [payments, setPayments] = useState<Payment[]>(initialPayments);
   const [activity, setActivity] = useState<Activity[]>(initialActivity);
   const [members, setMembers] = useState<Member[]>([]);
+  const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -89,13 +101,27 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     if (data) setMembers(data as Member[]);
   }, [supabase, workspace.id]);
 
-  // Load members on mount and when window regains focus (catches new signups)
+  const refreshCases = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('cases')
+      .select('*')
+      .eq('workspace_id', workspace.id)
+      .order('updated_at', { ascending: false });
+    if (error) {
+      console.error('[Migrizo] refreshCases failed:', error.message);
+      return;
+    }
+    if (data) setCases(data as Case[]);
+  }, [supabase, workspace.id]);
+
+  // Load members + cases on mount and when window regains focus
   useEffect(() => {
     refreshMembers();
-    const onFocus = () => refreshMembers();
+    refreshCases();
+    const onFocus = () => { refreshMembers(); refreshCases(); };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [refreshMembers]);
+  }, [refreshMembers, refreshCases]);
 
   // Helper: map a user_id to a display name
   // Falls back gracefully: null → "Team", unknown user → "Team member" (was "Unknown")
@@ -315,10 +341,132 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     toast.success(`Loaded ${data?.length || 0} sample leads`);
   }, [supabase, workspace.id, user.id, leads, logActivity]);
 
+  // =========================================
+  // CASES
+  // =========================================
+  const createCase = useCallback(async (input: { lead_id: string | null; client_name: string; visa_type: string }): Promise<string | null> => {
+    const { data, error } = await supabase.rpc('create_case_with_defaults', {
+      p_workspace_id: workspace.id,
+      p_lead_id: input.lead_id,
+      p_client_name: input.client_name,
+      p_visa_type: input.visa_type,
+    });
+    if (error) { toast.error(`Couldn't create case: ${error.message}`); return null; }
+    toast.success(`Case opened for ${input.client_name}`);
+    await refreshCases();
+    return data as string;
+  }, [supabase, workspace.id, refreshCases]);
+
+  const updateCase = useCallback(async (caseId: string, patch: Partial<Case>) => {
+    const before = cases.find((c) => c.id === caseId);
+    setCases((prev) => prev.map((c) => c.id === caseId ? { ...c, ...patch } as Case : c));
+    const { error } = await supabase.from('cases').update(patch).eq('id', caseId);
+    if (error) {
+      if (before) setCases((prev) => prev.map((c) => c.id === caseId ? before : c));
+      toast.error(`Update failed: ${error.message}`);
+      return;
+    }
+    if (patch.current_stage && before && before.current_stage !== patch.current_stage) {
+      await supabase.rpc('log_case_activity', {
+        p_case_id: caseId,
+        p_action: 'stage_changed',
+        p_meta: { from: before.current_stage, to: patch.current_stage },
+      });
+    }
+    if (patch.status && before && before.status !== patch.status) {
+      await supabase.rpc('log_case_activity', {
+        p_case_id: caseId,
+        p_action: 'status_changed',
+        p_meta: { from: before.status, to: patch.status },
+      });
+    }
+  }, [supabase, cases]);
+
+  const deleteCase = useCallback(async (caseId: string) => {
+    if (role !== 'admin') { toast.error('Only admins can delete cases'); return; }
+    const before = cases;
+    setCases((prev) => prev.filter((c) => c.id !== caseId));
+    const { error } = await supabase.from('cases').delete().eq('id', caseId);
+    if (error) {
+      setCases(before);
+      toast.error(`Delete failed: ${error.message}`);
+      return;
+    }
+    toast.success('Case deleted');
+  }, [supabase, cases, role]);
+
+  const getChecklist = useCallback(async (caseId: string): Promise<CaseChecklistItem[]> => {
+    const { data, error } = await supabase
+      .from('case_checklist_items')
+      .select('*')
+      .eq('case_id', caseId)
+      .order('display_order', { ascending: true });
+    if (error) { toast.error(error.message); return []; }
+    return (data || []) as CaseChecklistItem[];
+  }, [supabase]);
+
+  const updateChecklistItem = useCallback(async (itemId: string, patch: Partial<CaseChecklistItem>) => {
+    const payload: Record<string, unknown> = { ...patch };
+    if (patch.status === 'completed') {
+      payload.completed_at = new Date().toISOString();
+      payload.completed_by = user.id;
+    } else if (patch.status) {
+      payload.completed_at = null;
+      payload.completed_by = null;
+    }
+    const { error } = await supabase.from('case_checklist_items').update(payload).eq('id', itemId);
+    if (error) { toast.error(`Couldn't update: ${error.message}`); return; }
+
+    if (patch.status === 'completed') {
+      // Fetch the item to get case_id + title for activity log
+      const { data: item } = await supabase.from('case_checklist_items').select('case_id, title').eq('id', itemId).single();
+      if (item) {
+        await supabase.rpc('log_case_activity', {
+          p_case_id: item.case_id,
+          p_action: 'item_completed',
+          p_meta: { title: item.title },
+        });
+      }
+    }
+  }, [supabase, user.id]);
+
+  const addChecklistItem = useCallback(async (caseId: string, item: Partial<CaseChecklistItem>) => {
+    const { error } = await supabase.from('case_checklist_items').insert({
+      case_id: caseId,
+      stage: item.stage,
+      category: item.category || 'custom',
+      title: item.title,
+      description: item.description || null,
+      display_order: item.display_order ?? 9999,
+      is_required: item.is_required ?? false,
+    });
+    if (error) { toast.error(`Couldn't add: ${error.message}`); return; }
+    toast.success('Item added');
+    await supabase.rpc('log_case_activity', { p_case_id: caseId, p_action: 'item_added', p_meta: { title: item.title } });
+  }, [supabase]);
+
+  const deleteChecklistItem = useCallback(async (itemId: string) => {
+    const { error } = await supabase.from('case_checklist_items').delete().eq('id', itemId);
+    if (error) { toast.error(`Couldn't delete: ${error.message}`); return; }
+    toast.success('Item removed');
+  }, [supabase]);
+
+  const getCaseActivity = useCallback(async (caseId: string): Promise<CaseActivity[]> => {
+    const { data, error } = await supabase
+      .from('case_activity')
+      .select('*')
+      .eq('case_id', caseId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) { toast.error(error.message); return []; }
+    return (data || []) as CaseActivity[];
+  }, [supabase]);
+
   const value: AppData = {
-    user, workspace, role, leads, payments, activity, members, loading,
-    refresh, refreshMembers, memberNameById,
+    user, workspace, role, leads, payments, activity, cases, members, loading,
+    refresh, refreshMembers, refreshCases, memberNameById,
     createLead, updateLead, deleteLead, addNote, getNotes, recordPayment, bulkInsertLeads, resetWorkspace, loadSampleData,
+    createCase, updateCase, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

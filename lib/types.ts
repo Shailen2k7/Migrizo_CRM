@@ -124,3 +124,110 @@ export function getStageMeta(stage: string | null | undefined): { label: string;
   if (stage && stage in STAGE_META) return STAGE_META[stage as LeadStage];
   return { label: stage ? stage.toString() : 'Unknown', bg: '#F4F4F6', fg: '#6B7280', dot: '#9CA3AF' };
 }
+
+// =========================================
+// CASES MODULE TYPES
+// =========================================
+export type CaseStage =
+  | 'roadmap_building'
+  | 'profile_building'
+  | 'final_mapping'
+  | 'endorsement_submission'
+  | 'visa_application'
+  | 'post_arrival';
+
+export type CaseStatus = 'active' | 'on_hold' | 'completed' | 'rejected';
+export type ChecklistStatus = 'pending' | 'in_progress' | 'completed' | 'not_applicable';
+export type EndorsementStatus = 'pending' | 'approved' | 'rejected' | 'not_applicable';
+
+export interface Case {
+  id: string;
+  workspace_id: string;
+  lead_id: string | null;
+  client_name: string;
+  client_email: string | null;
+  client_phone: string | null;
+  visa_type: string;
+  current_stage: CaseStage;
+  status: CaseStatus;
+  endorsement_status: EndorsementStatus;
+  visa_status: EndorsementStatus;
+  started_at: string;
+  endorsement_submitted_at: string | null;
+  endorsement_approved_at: string | null;
+  visa_submitted_at: string | null;
+  visa_approved_at: string | null;
+  arrived_at: string | null;
+  completed_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CaseChecklistItem {
+  id: string;
+  case_id: string;
+  stage: CaseStage;
+  category: string | null;
+  title: string;
+  description: string | null;
+  status: ChecklistStatus;
+  notes: string | null;
+  display_order: number;
+  is_required: boolean;
+  completed_at: string | null;
+  completed_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CaseActivity {
+  id: string;
+  case_id: string;
+  workspace_id: string;
+  user_id: string | null;
+  action: string;
+  meta: Record<string, unknown>;
+  created_at: string;
+}
+
+export const CASE_STAGE_META: Record<CaseStage, { label: string; short: string; bg: string; fg: string; dot: string; order: number }> = {
+  roadmap_building:       { label: 'Roadmap Building',         short: 'Roadmap',     bg: '#EEF0FF', fg: '#4338CA', dot: '#6366F1', order: 1 },
+  profile_building:       { label: 'Profile Building',         short: 'Profile',     bg: '#FEF3C7', fg: '#B45309', dot: '#F59E0B', order: 2 },
+  final_mapping:          { label: 'Final Mapping & Testing',  short: 'Mapping',     bg: '#FCE7F3', fg: '#9D174D', dot: '#EC4899', order: 3 },
+  endorsement_submission: { label: 'Endorsement Submission',   short: 'Endorsement', bg: '#DBEAFE', fg: '#1E40AF', dot: '#3B82F6', order: 4 },
+  visa_application:       { label: 'Visa Application',         short: 'Visa',        bg: '#EDE9FE', fg: '#5B21B6', dot: '#7C3AED', order: 5 },
+  post_arrival:           { label: 'Post-Arrival Services',    short: 'Post-Arrival',bg: '#D1FAE5', fg: '#047857', dot: '#10B981', order: 6 },
+};
+
+export const CASE_STAGE_ORDER: CaseStage[] = [
+  'roadmap_building', 'profile_building', 'final_mapping', 'endorsement_submission', 'visa_application', 'post_arrival',
+];
+
+export const CASE_STATUS_META: Record<CaseStatus, { label: string; bg: string; fg: string }> = {
+  active:    { label: 'Active',    bg: '#E6F7EE', fg: '#047857' },
+  on_hold:   { label: 'On Hold',   bg: '#FEF3C7', fg: '#B45309' },
+  completed: { label: 'Completed', bg: '#DBEAFE', fg: '#1E40AF' },
+  rejected:  { label: 'Rejected',  bg: '#FEE2E2', fg: '#B91C1C' },
+};
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  consultation: 'Consultation',
+  agreement: 'Agreement & Payment',
+  documents: 'Documents',
+  achievements: 'Achievements',
+  recognition: 'Recognition',
+  online: 'Online Presence',
+  references: 'Letters of Recommendation',
+  mentorship: 'Mentorship',
+  publications: 'Publications & Speaking',
+  payment: 'Payment',
+  application: 'Application',
+  evidence: 'Evidence',
+  qa: 'Quality Check',
+  submission: 'Submission',
+  tracking: 'Tracking',
+  arrival: 'Arrival',
+  setup: 'UK Setup',
+  followup: 'Follow-up',
+};

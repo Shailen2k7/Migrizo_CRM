@@ -2,19 +2,22 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown } from 'lucide-react';
+import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase } from 'lucide-react';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
 import { toast } from 'sonner';
+
+import { useApp } from '@/components/shared/app-provider';
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; badge?: string; new?: boolean };
 
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/leads', label: 'Leads', icon: Users },
+  { href: '/cases', label: 'Cases', icon: Briefcase, new: true },
   { href: '/payments', label: 'Payments', icon: IndianRupee },
-  { href: '/ai', label: 'AI COO', icon: Sparkles, new: true },
+  { href: '/ai', label: 'AI COO', icon: Sparkles },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -26,6 +29,8 @@ interface Props {
 }
 
 export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
+  const { cases } = useApp();
+  const casesCount = cases.filter((c) => c.status === 'active').length;
   const path = usePathname();
   const router = useRouter();
   const supabase = createClient();
@@ -58,6 +63,9 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
               <span>{item.label}</span>
               {item.href === '/leads' && leadsCount > 0 && (
                 <span className="ml-auto count">{leadsCount}</span>
+              )}
+              {item.href === '/cases' && casesCount > 0 && (
+                <span className="ml-auto count">{casesCount}</span>
               )}
               {item.new && (
                 <span className="ml-auto chip" style={{ background: 'hsl(var(--indigo-soft))', color: '#4338CA', border: 'none', fontSize: '9px', padding: '1px 5px' }}>NEW</span>
