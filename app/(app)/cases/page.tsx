@@ -18,24 +18,35 @@ export default function CasesPage() {
   const [segment, setSegment] = useState<Segment>('active');
   const [search, setSearch] = useState('');
 
+  const stageIdx = (s: CaseStage) => CASE_STAGE_ORDER.indexOf(s);
+
+  // Cumulative funnel logic: a case is counted at a stage if its current_stage is AT OR PAST that stage.
+  // So a case at "Endorsement" is also counted in "Profile Building" because it has already passed through.
+  const countAtOrPast = (target: CaseStage) =>
+    cases.filter((c) => c.status === 'active' && stageIdx(c.current_stage) >= stageIdx(target)).length;
+
   const stats = useMemo(() => ({
     total: cases.length,
     active: cases.filter((c) => c.status === 'active').length,
-    inEndorsement: cases.filter((c) => c.current_stage === 'endorsement_submission' && c.status === 'active').length,
-    inVisa: cases.filter((c) => c.current_stage === 'visa_application' && c.status === 'active').length,
+    pastProfile: countAtOrPast('profile_building'),
+    inEndorsement: countAtOrPast('endorsement_submission'),
+    inVisa: countAtOrPast('visa_application'),
+    pastPostArrival: countAtOrPast('post_arrival'),
     completed: cases.filter((c) => c.status === 'completed').length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [cases]);
 
   const segments: { id: Segment; label: string; count: number }[] = [
-    { id: 'active',                 label: 'Active',          count: cases.filter((c) => c.status === 'active').length },
-    { id: 'all',                    label: 'All',             count: cases.length },
+    { id: 'active',    label: 'Active', count: cases.filter((c) => c.status === 'active').length },
+    { id: 'all',       label: 'All',    count: cases.length },
     ...CASE_STAGE_ORDER.map((s) => ({
       id: s as Segment,
       label: CASE_STAGE_META[s].short,
-      count: cases.filter((c) => c.current_stage === s && c.status === 'active').length,
+      // Cumulative: chip shows count of cases at OR past this stage
+      count: countAtOrPast(s),
     })),
-    { id: 'completed',              label: 'Completed',       count: cases.filter((c) => c.status === 'completed').length },
-    { id: 'on_hold',                label: 'On Hold',         count: cases.filter((c) => c.status === 'on_hold').length },
+    { id: 'completed', label: 'Completed', count: cases.filter((c) => c.status === 'completed').length },
+    { id: 'on_hold',   label: 'On Hold',   count: cases.filter((c) => c.status === 'on_hold').length },
   ];
 
   const filtered = useMemo(() => {
@@ -43,7 +54,10 @@ export default function CasesPage() {
     if (segment === 'active') list = list.filter((c) => c.status === 'active');
     else if (segment === 'completed') list = list.filter((c) => c.status === 'completed');
     else if (segment === 'on_hold') list = list.filter((c) => c.status === 'on_hold');
-    else if (segment !== 'all') list = list.filter((c) => c.current_stage === segment && c.status === 'active');
+    else if (segment !== 'all') {
+      // Cumulative filter: clicking a stage chip shows all active cases at OR past that stage
+      list = list.filter((c) => c.status === 'active' && stageIdx(c.current_stage) >= stageIdx(segment as CaseStage));
+    }
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -71,11 +85,11 @@ export default function CasesPage() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        <KpiCard icon={Briefcase}   label="Active cases"     value={stats.active}        color="#4F46E5" />
-        <KpiCard icon={FileCheck}   label="Profile building" value={cases.filter((c) => c.current_stage === 'profile_building' && c.status === 'active').length} color="#F59E0B" />
-        <KpiCard icon={Send}        label="In endorsement"   value={stats.inEndorsement} color="#3B82F6" />
-        <KpiCard icon={Stamp}       label="In visa stage"    value={stats.inVisa}        color="#7C3AED" />
-        <KpiCard icon={MapPin}      label="Post-arrival"     value={cases.filter((c) => c.current_stage === 'post_arrival' && c.status === 'active').length} color="#10B981" />
+        <KpiCard icon={Briefcase}   label="Active cases"     value={stats.active}          color="#4F46E5" />
+        <KpiCard icon={FileCheck}   label="Profile building" value={stats.pastProfile}     color="#F59E0B" />
+        <KpiCard icon={Send}        label="In endorsement"   value={stats.inEndorsement}   color="#3B82F6" />
+        <KpiCard icon={Stamp}       label="In visa stage"    value={stats.inVisa}          color="#7C3AED" />
+        <KpiCard icon={MapPin}      label="Post-arrival"     value={stats.pastPostArrival} color="#10B981" />
       </div>
 
       {/* Filters + search */}
