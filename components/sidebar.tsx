@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, CalendarClock } from 'lucide-react';
+import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, Activity } from 'lucide-react';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
@@ -17,7 +17,7 @@ const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/leads', label: 'Leads', icon: Users },
   { href: '/cases', label: 'Cases', icon: Briefcase },
-  { href: '/follow-ups', label: 'Follow-ups', icon: CalendarClock, new: true },
+  { href: '/daily-tracker', label: 'Daily tracker', icon: Activity, new: true },
   { href: '/payments', label: 'Payments', icon: IndianRupee },
   { href: '/ai', label: 'AI COO', icon: Sparkles },
   { href: '/settings', label: 'Settings', icon: Settings },
@@ -70,7 +70,7 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
               {item.href === '/cases' && casesCount > 0 && (
                 <span className="ml-auto count">{casesCount}</span>
               )}
-              {item.href === '/follow-ups' && urgentFollowUps > 0 && (
+              {item.href === '/daily-tracker' && urgentFollowUps > 0 && (
                 <span className="ml-auto count" style={{ background: '#FEE2E2', color: '#B91C1C' }}>{urgentFollowUps}</span>
               )}
               {item.new && (
