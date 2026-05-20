@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText } from 'lucide-react';
+import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus } from 'lucide-react';
 import type { Lead, Note, Payment, LeadStage } from '@/lib/types';
 import { STAGE_META, MILESTONE_META } from '@/lib/types';
 import { useApp } from '@/components/shared/app-provider';
 import { Select } from '@/components/shared/select';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { FollowUpsList } from '@/components/followups/followups-list';
+import { AddFollowUpDialog } from '@/components/followups/add-followup-dialog';
 import { initials, avatarColor, formatINRFull, timeAgo, scoreColor, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -18,14 +20,15 @@ interface Props {
 }
 
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
-  const { leads, payments, updateLead, deleteLead, addNote, getNotes, role, memberNameById } = useApp();
-  const [tab, setTab] = useState<'overview' | 'notes' | 'payments'>('overview');
+  const { leads, payments, followUps, updateLead, deleteLead, addNote, getNotes, role, memberNameById } = useApp();
+  const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups'>('overview');
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
   const [pendingLead, setPendingLead] = useState<Partial<Lead>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [addFollowUpOpen, setAddFollowUpOpen] = useState(false);
 
   const lead = leads.find((l) => l.id === leadId);
   const effectiveLead = useMemo(() => (lead ? { ...lead, ...pendingLead } : null), [lead, pendingLead]);
@@ -81,6 +84,8 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   };
 
   const leadPayments: Payment[] = leadId ? payments.filter((p) => p.lead_id === leadId) : [];
+  const leadFollowUps = useMemo(() => followUps.filter((f) => f.lead_id === leadId), [followUps, leadId]);
+  const pendingFollowUps = leadFollowUps.filter((f) => f.status === 'pending').length;
   const open = !!leadId && !!effectiveLead;
 
   return (
@@ -102,10 +107,11 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
               </div>
 
               <div className="flex items-center gap-1 mx-6 mt-5 p-1 rounded-md bg-surface-2 w-fit">
-                {(['overview', 'notes', 'payments'] as const).map((t) => (
+                {(['overview', 'notes', 'followups', 'payments'] as const).map((t) => (
                   <button key={t} onClick={() => setTab(t)} className={cn('px-3 py-1.5 rounded-md text-[12.5px] font-medium', tab === t ? 'bg-surface shadow-sm' : 'text-muted hover:bg-surface')}>
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                    {t === 'followups' ? 'Follow-ups' : t.charAt(0).toUpperCase() + t.slice(1)}
                     {t === 'notes' && notes.length > 0 ? ` · ${notes.length}` : ''}
+                    {t === 'followups' && pendingFollowUps > 0 ? ` · ${pendingFollowUps}` : ''}
                     {t === 'payments' && leadPayments.length > 0 ? ` · ${leadPayments.length}` : ''}
                   </button>
                 ))}
@@ -200,6 +206,33 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                           </div>
                         ))}
                     </div>
+                  </>
+                )}
+
+                {tab === 'followups' && (
+                  <>
+                    <div className="mb-3 flex items-center justify-between">
+                      <div className="text-[12.5px] text-muted">
+                        {pendingFollowUps > 0
+                          ? `${pendingFollowUps} pending · ${leadFollowUps.length} total`
+                          : leadFollowUps.length > 0
+                            ? `All ${leadFollowUps.length} follow-up${leadFollowUps.length === 1 ? '' : 's'} completed`
+                            : 'No follow-ups yet'}
+                      </div>
+                      <button onClick={() => setAddFollowUpOpen(true)} className="btn btn-primary btn-sm">
+                        <Plus className="w-3.5 h-3.5" /> New follow-up
+                      </button>
+                    </div>
+                    <FollowUpsList
+                      followUps={leadFollowUps}
+                      showLeadColumn={false}
+                      emptyMessage="No follow-ups for this lead"
+                      emptyAction={
+                        <button onClick={() => setAddFollowUpOpen(true)} className="btn btn-primary btn-sm">
+                          <Plus className="w-3.5 h-3.5" /> Schedule first follow-up
+                        </button>
+                      }
+                    />
                   </>
                 )}
 
@@ -298,6 +331,12 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
         confirmLabel="Discard & close"
         cancelLabel="Keep editing"
         variant="warning"
+      />
+
+      <AddFollowUpDialog
+        open={addFollowUpOpen}
+        onClose={() => setAddFollowUpOpen(false)}
+        presetLeadId={leadId}
       />
     </>
   );

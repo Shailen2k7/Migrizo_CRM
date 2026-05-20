@@ -231,3 +231,76 @@ export const CATEGORY_LABELS: Record<string, string> = {
   setup: 'UK Setup',
   followup: 'Follow-up',
 };
+
+// =========================================
+// FOLLOW-UPS MODULE TYPES
+// =========================================
+export type FollowUpChannel = 'call' | 'email' | 'whatsapp' | 'meeting' | 'other';
+export type FollowUpStatus = 'pending' | 'completed' | 'missed' | 'cancelled';
+
+export interface FollowUp {
+  id: string;
+  workspace_id: string;
+  lead_id: string;
+  title: string;
+  scheduled_at: string;
+  channel: FollowUpChannel;
+  status: FollowUpStatus;
+  notes: string | null;
+  outcome: string | null;
+  completed_at: string | null;
+  assigned_to: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const FOLLOWUP_CHANNEL_META: Record<FollowUpChannel, { label: string; iconKey: 'phone'|'mail'|'whatsapp'|'meeting'|'other'; bg: string; fg: string }> = {
+  call:     { label: 'Call',     iconKey: 'phone',    bg: '#EEF0FF', fg: '#4338CA' },
+  email:    { label: 'Email',    iconKey: 'mail',     bg: '#DBEAFE', fg: '#1E40AF' },
+  whatsapp: { label: 'WhatsApp', iconKey: 'whatsapp', bg: '#D1FAE5', fg: '#047857' },
+  meeting:  { label: 'Meeting',  iconKey: 'meeting',  bg: '#EDE9FE', fg: '#5B21B6' },
+  other:    { label: 'Other',    iconKey: 'other',    bg: '#F4F4F6', fg: '#6B7280' },
+};
+
+export const FOLLOWUP_STATUS_META: Record<FollowUpStatus, { label: string; bg: string; fg: string }> = {
+  pending:   { label: 'Pending',   bg: '#FEF3C7', fg: '#B45309' },
+  completed: { label: 'Completed', bg: '#D1FAE5', fg: '#047857' },
+  missed:    { label: 'Missed',    bg: '#FEE2E2', fg: '#B91C1C' },
+  cancelled: { label: 'Cancelled', bg: '#F4F4F6', fg: '#6B7280' },
+};
+
+// Display helpers — derived "urgency" status (independent of DB status field)
+export function isFollowUpOverdue(f: FollowUp): boolean {
+  return f.status === 'pending' && new Date(f.scheduled_at).getTime() < Date.now();
+}
+
+export function isFollowUpToday(f: FollowUp): boolean {
+  if (f.status !== 'pending') return false;
+  const d = new Date(f.scheduled_at);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+
+export function isFollowUpThisWeek(f: FollowUp): boolean {
+  if (f.status !== 'pending') return false;
+  const d = new Date(f.scheduled_at).getTime();
+  const now = Date.now();
+  const weekFromNow = now + 7 * 24 * 60 * 60 * 1000;
+  return d >= now && d <= weekFromNow;
+}
+
+export function formatFollowUpTime(scheduledAt: string): string {
+  const date = new Date(scheduledAt);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrow = new Date(today.getTime() + 86400000);
+  const dayAfter = new Date(tomorrow.getTime() + 86400000);
+  const weekFromToday = new Date(today.getTime() + 7 * 86400000);
+  const time = date.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+  if (date >= today && date < tomorrow) return `Today, ${time}`;
+  if (date >= tomorrow && date < dayAfter) return `Tomorrow, ${time}`;
+  if (date >= today && date < weekFromToday) return `${date.toLocaleDateString('en-IN', { weekday: 'short' })}, ${time}`;
+  return `${date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })}, ${time}`;
+}

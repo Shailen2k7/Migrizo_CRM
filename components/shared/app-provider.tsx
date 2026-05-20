@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { Lead, Payment, Activity, Workspace, Note, Case, CaseChecklistItem, CaseActivity, CaseStage, ChecklistStatus } from '@/lib/types';
+import type { Lead, Payment, Activity, Workspace, Note, Case, CaseChecklistItem, CaseActivity, CaseStage, ChecklistStatus, FollowUp } from '@/lib/types';
 import { buildSampleLeads } from '@/lib/sample-data';
 import { toast } from 'sonner';
 
@@ -23,11 +23,13 @@ interface AppData {
   payments: Payment[];
   activity: Activity[];
   cases: Case[];
+  followUps: FollowUp[];
   members: Member[];
   loading: boolean;
   refresh: () => Promise<void>;
   refreshMembers: () => Promise<void>;
   refreshCases: () => Promise<void>;
+  refreshFollowUps: () => Promise<void>;
   memberNameById: (userId: string | null | undefined) => string;
   createLead: (input: Partial<Lead>) => Promise<Lead | null>;
   updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
@@ -47,6 +49,13 @@ interface AppData {
   addChecklistItem: (caseId: string, item: Partial<CaseChecklistItem>) => Promise<void>;
   deleteChecklistItem: (itemId: string) => Promise<void>;
   getCaseActivity: (caseId: string) => Promise<CaseActivity[]>;
+  // Follow-ups
+  createFollowUp: (input: { lead_id: string; title: string; scheduled_at: string; channel?: FollowUp['channel']; notes?: string | null; assigned_to?: string | null }) => Promise<FollowUp | null>;
+  updateFollowUp: (id: string, patch: Partial<FollowUp>) => Promise<void>;
+  deleteFollowUp: (id: string) => Promise<void>;
+  completeFollowUp: (id: string, outcome?: string | null) => Promise<void>;
+  reopenFollowUp: (id: string) => Promise<void>;
+  cancelFollowUp: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppData | null>(null);
@@ -74,6 +83,7 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
   const [activity, setActivity] = useState<Activity[]>(initialActivity);
   const [members, setMembers] = useState<Member[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -114,14 +124,28 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     if (data) setCases(data as Case[]);
   }, [supabase, workspace.id]);
 
-  // Load members + cases on mount and when window regains focus
+  const refreshFollowUps = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('follow_ups')
+      .select('*')
+      .eq('workspace_id', workspace.id)
+      .order('scheduled_at', { ascending: true });
+    if (error) {
+      console.error('[Migrizo] refreshFollowUps failed:', error.message);
+      return;
+    }
+    if (data) setFollowUps(data as FollowUp[]);
+  }, [supabase, workspace.id]);
+
+  // Load members + cases + follow-ups on mount and when window regains focus
   useEffect(() => {
     refreshMembers();
     refreshCases();
-    const onFocus = () => { refreshMembers(); refreshCases(); };
+    refreshFollowUps();
+    const onFocus = () => { refreshMembers(); refreshCases(); refreshFollowUps(); };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [refreshMembers, refreshCases]);
+  }, [refreshMembers, refreshCases, refreshFollowUps]);
 
   // Helper: map a user_id to a display name
   // Falls back gracefully: null → "Team", unknown user → "Team member" (was "Unknown")
@@ -462,11 +486,92 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     return (data || []) as CaseActivity[];
   }, [supabase]);
 
+  // =========================================
+  // FOLLOW-UPS
+  // =========================================
+  const createFollowUp = useCallback(async (input: { lead_id: string; title: string; scheduled_at: string; channel?: FollowUp['channel']; notes?: string | null; assigned_to?: string | null }): Promise<FollowUp | null> => {
+    const payload = {
+      workspace_id: workspace.id,
+      lead_id: input.lead_id,
+      title: input.title,
+      scheduled_at: input.scheduled_at,
+      channel: input.channel || 'call',
+      status: 'pending' as const,
+      notes: input.notes || null,
+      assigned_to: input.assigned_to || user.id,
+      created_by: user.id,
+    };
+    const { data, error } = await supabase.from('follow_ups').insert(payload).select().single();
+    if (error) { toast.error(`Couldn't schedule: ${error.message}`); return null; }
+    setFollowUps((prev) => [...prev, data as FollowUp].sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()));
+    // The DB trigger updates lead.next_follow_up — refresh leads in background
+    refresh();
+    toast.success('Follow-up scheduled');
+    return data as FollowUp;
+  }, [supabase, workspace.id, user.id]);
+
+  const updateFollowUp = useCallback(async (id: string, patch: Partial<FollowUp>) => {
+    const before = followUps.find((f) => f.id === id);
+    setFollowUps((prev) => prev.map((f) => f.id === id ? { ...f, ...patch } as FollowUp : f));
+    const { error } = await supabase.from('follow_ups').update(patch).eq('id', id);
+    if (error) {
+      if (before) setFollowUps((prev) => prev.map((f) => f.id === id ? before : f));
+      toast.error(`Update failed: ${error.message}`);
+      return;
+    }
+    refresh();
+  }, [supabase, followUps]);
+
+  const deleteFollowUp = useCallback(async (id: string) => {
+    const before = followUps;
+    setFollowUps((prev) => prev.filter((f) => f.id !== id));
+    const { error } = await supabase.from('follow_ups').delete().eq('id', id);
+    if (error) {
+      setFollowUps(before);
+      toast.error(`Delete failed: ${error.message}`);
+      return;
+    }
+    refresh();
+    toast.success('Follow-up deleted');
+  }, [supabase, followUps]);
+
+  const completeFollowUp = useCallback(async (id: string, outcome?: string | null) => {
+    const patch = {
+      status: 'completed' as const,
+      completed_at: new Date().toISOString(),
+      outcome: outcome || null,
+    };
+    setFollowUps((prev) => prev.map((f) => f.id === id ? { ...f, ...patch } as FollowUp : f));
+    const { error } = await supabase.from('follow_ups').update(patch).eq('id', id);
+    if (error) { toast.error(`Couldn't complete: ${error.message}`); return; }
+    refresh();
+    toast.success('Follow-up completed');
+  }, [supabase]);
+
+  const reopenFollowUp = useCallback(async (id: string) => {
+    const patch = { status: 'pending' as const, completed_at: null, outcome: null };
+    setFollowUps((prev) => prev.map((f) => f.id === id ? { ...f, ...patch } as FollowUp : f));
+    const { error } = await supabase.from('follow_ups').update(patch).eq('id', id);
+    if (error) { toast.error(`Couldn't reopen: ${error.message}`); return; }
+    refresh();
+    toast.success('Follow-up reopened');
+  }, [supabase]);
+
+  const cancelFollowUp = useCallback(async (id: string) => {
+    const patch = { status: 'cancelled' as const };
+    setFollowUps((prev) => prev.map((f) => f.id === id ? { ...f, ...patch } as FollowUp : f));
+    const { error } = await supabase.from('follow_ups').update(patch).eq('id', id);
+    if (error) { toast.error(`Couldn't cancel: ${error.message}`); return; }
+    refresh();
+    toast.success('Follow-up cancelled');
+  }, [supabase]);
+
   const value: AppData = {
-    user, workspace, role, leads, payments, activity, cases, members, loading,
-    refresh, refreshMembers, refreshCases, memberNameById,
+    user, workspace, role, leads, payments, activity, cases, followUps, members, loading,
+    refresh, refreshMembers, refreshCases, refreshFollowUps, memberNameById,
     createLead, updateLead, deleteLead, addNote, getNotes, recordPayment, bulkInsertLeads, resetWorkspace, loadSampleData,
     createCase, updateCase, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
+    createFollowUp, updateFollowUp, deleteFollowUp, completeFollowUp, reopenFollowUp, cancelFollowUp,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -2,20 +2,22 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase } from 'lucide-react';
+import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, CalendarClock } from 'lucide-react';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
 import { toast } from 'sonner';
 
 import { useApp } from '@/components/shared/app-provider';
+import { isFollowUpOverdue, isFollowUpToday } from '@/lib/types';
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; badge?: string; new?: boolean };
 
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/leads', label: 'Leads', icon: Users },
-  { href: '/cases', label: 'Cases', icon: Briefcase, new: true },
+  { href: '/cases', label: 'Cases', icon: Briefcase },
+  { href: '/follow-ups', label: 'Follow-ups', icon: CalendarClock, new: true },
   { href: '/payments', label: 'Payments', icon: IndianRupee },
   { href: '/ai', label: 'AI COO', icon: Sparkles },
   { href: '/settings', label: 'Settings', icon: Settings },
@@ -29,8 +31,9 @@ interface Props {
 }
 
 export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
-  const { cases } = useApp();
+  const { cases, followUps } = useApp();
   const casesCount = cases.filter((c) => c.status === 'active').length;
+  const urgentFollowUps = followUps.filter((f) => isFollowUpOverdue(f) || isFollowUpToday(f)).length;
   const path = usePathname();
   const router = useRouter();
   const supabase = createClient();
@@ -66,6 +69,9 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
               )}
               {item.href === '/cases' && casesCount > 0 && (
                 <span className="ml-auto count">{casesCount}</span>
+              )}
+              {item.href === '/follow-ups' && urgentFollowUps > 0 && (
+                <span className="ml-auto count" style={{ background: '#FEE2E2', color: '#B91C1C' }}>{urgentFollowUps}</span>
               )}
               {item.new && (
                 <span className="ml-auto chip" style={{ background: 'hsl(var(--indigo-soft))', color: '#4338CA', border: 'none', fontSize: '9px', padding: '1px 5px' }}>NEW</span>
