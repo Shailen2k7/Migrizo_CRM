@@ -88,40 +88,46 @@ export function CaseDrawer({ caseId, onClose }: Props) {
     return totals.total === 0 ? 0 : Math.round((totals.done / totals.total) * 100);
   }, [stageProgress]);
 
-  // Compute the furthest stage we can advance to based on which stages are 100% complete.
-  // A stage with 0 required items (all N/A or empty) is treated as "skippable" — we move past it.
-  // A stage with required items NOT all done blocks further advancement.
-  const computeAdvancedStage = useCallback((fromStage: CaseStage): CaseStage => {
-    let idx = CASE_STAGE_ORDER.indexOf(fromStage);
-    let target: CaseStage = fromStage;
-    while (idx < CASE_STAGE_ORDER.length - 1) {
-      const prog = stageProgress[target];
-      // Block if there are required items that aren't done
-      if (prog.required > 0 && prog.requiredDone < prog.required) break;
-      idx++;
-      target = CASE_STAGE_ORDER[idx];
+  // Derive current_stage purely from item completion state.
+  // Returns the FIRST stage that has incomplete required items, or the last stage if all complete.
+  // This is BIDIRECTIONAL — works forward when items are completed AND backward when items get unchecked.
+  const deriveCurrentStage = useCallback((sourceItems: CaseChecklistItem[]): CaseStage => {
+    for (const stage of CASE_STAGE_ORDER) {
+      const requiredInStage = sourceItems.filter(
+        (i) => i.stage === stage && i.is_required && i.status !== 'not_applicable'
+      );
+      const completedInStage = requiredInStage.filter((i) => i.status === 'completed');
+      // If there are required items remaining, this is the current stage
+      if (requiredInStage.length > 0 && completedInStage.length < requiredInStage.length) {
+        return stage;
+      }
+      // Otherwise stage is fully complete (or empty of required items) — keep walking forward
     }
-    return target;
-  }, [stageProgress]);
+    // Every stage is complete — case is at the final stage
+    return CASE_STAGE_ORDER[CASE_STAGE_ORDER.length - 1];
+  }, []);
 
-  // Sync current_stage if the checklist indicates we should be further along.
-  // Runs once per case-open. Handles existing cases that got stuck.
-  const syncedRef = useRef<string | null>(null);
+  // Keep current_stage synced with the actual checklist state.
+  // Runs whenever items change (load, save, add, delete) and the user isn't editing.
+  // The check `target === caseData.current_stage` prevents infinite loops on success.
+  // The throttle prevents infinite loops on DB update failure.
+  const lastSyncAttempt = useRef<{ caseId: string; target: CaseStage; time: number } | null>(null);
   useEffect(() => {
-    if (!caseId) { syncedRef.current = null; return; }
-    if (syncedRef.current === caseId) return;
-    if (!caseData || items.length === 0) return;
-    if (isDirty) { syncedRef.current = caseId; return; }
+    if (!caseId || !caseData || items.length === 0) return;
+    if (isDirty) return;
 
-    const target = computeAdvancedStage(caseData.current_stage);
-    syncedRef.current = caseId;
+    const target = deriveCurrentStage(items);
+    if (target === caseData.current_stage) return;
 
-    if (target !== caseData.current_stage) {
-      updateCase(caseData.id, { current_stage: target });
-      toast.info(`Stage synced to ${CASE_STAGE_META[target].label}`);
-      setExpandedStage(target);
-    }
-  }, [caseId, caseData, items.length, isDirty, computeAdvancedStage, updateCase]);
+    // Throttle: don't retry the same sync target within 3 seconds
+    const now = Date.now();
+    const last = lastSyncAttempt.current;
+    if (last && last.caseId === caseId && last.target === target && (now - last.time) < 3000) return;
+    lastSyncAttempt.current = { caseId, target, time: now };
+
+    updateCase(caseData.id, { current_stage: target });
+    setExpandedStage(target);
+  }, [caseId, caseData, items, isDirty, deriveCurrentStage, updateCase]);
 
   const setItemPending = (itemId: string, patch: Partial<CaseChecklistItem>) => {
     setPendingItems((prev) => {
@@ -185,9 +191,10 @@ export function CaseDrawer({ caseId, onClose }: Props) {
       const caseUpdates: Partial<Case> = { ...pendingCase };
       const beforeStage = effectiveCase.current_stage;
 
-      // Loop-advance through ALL completed stages — not just one step.
+      // Re-derive current_stage from the EFFECTIVE items (which include pending changes).
+      // This handles both advances (when completing items) and rewinds (when unchecking).
       if (!pendingCase.current_stage) {
-        const target = computeAdvancedStage(beforeStage);
+        const target = deriveCurrentStage(effectiveItems);
         if (target !== beforeStage) {
           caseUpdates.current_stage = target;
         }
@@ -202,7 +209,10 @@ export function CaseDrawer({ caseId, onClose }: Props) {
       await reload();
 
       if (caseUpdates.current_stage && caseUpdates.current_stage !== beforeStage) {
-        toast.success(`Saved · advanced to ${CASE_STAGE_META[caseUpdates.current_stage].label}`);
+        const fromIdx = CASE_STAGE_ORDER.indexOf(beforeStage);
+        const toIdx = CASE_STAGE_ORDER.indexOf(caseUpdates.current_stage);
+        const verb = toIdx > fromIdx ? 'advanced' : 'moved back';
+        toast.success(`Saved · ${verb} to ${CASE_STAGE_META[caseUpdates.current_stage].label}`);
         setExpandedStage(caseUpdates.current_stage);
       } else {
         toast.success(`Saved ${pendingCount} change${pendingCount === 1 ? '' : 's'}`);
