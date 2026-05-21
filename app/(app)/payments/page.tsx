@@ -6,21 +6,25 @@ import { useUI } from '@/components/shared/app-shell';
 import { MILESTONE_META, PAYMENT_META } from '@/lib/types';
 import type { Milestone, Payment, Lead } from '@/lib/types';
 import { formatINR, formatINRFull, initials, avatarColor, timeAgo, cn } from '@/lib/utils';
-import { Plus, Download, Search, IndianRupee, Check, Clock, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Plus, Download, Search, IndianRupee, Check, Clock, AlertTriangle, TrendingUp, EyeOff, Eye, MoreVertical } from 'lucide-react';
 import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
 type PaySegment = 'all' | 'active' | 'overdue' | 'completed';
 
 export default function PaymentsPage() {
-  const { leads, payments } = useApp();
+  const { leads, payments, updateLead } = useApp();
   const ui = useUI();
   const [seg, setSeg] = useState<PaySegment>('all');
   const [search, setSearch] = useState('');
+  const [confirmHide, setConfirmHide] = useState<Lead | null>(null);
+  const [showHiddenList, setShowHiddenList] = useState(false);
 
   // Build per-client payment summary
   const clientRows = useMemo(() => {
     const map = new Map<string, { lead: Lead; payments: Payment[]; collected: number; pending: number; status: 'active' | 'overdue' | 'completed' }>();
     leads.forEach((l) => {
+      if (l.hidden_from_payments) return; // user has removed this client from the Payments view
       const pays = payments.filter((p) => p.lead_id === l.id);
       const collected = l.amount_paid || 0;
       const pendingAmount = Math.max(0, (l.amount_total || 0) - collected);
@@ -38,6 +42,8 @@ export default function PaymentsPage() {
     });
     return Array.from(map.values());
   }, [leads, payments]);
+
+  const hiddenClients = useMemo(() => leads.filter((l) => l.hidden_from_payments), [leads]);
 
   const filtered = useMemo(() => {
     return clientRows.filter((r) => {
@@ -58,9 +64,12 @@ export default function PaymentsPage() {
   }), [clientRows]);
 
   const totals = useMemo(() => {
-    const collected = leads.reduce((s, l) => s + (l.amount_paid || 0), 0);
-    const pending = leads.reduce((s, l) => s + Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0)), 0);
-    const overdue = payments.filter((p) => p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < Date.now())).reduce((s, p) => s + p.amount, 0);
+    const visibleLeads = leads.filter((l) => !l.hidden_from_payments);
+    const visibleLeadIds = new Set(visibleLeads.map((l) => l.id));
+    const visiblePayments = payments.filter((p) => visibleLeadIds.has(p.lead_id));
+    const collected = visibleLeads.reduce((s, l) => s + (l.amount_paid || 0), 0);
+    const pending = visibleLeads.reduce((s, l) => s + Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0)), 0);
+    const overdue = visiblePayments.filter((p) => p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < Date.now())).reduce((s, p) => s + p.amount, 0);
     const forecast = pending;
     return { collected, pending, overdue, forecast };
   }, [payments, leads]);
@@ -163,9 +172,53 @@ export default function PaymentsPage() {
             <button onClick={() => ui.openRecordPayment()} className="btn btn-primary"><Plus className="w-4 h-4" /> Record first payment</button>
           </div>
         ) : (
-          filtered.map((r) => <ClientPaymentRow key={r.lead.id} lead={r.lead} payments={r.payments} collected={r.collected} pending={r.pending} status={r.status} onOpen={() => ui.openLeadDrawer(r.lead.id)} onRecord={() => ui.openRecordPayment(r.lead.id)} />)
+          filtered.map((r) => <ClientPaymentRow key={r.lead.id} lead={r.lead} payments={r.payments} collected={r.collected} pending={r.pending} status={r.status} onOpen={() => ui.openLeadDrawer(r.lead.id)} onRecord={() => ui.openRecordPayment(r.lead.id)} onHide={() => setConfirmHide(r.lead)} />)
         )}
       </div>
+
+      {/* Hidden clients section */}
+      {hiddenClients.length > 0 && (
+        <div className="mt-8">
+          <button onClick={() => setShowHiddenList((s) => !s)} className="inline-flex items-center gap-2 text-[12px] font-medium text-muted hover:text-ink mb-3">
+            <EyeOff className="w-3.5 h-3.5" />
+            {hiddenClients.length} client{hiddenClients.length === 1 ? '' : 's'} hidden from Payments
+            <span className="text-faint">· {showHiddenList ? 'hide list' : 'show list'}</span>
+          </button>
+          {showHiddenList && (
+            <div className="space-y-2">
+              {hiddenClients.map((l) => (
+                <div key={l.id} className="panel p-3 flex items-center gap-3" style={{ opacity: 0.7 }}>
+                  <div className="av" style={{ background: avatarColor(l.id), width: 30, height: 30, fontSize: 11 }}>{initials(l.full_name)}</div>
+                  <div className="flex-1 min-w-0">
+                    <button onClick={() => ui.openLeadDrawer(l.id)} className="text-[13px] font-semibold hover:underline">{l.full_name}</button>
+                    <div className="text-[11px] text-muted">{l.visa_type || '—'} · {l.email || l.phone || '—'} · Still in Leads</div>
+                  </div>
+                  <button onClick={async () => { await updateLead(l.id, { hidden_from_payments: false }); toast.success(`${l.full_name} restored to Payments`); }} className="btn btn-outline btn-sm">
+                    <Eye className="w-3.5 h-3.5" /> Restore
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!confirmHide}
+        onClose={() => setConfirmHide(null)}
+        onConfirm={async () => {
+          if (confirmHide) {
+            await updateLead(confirmHide.id, { hidden_from_payments: true });
+            toast.success(`${confirmHide.full_name} removed from Payments`);
+            setConfirmHide(null);
+          }
+        }}
+        title={confirmHide ? `Remove ${confirmHide.full_name} from Payments?` : 'Remove from Payments?'}
+        description="This will hide them from the Payments section only. They stay in Leads, Dashboard, Daily Tracker, and Cases. Their payment history is preserved — you can restore them anytime from the hidden list at the bottom of this page."
+        confirmLabel="Remove from Payments"
+        cancelLabel="Keep here"
+        variant="warning"
+      />
     </div>
   );
 }
@@ -182,10 +235,10 @@ function KPI({ label, value, color, icon: Icon }: { label: string; value: string
   );
 }
 
-function ClientPaymentRow({ lead, payments: pays, collected, pending, status, onOpen, onRecord }: { lead: Lead; payments: Payment[]; collected: number; pending: number; status: string; onOpen: () => void; onRecord: () => void }) {
+function ClientPaymentRow({ lead, payments: pays, collected, pending, status, onOpen, onRecord, onHide }: { lead: Lead; payments: Payment[]; collected: number; pending: number; status: string; onOpen: () => void; onRecord: () => void; onHide: () => void }) {
   const milestones: Milestone[] = ['kickstart', 'profile_building', 'endorsement', 'post_approval'];
   return (
-    <div className="panel p-4 flex items-center gap-4 hover:border-border-strong transition-all">
+    <div className="panel p-4 flex items-center gap-4 hover:border-border-strong transition-all group">
       <div className="av" style={{ background: avatarColor(lead.id), width: 36, height: 36, fontSize: 13 }}>{initials(lead.full_name)}</div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
@@ -220,7 +273,12 @@ function ClientPaymentRow({ lead, payments: pays, collected, pending, status, on
           </div>
         )}
       </div>
-      <button onClick={onRecord} className="btn btn-outline btn-sm"><Plus className="w-3.5 h-3.5" /> Log</button>
+      <div className="flex items-center gap-1">
+        <button onClick={onRecord} className="btn btn-outline btn-sm"><Plus className="w-3.5 h-3.5" /> Log</button>
+        <button onClick={onHide} title="Remove from Payments section (lead stays in Leads &amp; Dashboard)" className="p-2 rounded-md hover:bg-rose-50 text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity">
+          <EyeOff className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
