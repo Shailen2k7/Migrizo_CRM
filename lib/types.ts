@@ -54,6 +54,7 @@ export interface Lead {
   created_by: string | null;
   updated_at: string;
   is_sample: boolean;
+  hidden_from_payments: boolean;
 }
 
 export interface Note {
