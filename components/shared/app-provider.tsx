@@ -302,15 +302,13 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     if (error) { toast.error(`Payment failed: ${error.message}`); return; }
     setPayments((prev) => prev.some((p) => p.id === data.id) ? prev : [data as Payment, ...prev]);
 
-    const lead = leads.find((l) => l.id === input.lead_id);
-    if (lead && input.status !== 'pending') {
-      const newPaid = (lead.amount_paid || 0) + input.amount;
-      const newStatus = newPaid >= (lead.amount_total || newPaid) && lead.amount_total > 0 ? 'paid' : 'partial';
-      await updateLead(lead.id, { amount_paid: newPaid, payment_status: newStatus });
-    }
+    // DB trigger payments_sync_lead automatically updates lead.amount_paid and payment_status.
+    // Refresh leads from DB so the in-memory state reflects what the trigger did.
+    await refresh();
+
     logActivity('recorded_payment', input.lead_id, { milestone: input.milestone, amount: input.amount });
     toast.success(`Payment recorded`);
-  }, [supabase, workspace.id, user.id, leads, updateLead, logActivity]);
+  }, [supabase, workspace.id, user.id, refresh, logActivity]);
 
   const bulkInsertLeads = useCallback(async (rows: Partial<Lead>[]): Promise<{ inserted: number }> => {
     if (rows.length === 0) return { inserted: 0 };

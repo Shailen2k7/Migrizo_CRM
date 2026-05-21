@@ -19,17 +19,19 @@ export default function PaymentsPage() {
 
   // Build per-client payment summary
   const clientRows = useMemo(() => {
-    const map = new Map<string, { lead: Lead; payments: Payment[]; collected: number; status: 'active' | 'overdue' | 'completed' }>();
+    const map = new Map<string, { lead: Lead; payments: Payment[]; collected: number; pending: number; status: 'active' | 'overdue' | 'completed' }>();
     leads.forEach((l) => {
       const pays = payments.filter((p) => p.lead_id === l.id);
-      const collected = pays.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
+      const collected = l.amount_paid || 0;
+      const pendingAmount = Math.max(0, (l.amount_total || 0) - collected);
       const hasOverdue = pays.some((p) => p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < Date.now()));
-      const completed = pays.length >= 4 && pays.every((p) => p.status === 'paid');
-      if (pays.length > 0 || l.stage === 'won' || l.stage === 'invoice_sent' || l.amount_paid > 0) {
+      const completed = l.amount_total > 0 && collected >= l.amount_total;
+      if (pays.length > 0 || l.stage === 'won' || l.stage === 'invoice_sent' || (l.amount_total || 0) > 0 || collected > 0) {
         map.set(l.id, {
           lead: l,
           payments: pays,
           collected,
+          pending: pendingAmount,
           status: completed ? 'completed' : hasOverdue ? 'overdue' : 'active',
         });
       }
@@ -56,13 +58,12 @@ export default function PaymentsPage() {
   }), [clientRows]);
 
   const totals = useMemo(() => {
-    const collected = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
-    const pending = payments.filter((p) => p.status === 'pending').reduce((s, p) => s + p.amount, 0);
+    const collected = leads.reduce((s, l) => s + (l.amount_paid || 0), 0);
+    const pending = leads.reduce((s, l) => s + Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0)), 0);
     const overdue = payments.filter((p) => p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < Date.now())).reduce((s, p) => s + p.amount, 0);
-    // Forecast = pending in next 30 days + amount_total - amount_paid for active won leads
     const forecast = pending;
     return { collected, pending, overdue, forecast };
-  }, [payments]);
+  }, [payments, leads]);
 
   // Milestone pipeline: count clients whose most recent milestone is X
   const milestoneCards = useMemo(() => {
@@ -162,7 +163,7 @@ export default function PaymentsPage() {
             <button onClick={() => ui.openRecordPayment()} className="btn btn-primary"><Plus className="w-4 h-4" /> Record first payment</button>
           </div>
         ) : (
-          filtered.map((r) => <ClientPaymentRow key={r.lead.id} lead={r.lead} payments={r.payments} collected={r.collected} status={r.status} onOpen={() => ui.openLeadDrawer(r.lead.id)} onRecord={() => ui.openRecordPayment(r.lead.id)} />)
+          filtered.map((r) => <ClientPaymentRow key={r.lead.id} lead={r.lead} payments={r.payments} collected={r.collected} pending={r.pending} status={r.status} onOpen={() => ui.openLeadDrawer(r.lead.id)} onRecord={() => ui.openRecordPayment(r.lead.id)} />)
         )}
       </div>
     </div>
@@ -181,7 +182,7 @@ function KPI({ label, value, color, icon: Icon }: { label: string; value: string
   );
 }
 
-function ClientPaymentRow({ lead, payments: pays, collected, status, onOpen, onRecord }: { lead: Lead; payments: Payment[]; collected: number; status: string; onOpen: () => void; onRecord: () => void }) {
+function ClientPaymentRow({ lead, payments: pays, collected, pending, status, onOpen, onRecord }: { lead: Lead; payments: Payment[]; collected: number; pending: number; status: string; onOpen: () => void; onRecord: () => void }) {
   const milestones: Milestone[] = ['kickstart', 'profile_building', 'endorsement', 'post_approval'];
   return (
     <div className="panel p-4 flex items-center gap-4 hover:border-border-strong transition-all">
@@ -192,7 +193,7 @@ function ClientPaymentRow({ lead, payments: pays, collected, status, onOpen, onR
           {status === 'overdue' && <span className="chip" style={{ background: 'hsl(var(--rose-soft))', color: '#B91C1C', border: 'none' }}>Overdue</span>}
           {status === 'completed' && <span className="chip" style={{ background: 'hsl(var(--green-soft))', color: '#047857', border: 'none' }}>Completed</span>}
         </div>
-        <div className="text-[11.5px] text-muted">{lead.visa_type || '—'} · {pays.length}/4 milestones</div>
+        <div className="text-[11.5px] text-muted">{lead.visa_type || '—'} · {pays.length}/4 milestones {lead.amount_total > 0 && <>· Total {formatINR(lead.amount_total)}</>}</div>
       </div>
       <div className="flex items-center gap-1.5">
         {milestones.map((m) => {
@@ -211,8 +212,13 @@ function ClientPaymentRow({ lead, payments: pays, collected, status, onOpen, onR
         })}
       </div>
       <div className="text-right min-w-[100px]">
-        <div className="text-[11px] text-muted uppercase tracking-wider font-semibold">Collected</div>
-        <div className="num text-[16px] font-bold mt-0.5">{formatINR(collected)}</div>
+        <div className="text-[10px] text-muted uppercase tracking-wider font-semibold">Collected</div>
+        <div className="num text-[15px] font-bold mt-0.5" style={{ color: '#0F6E56' }}>{formatINR(collected)}</div>
+        {lead.amount_total > 0 && (
+          <div className="text-[10.5px] num mt-0.5" style={{ color: pending > 0 ? '#A32D2D' : '#9CA3AF' }}>
+            {pending > 0 ? <>{formatINR(pending)} pending</> : <>Paid in full</>}
+          </div>
+        )}
       </div>
       <button onClick={onRecord} className="btn btn-outline btn-sm"><Plus className="w-3.5 h-3.5" /> Log</button>
     </div>
