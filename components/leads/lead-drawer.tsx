@@ -155,19 +155,36 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                       <InlineText value={effectiveLead.email} onChange={(v) => setLeadPending({ email: v })} placeholder="email@…" />
                     </Row>
                     <Row label="Total fee">
-                      <InlineNumber value={effectiveLead.amount_total} onChange={(v) => setLeadPending({ amount_total: v })} placeholder="0" />
+                      <InlineNumber
+                        value={effectiveLead.amount_total}
+                        onChange={(v) => {
+                          const paid = effectiveLead.amount_paid || 0;
+                          const status = paid === 0 ? 'none' : (v > 0 && paid >= v) ? 'paid' : 'partial';
+                          setLeadPending({ amount_total: v, payment_status: status });
+                        }}
+                        placeholder="0"
+                      />
                     </Row>
                     <Row label="Amount paid">
-                      <span className="inline-flex items-center gap-2">
-                        <span className="text-[13px] font-semibold text-ink-2 num">{formatINRFull(effectiveLead.amount_paid)}</span>
-                        <span className="text-[10.5px] text-faint">from {leadPayments.length} payment{leadPayments.length === 1 ? '' : 's'}</span>
-                      </span>
+                      <InlineNumber
+                        value={effectiveLead.amount_paid}
+                        onChange={(v) => {
+                          const total = effectiveLead.amount_total || 0;
+                          const status = v === 0 ? 'none' : (total > 0 && v >= total) ? 'paid' : 'partial';
+                          setLeadPending({ amount_paid: v, payment_status: status });
+                        }}
+                        placeholder="0"
+                      />
+                      {leadPayments.length > 0 && (
+                        <span className="text-[10.5px] text-faint ml-2">· {leadPayments.length} payment{leadPayments.length === 1 ? '' : 's'} logged</span>
+                      )}
                     </Row>
                     {effectiveLead.amount_total > 0 && (
                       <Row label="Pending">
                         <span className="text-[13px] font-semibold num" style={{ color: Math.max(0, (effectiveLead.amount_total || 0) - (effectiveLead.amount_paid || 0)) > 0 ? '#A32D2D' : '#0F6E56' }}>
                           {formatINRFull(Math.max(0, (effectiveLead.amount_total || 0) - (effectiveLead.amount_paid || 0)))}
                         </span>
+                        <span className="text-[10.5px] text-faint ml-2">· auto-calculated</span>
                       </Row>
                     )}
                     <Row label="Created">
