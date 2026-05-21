@@ -10,6 +10,7 @@ import { Select } from '@/components/shared/select';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { FollowUpsList } from '@/components/followups/followups-list';
 import { AddFollowUpDialog } from '@/components/followups/add-followup-dialog';
+import { PaymentRow } from '@/components/payments/payment-row';
 import { initials, avatarColor, formatINRFull, timeAgo, scoreColor, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -258,25 +259,9 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                       </div>
                     ) : (
                       <div className="space-y-2">
+                        <div className="text-[11.5px] text-muted mb-1">Hover any payment to edit or delete it. Changes update the totals everywhere.</div>
                         {leadPayments.map((p) => (
-                          <div key={p.id} className="p-3 rounded-xl border border-border">
-                            <div className="flex items-center justify-between mb-1.5">
-                              <div>
-                                <div className="text-[13px] font-semibold">{MILESTONE_META[p.milestone].label}</div>
-                                <div className="text-[11px] text-muted">{p.paid_at ? `Paid · ${timeAgo(p.paid_at)}` : 'Pending'}</div>
-                              </div>
-                              <div className="text-right">
-                                <div className="num font-bold">{formatINRFull(p.amount)}</div>
-                                <span className="chip" style={{ background: p.status === 'paid' ? 'hsl(var(--green-soft))' : p.status === 'overdue' ? 'hsl(var(--rose-soft))' : 'hsl(var(--amber-soft))', color: p.status === 'paid' ? '#047857' : p.status === 'overdue' ? '#B91C1C' : '#B45309', border: 'none' }}>{p.status}</span>
-                              </div>
-                            </div>
-                            {p.note && (
-                              <div className="mt-2 pt-2 border-t border-border flex items-start gap-1.5">
-                                <FileText className="w-3 h-3 text-muted flex-shrink-0 mt-0.5" />
-                                <div className="text-[11.5px] text-ink-2 leading-relaxed whitespace-pre-wrap">{p.note}</div>
-                              </div>
-                            )}
-                          </div>
+                          <PaymentRow key={p.id} payment={p} />
                         ))}
                       </div>
                     )}

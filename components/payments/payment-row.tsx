@@ -1,0 +1,155 @@
+'use client';
+
+import { useState } from 'react';
+import { Modal } from '@/components/shared/modal';
+import { Select } from '@/components/shared/select';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { useApp } from '@/components/shared/app-provider';
+import type { Payment, Milestone } from '@/lib/types';
+import { MILESTONE_META } from '@/lib/types';
+import { formatINRFull, cn } from '@/lib/utils';
+import { FileText, Pencil, Trash2, IndianRupee } from 'lucide-react';
+
+interface Props {
+  payment: Payment;
+}
+
+export function PaymentRow({ payment }: Props) {
+  const { updatePayment, deletePayment } = useApp();
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const [milestone, setMilestone] = useState<Milestone>(payment.milestone);
+  const [amount, setAmount] = useState<string>(String(payment.amount));
+  const [status, setStatus] = useState<Payment['status']>(payment.status);
+  const [note, setNote] = useState(payment.note || '');
+  const [busy, setBusy] = useState(false);
+
+  const openEditor = () => {
+    setMilestone(payment.milestone);
+    setAmount(String(payment.amount));
+    setStatus(payment.status);
+    setNote(payment.note || '');
+    setEditOpen(true);
+  };
+
+  const save = async () => {
+    const n = parseFloat(amount);
+    if (!n || n < 0) return;
+    setBusy(true);
+    await updatePayment(payment.id, {
+      milestone,
+      amount: Math.round(n),
+      status,
+      note: note.trim() || null,
+      paid_at: status === 'paid' ? (payment.paid_at || new Date().toISOString()) : null,
+    });
+    setBusy(false);
+    setEditOpen(false);
+  };
+
+  const statusMeta: Record<Payment['status'], { label: string; bg: string; fg: string }> = {
+    paid:    { label: 'Paid',    bg: 'hsl(var(--green-soft))', fg: '#047857' },
+    pending: { label: 'Pending', bg: 'hsl(var(--amber-soft))', fg: '#B45309' },
+    overdue: { label: 'Overdue', bg: 'hsl(var(--rose-soft))',  fg: '#B91C1C' },
+  };
+
+  return (
+    <>
+      <div className="p-3 rounded-xl border border-border group">
+        <div className="flex items-center justify-between mb-1.5">
+          <div>
+            <div className="text-[13px] font-semibold">{MILESTONE_META[payment.milestone].label}</div>
+            <div className="text-[11px] text-muted">{payment.paid_at ? `Paid · ${new Date(payment.paid_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Not yet received'}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="text-right">
+              <div className="num font-bold">{formatINRFull(payment.amount)}</div>
+              <span className="chip" style={{ background: statusMeta[payment.status].bg, color: statusMeta[payment.status].fg, border: 'none' }}>{statusMeta[payment.status].label}</span>
+            </div>
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button onClick={openEditor} className="p-1.5 rounded hover:bg-surface-2 text-muted hover:text-ink" title="Edit payment">
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => setConfirmDelete(true)} className="p-1.5 rounded hover:bg-rose-50 text-muted hover:text-danger" title="Delete payment">
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+        {payment.note && (
+          <div className="mt-2 pt-2 border-t border-border flex items-start gap-1.5">
+            <FileText className="w-3 h-3 text-muted flex-shrink-0 mt-0.5" />
+            <div className="text-[11.5px] text-ink-2 leading-relaxed whitespace-pre-wrap">{payment.note}</div>
+          </div>
+        )}
+      </div>
+
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Edit payment"
+        subtitle="Correct the amount, status, or details"
+        footer={<>
+          <button onClick={() => setEditOpen(false)} className="btn btn-ghost" disabled={busy}>Cancel</button>
+          <button onClick={save} disabled={busy || !amount || parseFloat(amount) < 0} className="btn btn-primary disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save changes'}
+          </button>
+        </>}
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="input-label">Milestone</label>
+              <Select<Milestone>
+                value={milestone}
+                onChange={setMilestone}
+                options={(Object.keys(MILESTONE_META) as Milestone[]).map((m) => ({ value: m, label: `${MILESTONE_META[m].label} (${MILESTONE_META[m].pct}%)` }))}
+              />
+            </div>
+            <div>
+              <label className="input-label">Amount (₹)</label>
+              <div className="relative">
+                <IndianRupee className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+                <input type="number" min="0" className="input pl-8" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              </div>
+              {amount && Number(amount) > 0 && <div className="text-[11px] text-muted mt-1">{formatINRFull(Math.round(Number(amount)))}</div>}
+            </div>
+          </div>
+
+          <div>
+            <label className="input-label">Status</label>
+            <div className="flex gap-2">
+              {(['paid', 'pending', 'overdue'] as Payment['status'][]).map((s) => (
+                <button key={s} onClick={() => setStatus(s)} className={cn('flex-1 py-2 rounded-md text-[12.5px] font-medium border transition', status === s ? 'border-transparent' : 'border-border hover:bg-surface-2 text-muted')}
+                  style={status === s ? { background: statusMeta[s].bg, color: statusMeta[s].fg } : undefined}>
+                  {statusMeta[s].label}
+                </button>
+              ))}
+            </div>
+            <div className="text-[11px] text-faint mt-1">
+              {status === 'paid' && 'Money received. Counts toward Collected.'}
+              {status === 'pending' && 'Expected but not yet received. Does NOT count toward Collected.'}
+              {status === 'overdue' && 'Was expected, deadline passed, still not received.'}
+            </div>
+          </div>
+
+          <div>
+            <label className="input-label">Note <span className="text-faint">(reference, mode, etc.)</span></label>
+            <textarea className="input" rows={3} placeholder="Reference number, UPI, bank transfer…" value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={async () => { await deletePayment(payment.id); setConfirmDelete(false); }}
+        title="Delete this payment?"
+        description={`This will delete the ${MILESTONE_META[payment.milestone].label} payment of ${formatINRFull(payment.amount)}. The client's Collected total will be reduced automatically. This cannot be undone.`}
+        confirmLabel="Delete payment"
+        variant="danger"
+      />
+    </>
+  );
+}

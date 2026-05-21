@@ -37,6 +37,8 @@ interface AppData {
   addNote: (leadId: string, body: string) => Promise<void>;
   getNotes: (leadId: string) => Promise<Note[]>;
   recordPayment: (input: Partial<Payment> & { lead_id: string; milestone: Payment['milestone']; amount: number }) => Promise<void>;
+  updatePayment: (id: string, patch: Partial<Payment>) => Promise<void>;
+  deletePayment: (id: string) => Promise<void>;
   bulkInsertLeads: (rows: Partial<Lead>[]) => Promise<{ inserted: number }>;
   resetWorkspace: (sampleOnly: boolean) => Promise<void>;
   loadSampleData: () => Promise<void>;
@@ -310,6 +312,35 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     toast.success(`Payment recorded`);
   }, [supabase, workspace.id, user.id, refresh, logActivity]);
 
+  const updatePayment = useCallback(async (id: string, patch: Partial<Payment>) => {
+    const before = payments.find((p) => p.id === id);
+    // Optimistic update
+    setPayments((prev) => prev.map((p) => p.id === id ? { ...p, ...patch } as Payment : p));
+    const { error } = await supabase.from('payments').update(patch).eq('id', id);
+    if (error) {
+      if (before) setPayments((prev) => prev.map((p) => p.id === id ? before : p));
+      toast.error(`Update failed: ${error.message}`);
+      return;
+    }
+    // DB trigger payments_sync_lead recomputes lead.amount_paid — refresh to pick up the new total
+    await refresh();
+    toast.success('Payment updated');
+  }, [supabase, payments, refresh]);
+
+  const deletePayment = useCallback(async (id: string) => {
+    const before = payments;
+    setPayments((prev) => prev.filter((p) => p.id !== id));
+    const { error } = await supabase.from('payments').delete().eq('id', id);
+    if (error) {
+      setPayments(before);
+      toast.error(`Delete failed: ${error.message}`);
+      return;
+    }
+    // DB trigger recomputes lead.amount_paid
+    await refresh();
+    toast.success('Payment deleted');
+  }, [supabase, payments, refresh]);
+
   const bulkInsertLeads = useCallback(async (rows: Partial<Lead>[]): Promise<{ inserted: number }> => {
     if (rows.length === 0) return { inserted: 0 };
     const payload = rows.map((r) => ({
@@ -567,7 +598,7 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
   const value: AppData = {
     user, workspace, role, leads, payments, activity, cases, followUps, members, loading,
     refresh, refreshMembers, refreshCases, refreshFollowUps, memberNameById,
-    createLead, updateLead, deleteLead, addNote, getNotes, recordPayment, bulkInsertLeads, resetWorkspace, loadSampleData,
+    createLead, updateLead, deleteLead, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
     createCase, updateCase, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
     createFollowUp, updateFollowUp, deleteFollowUp, completeFollowUp, reopenFollowUp, cancelFollowUp,
   };
