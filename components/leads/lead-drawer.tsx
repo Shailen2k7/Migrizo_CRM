@@ -292,14 +292,23 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
 
                 {tab === 'payments' && (
                   <>
+                    <div className="flex items-center justify-between mb-3 gap-3">
+                      <div className="text-[11.5px] text-muted">
+                        {leadPayments.length === 0
+                          ? 'Track every payment for this client here — received, pending, or overdue.'
+                          : 'Hover any payment to edit or delete it. Changes update totals everywhere.'}
+                      </div>
+                      <button onClick={() => onRecordPayment(lead.id)} className="btn btn-primary btn-sm flex-shrink-0">
+                        <IndianRupee className="w-3.5 h-3.5" /> Add payment
+                      </button>
+                    </div>
                     {leadPayments.length === 0 ? (
-                      <div className="text-center py-10">
-                        <div className="text-[12.5px] text-muted mb-3">No payments recorded</div>
-                        <button onClick={() => onRecordPayment(lead.id)} className="btn btn-primary btn-sm"><IndianRupee className="w-3.5 h-3.5" /> Record first payment</button>
+                      <div className="text-center py-8 rounded-md border border-dashed border-border">
+                        <div className="text-[12.5px] text-muted mb-1">No payments yet</div>
+                        <div className="text-[11px] text-faint max-w-[280px] mx-auto">Click <strong>Add payment</strong> above to log a received payment or schedule one for a future date.</div>
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <div className="text-[11.5px] text-muted mb-1">Hover any payment to edit or delete it. Changes update the totals everywhere.</div>
                         {leadPayments.map((p) => (
                           <PaymentRow key={p.id} payment={p} />
                         ))}
