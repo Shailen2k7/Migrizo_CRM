@@ -122,18 +122,10 @@ export function DailyTrackerView() {
   const todayFollowUps = useMemo(() => followUps.filter(isFollowUpToday), [followUps]);
 
   const overduePaymentInfo = useMemo(() => {
-    const now = Date.now();
-    const byLead = new Map<string, number>();
-    for (const p of payments) {
-      const isOverdue = p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < now);
-      if (!isOverdue) continue;
-      const lead = leads.find((l) => l.id === p.lead_id);
-      if (!lead || lead.hidden_from_payments) continue;
-      byLead.set(p.lead_id, (byLead.get(p.lead_id) || 0) + p.amount);
-    }
-    const total = Array.from(byLead.values()).reduce((s, v) => s + v, 0);
-    return { clientCount: byLead.size, totalAmount: total };
-  }, [payments, leads]);
+    const overdueLeads = leads.filter((l) => !l.hidden_from_payments && (l.amount_overdue || 0) > 0);
+    const total = overdueLeads.reduce((s, l) => s + (l.amount_overdue || 0), 0);
+    return { clientCount: overdueLeads.length, totalAmount: total };
+  }, [leads]);
 
   // ------- Filtered list based on active card -------
   const filteredList = useMemo(() => {

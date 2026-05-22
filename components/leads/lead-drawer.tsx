@@ -184,32 +184,25 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                         }}
                         placeholder="0"
                       />
-                      {leadPayments.length > 0 && (
-                        <span className="text-[10.5px] text-faint ml-2">· {leadPayments.length} payment{leadPayments.length === 1 ? '' : 's'} logged</span>
+                    </Row>
+                    <Row label="Overdue">
+                      <InlineNumber
+                        value={effectiveLead.amount_overdue}
+                        onChange={(v) => setLeadPending({ amount_overdue: v })}
+                        placeholder="0"
+                      />
+                      {(effectiveLead.amount_overdue || 0) > 0 && (
+                        <span className="text-[10.5px] font-medium ml-2" style={{ color: '#A32D2D' }}>· past due</span>
                       )}
                     </Row>
                     {effectiveLead.amount_total > 0 && (
-                      <Row label="Pending">
-                        <span className="text-[13px] font-semibold num" style={{ color: Math.max(0, (effectiveLead.amount_total || 0) - (effectiveLead.amount_paid || 0)) > 0 ? '#A32D2D' : '#0F6E56' }}>
+                      <Row label="Remaining">
+                        <span className="text-[13px] font-semibold num" style={{ color: Math.max(0, (effectiveLead.amount_total || 0) - (effectiveLead.amount_paid || 0)) > 0 ? '#854F0B' : '#0F6E56' }}>
                           {formatINRFull(Math.max(0, (effectiveLead.amount_total || 0) - (effectiveLead.amount_paid || 0)))}
                         </span>
-                        <span className="text-[10.5px] text-faint ml-2">· auto-calculated</span>
+                        <span className="text-[10.5px] text-faint ml-2">· total − paid</span>
                       </Row>
                     )}
-                    {(() => {
-                      const overdueAmount = leadPayments
-                        .filter((p) => p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < Date.now()))
-                        .reduce((s, p) => s + p.amount, 0);
-                      if (overdueAmount === 0) return null;
-                      return (
-                        <Row label="Overdue">
-                          <span className="text-[13px] font-semibold num" style={{ color: '#A32D2D' }}>
-                            {formatINRFull(overdueAmount)}
-                          </span>
-                          <span className="text-[10.5px] text-faint ml-2">· from scheduled payments past their due date</span>
-                        </Row>
-                      );
-                    })()}
                     <Row label="Created">
                       <span className="text-[13px] text-ink-2">
                         {new Date(effectiveLead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}

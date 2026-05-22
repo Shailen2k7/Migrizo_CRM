@@ -46,6 +46,7 @@ export interface Lead {
   payment_status: PaymentStatus;
   amount_paid: number;
   amount_total: number;
+  amount_overdue: number;
   last_note: string | null;
   last_note_author_id: string | null;
   last_note_at: string | null;
