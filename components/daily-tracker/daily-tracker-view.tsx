@@ -78,7 +78,7 @@ function isStaleHotLead(lead: Lead): boolean {
 type StageFilter = 'all' | 'hot' | 'cold' | 'junk' | LeadStage;
 
 export function DailyTrackerView() {
-  const { leads, followUps, memberNameById } = useApp();
+  const { leads, followUps, payments, memberNameById } = useApp();
   const today = useMemo(() => startOfDay(new Date()), []);
   const [from, setFrom] = useState<Date>(today);
   const [to, setTo] = useState<Date>(today);
@@ -116,10 +116,24 @@ export function DailyTrackerView() {
     return { avg, pct };
   }, [leads, from, isSingleDay, counts.total]);
 
-  // ------- Stale hot leads + overdue follow-ups (action items) -------
+  // ------- Stale hot leads + overdue follow-ups + overdue payments (action items) -------
   const staleHotLeads = useMemo(() => leads.filter(isStaleHotLead), [leads]);
   const overdueFollowUps = useMemo(() => followUps.filter(isFollowUpOverdue), [followUps]);
   const todayFollowUps = useMemo(() => followUps.filter(isFollowUpToday), [followUps]);
+
+  const overduePaymentInfo = useMemo(() => {
+    const now = Date.now();
+    const byLead = new Map<string, number>();
+    for (const p of payments) {
+      const isOverdue = p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < now);
+      if (!isOverdue) continue;
+      const lead = leads.find((l) => l.id === p.lead_id);
+      if (!lead || lead.hidden_from_payments) continue;
+      byLead.set(p.lead_id, (byLead.get(p.lead_id) || 0) + p.amount);
+    }
+    const total = Array.from(byLead.values()).reduce((s, v) => s + v, 0);
+    return { clientCount: byLead.size, totalAmount: total };
+  }, [payments, leads]);
 
   // ------- Filtered list based on active card -------
   const filteredList = useMemo(() => {
@@ -303,8 +317,8 @@ export function DailyTrackerView() {
         </div>
       )}
 
-      {/* ACTION CALLOUT — stale hot leads + overdue follow-ups */}
-      {(staleHotLeads.length > 0 || overdueFollowUps.length > 0) && (
+      {/* ACTION CALLOUT — stale hot leads + overdue follow-ups + overdue payments */}
+      {(staleHotLeads.length > 0 || overdueFollowUps.length > 0 || overduePaymentInfo.clientCount > 0) && (
         <div className="rounded-md p-3 mb-4 flex items-center justify-between gap-3 flex-wrap" style={{ background: '#FAEEDA', border: '0.5px solid #EF9F27' }}>
           <div className="flex items-start gap-2.5">
             <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#854F0B' }} />
@@ -319,6 +333,11 @@ export function DailyTrackerView() {
                   Plus {overdueFollowUps.length} overdue follow-up{overdueFollowUps.length === 1 ? '' : 's'} ({todayFollowUps.length} due today)
                 </div>
               )}
+              {overduePaymentInfo.clientCount > 0 && (
+                <div className="text-[11.5px] mt-0.5 font-semibold" style={{ color: '#A32D2D' }}>
+                  {overduePaymentInfo.clientCount} client{overduePaymentInfo.clientCount === 1 ? '' : 's'} with overdue payments · {formatINRFull(overduePaymentInfo.totalAmount)} to collect
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -326,6 +345,11 @@ export function DailyTrackerView() {
               <button onClick={() => { setActiveCard('hot'); }} className="text-[11.5px] font-semibold underline" style={{ color: '#633806' }}>
                 See hot leads
               </button>
+            )}
+            {overduePaymentInfo.clientCount > 0 && (
+              <a href="/payments" className="text-[11.5px] font-semibold underline" style={{ color: '#A32D2D' }}>
+                Open Payments
+              </a>
             )}
           </div>
         </div>

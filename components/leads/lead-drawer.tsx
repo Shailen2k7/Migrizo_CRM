@@ -196,6 +196,20 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                         <span className="text-[10.5px] text-faint ml-2">· auto-calculated</span>
                       </Row>
                     )}
+                    {(() => {
+                      const overdueAmount = leadPayments
+                        .filter((p) => p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < Date.now()))
+                        .reduce((s, p) => s + p.amount, 0);
+                      if (overdueAmount === 0) return null;
+                      return (
+                        <Row label="Overdue">
+                          <span className="text-[13px] font-semibold num" style={{ color: '#A32D2D' }}>
+                            {formatINRFull(overdueAmount)}
+                          </span>
+                          <span className="text-[10.5px] text-faint ml-2">· from scheduled payments past their due date</span>
+                        </Row>
+                      );
+                    })()}
                     <Row label="Created">
                       <span className="text-[13px] text-ink-2">
                         {new Date(effectiveLead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
