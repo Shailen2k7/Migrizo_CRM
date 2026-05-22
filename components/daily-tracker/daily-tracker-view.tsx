@@ -6,6 +6,7 @@ import type { Lead, LeadStage } from '@/lib/types';
 import { STAGE_META, getStageMeta, isFollowUpOverdue, isFollowUpToday } from '@/lib/types';
 import { Users, Flame, Snowflake, Trash2, Calendar, Download, AlertTriangle, ChevronRight, MessageCircle, Trophy, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { cn, initials, avatarColor, formatINRFull } from '@/lib/utils';
+import { IndustryChip } from '@/components/shared/industry-chip';
 import { LeadDrawer } from '@/components/leads/lead-drawer';
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog';
 import { toast } from 'sonner';
@@ -433,6 +434,7 @@ function LeadRow({ lead, onClick, memberName }: { lead: Lead; onClick: () => voi
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-[13.5px] text-ink">{lead.full_name}</span>
+            <IndustryChip industry={lead.industry} size="xs" />
             {isWon && lead.amount_paid > 0 && (
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: '#E1F5EE', color: '#0F6E56' }}>
                 {formatINRFull(lead.amount_paid)} closed

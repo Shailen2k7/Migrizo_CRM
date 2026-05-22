@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { Modal } from '@/components/shared/modal';
 import { useApp } from '@/components/shared/app-provider';
 import { STAGE_META } from '@/lib/types';
-import type { LeadStage } from '@/lib/types';
+import type { LeadStage, Industry } from '@/lib/types';
 import { normalizePhone, normalizeEmail } from '@/lib/utils';
+import { IndustrySelector } from '@/components/shared/industry-chip';
 
 interface Props {
   open: boolean;
@@ -18,13 +19,14 @@ export function AddLeadDialog({ open, onClose }: Props) {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [visaType, setVisaType] = useState('');
+  const [industry, setIndustry] = useState<Industry | null>(null);
   const [stage, setStage] = useState<LeadStage>('cold');
   const [nextFollowUp, setNextFollowUp] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
   const reset = () => {
-    setFullName(''); setPhone(''); setEmail(''); setVisaType(''); setStage('cold'); setNextFollowUp(''); setNote('');
+    setFullName(''); setPhone(''); setEmail(''); setVisaType(''); setIndustry(null); setStage('cold'); setNextFollowUp(''); setNote('');
   };
 
   const submit = async () => {
@@ -35,6 +37,7 @@ export function AddLeadDialog({ open, onClose }: Props) {
       phone: normalizePhone(phone),
       email: normalizeEmail(email),
       visa_type: visaType.trim() || null,
+      industry: industry || null,
       stage,
       next_follow_up: nextFollowUp ? new Date(nextFollowUp).toISOString() : null,
       last_note: note.trim() || null,
@@ -84,6 +87,10 @@ export function AddLeadDialog({ open, onClose }: Props) {
               {(Object.keys(STAGE_META) as LeadStage[]).map((k) => <option key={k} value={k}>{STAGE_META[k].label}</option>)}
             </select>
           </div>
+        </div>
+        <div>
+          <label className="input-label">Industry <span className="text-faint">· optional, click to tag</span></label>
+          <IndustrySelector value={industry} onChange={setIndustry} />
         </div>
         <div>
           <label className="input-label">Next follow-up</label>

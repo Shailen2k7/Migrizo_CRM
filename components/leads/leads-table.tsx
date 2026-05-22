@@ -10,6 +10,7 @@ import { useApp } from '@/components/shared/app-provider';
 import type { Lead, LeadStage } from '@/lib/types';
 import { STAGE_META, STAGE_ORDER, PAYMENT_META, getStageMeta } from '@/lib/types';
 import { initials, avatarColor, formatINRFull, scoreColor, timeAgo, cn } from '@/lib/utils';
+import { IndustryChip } from '@/components/shared/industry-chip';
 
 type Segment = 'all' | LeadStage;
 
@@ -50,7 +51,10 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
             <div className="av" style={{ background: avatarColor(l.id) }}>{initials(l.full_name)}</div>
             <div className="min-w-0">
               <div className="font-semibold text-ink leading-tight text-[13.5px]">{l.full_name}</div>
-              {l.visa_type && <div className="text-[11px] text-muted truncate">{l.visa_type}</div>}
+              <div className="flex items-center gap-1.5 mt-0.5">
+                {l.visa_type && <div className="text-[11px] text-muted truncate">{l.visa_type}</div>}
+                {l.industry && <IndustryChip industry={l.industry} size="xs" />}
+              </div>
             </div>
             {(l.phone || l.email) && (
               <div className="absolute left-0 -top-2 -translate-y-full opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-ink text-surface px-3 py-2 rounded-md text-[11.5px] whitespace-nowrap z-30 shadow-lg">

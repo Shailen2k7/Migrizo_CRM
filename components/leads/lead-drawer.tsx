@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { FollowUpsList } from '@/components/followups/followups-list';
 import { AddFollowUpDialog } from '@/components/followups/add-followup-dialog';
 import { PaymentRow } from '@/components/payments/payment-row';
+import { IndustrySelector, IndustryChip } from '@/components/shared/industry-chip';
 import { initials, avatarColor, formatINRFull, timeAgo, scoreColor, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -101,7 +102,10 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
               <div className="px-6 py-5 border-b border-border flex items-center gap-3">
                 <div className="av" style={{ background: avatarColor(effectiveLead.id), width: 36, height: 36, fontSize: 13 }}>{initials(effectiveLead.full_name)}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[16px] font-semibold leading-tight truncate">{effectiveLead.full_name}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-[16px] font-semibold leading-tight truncate">{effectiveLead.full_name}</div>
+                    <IndustryChip industry={effectiveLead.industry} size="xs" />
+                  </div>
                   <div className="text-[12px] text-muted leading-tight mt-1 truncate">{[effectiveLead.phone, effectiveLead.email].filter(Boolean).join(' · ') || '—'}</div>
                 </div>
                 <button onClick={handleClose} className="btn btn-ghost p-2"><X className="w-4 h-4" /></button>
@@ -147,6 +151,11 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     </Row>
                     <Row label="Visa type">
                       <InlineText value={effectiveLead.visa_type} onChange={(v) => setLeadPending({ visa_type: v })} placeholder="UK GTV…" />
+                    </Row>
+                    <Row label="Industry">
+                      <div className="py-1">
+                        <IndustrySelector value={effectiveLead.industry} onChange={(v) => setLeadPending({ industry: v })} size="sm" />
+                      </div>
                     </Row>
                     <Row label="Phone">
                       <InlineText value={effectiveLead.phone} onChange={(v) => setLeadPending({ phone: v })} placeholder="+91…" />

@@ -50,6 +50,7 @@ export interface Lead {
   last_note_author_id: string | null;
   last_note_at: string | null;
   tags: string[];
+  industry: string | null;
   created_at: string;
   created_by: string | null;
   updated_at: string;
@@ -304,4 +305,28 @@ export function formatFollowUpTime(scheduledAt: string): string {
   if (date >= tomorrow && date < dayAfter) return `Tomorrow, ${time}`;
   if (date >= today && date < weekFromToday) return `${date.toLocaleDateString('en-IN', { weekday: 'short' })}, ${time}`;
   return `${date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })}, ${time}`;
+}
+
+// =========================================
+// INDUSTRY TAGS
+// =========================================
+export type Industry = 'tech' | 'research' | 'art' | 'engineering' | 'education' | 'business' | 'healthcare' | 'finance' | 'other';
+
+export const INDUSTRY_LIST: Industry[] = ['tech', 'research', 'art', 'engineering', 'education', 'business', 'healthcare', 'finance', 'other'];
+
+export const INDUSTRY_META: Record<Industry, { label: string; bg: string; fg: string; ring: string }> = {
+  tech:        { label: 'Tech',        bg: '#EEF0FF', fg: '#3C3489', ring: '#6366F1' },
+  research:    { label: 'Research',    bg: '#E6F1FB', fg: '#0C447C', ring: '#3B82F6' },
+  art:         { label: 'Art',         bg: '#FCEBF1', fg: '#9F1239', ring: '#EC4899' },
+  engineering: { label: 'Engineering', bg: '#FAEEDA', fg: '#854F0B', ring: '#F59E0B' },
+  education:   { label: 'Education',   bg: '#E1F5EE', fg: '#0F6E56', ring: '#10B981' },
+  business:    { label: 'Business',    bg: '#F4F4F6', fg: '#475569', ring: '#64748B' },
+  healthcare:  { label: 'Healthcare',  bg: '#FCEBEB', fg: '#A32D2D', ring: '#EF4444' },
+  finance:     { label: 'Finance',     bg: '#DCFCE7', fg: '#166534', ring: '#16A34A' },
+  other:       { label: 'Other',       bg: '#F4F4F6', fg: '#6B7280', ring: '#9CA3AF' },
+};
+
+export function getIndustryMeta(industry: string | null | undefined) {
+  if (!industry) return null;
+  return INDUSTRY_META[industry as Industry] || null;
 }
