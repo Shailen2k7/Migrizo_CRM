@@ -5,14 +5,14 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel,
   flexRender, type ColumnDef, type SortingState
 } from '@tanstack/react-table';
-import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Search } from 'lucide-react';
+import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Search, Star } from 'lucide-react';
 import { useApp } from '@/components/shared/app-provider';
 import type { Lead, LeadStage } from '@/lib/types';
 import { STAGE_META, STAGE_ORDER, PAYMENT_META, getStageMeta } from '@/lib/types';
 import { initials, avatarColor, formatINRFull, scoreColor, timeAgo, cn } from '@/lib/utils';
 import { IndustryChip } from '@/components/shared/industry-chip';
 
-type Segment = 'all' | LeadStage;
+type Segment = 'all' | 'spotlight' | LeadStage;
 
 interface Props {
   initialSegment?: Segment;
@@ -20,7 +20,7 @@ interface Props {
 }
 
 export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
-  const { leads, updateLead } = useApp();
+  const { leads, updateLead, toggleSpotlight } = useApp();
   const [segment, setSegment] = useState<Segment>(initialSegment);
   const [search, setSearch] = useState('');
   const [sorting, setSorting] = useState<SortingState>([{ id: 'updated_at', desc: true }]);
@@ -30,14 +30,15 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
 
   const segmented = useMemo(() => {
     if (segment === 'all') return leads;
+    if (segment === 'spotlight') return leads.filter((l) => l.is_spotlight);
     return leads.filter((l) => l.stage === segment);
   }, [leads, segment]);
 
   const counts = useMemo(() => {
     const c: Record<Segment, number> = {
-      all: leads.length, hot: 0, cold: 0, mr_coming_soon: 0, invoice_sent: 0, won: 0, junk: 0,
+      all: leads.length, spotlight: 0, hot: 0, cold: 0, mr_coming_soon: 0, invoice_sent: 0, won: 0, junk: 0,
     };
-    leads.forEach((l) => { c[l.stage] = (c[l.stage] || 0) + 1; });
+    leads.forEach((l) => { c[l.stage] = (c[l.stage] || 0) + 1; if (l.is_spotlight) c.spotlight += 1; });
     return c;
   }, [leads]);
 
@@ -48,6 +49,13 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
         const l = row.original;
         return (
           <div className="flex items-center gap-2.5 group relative">
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleSpotlight(l.id); }}
+              title={l.is_spotlight ? 'Remove from Spotlight' : 'Add to Spotlight'}
+              className={cn('flex-shrink-0 p-0.5 rounded transition-colors', l.is_spotlight ? '' : 'opacity-0 group-hover:opacity-100')}
+            >
+              <Star className="w-3.5 h-3.5 transition-colors" style={l.is_spotlight ? { fill: '#F59E0B', color: '#F59E0B' } : { color: '#9CA3AF' }} />
+            </button>
             <div className="av" style={{ background: avatarColor(l.id) }}>{initials(l.full_name)}</div>
             <div className="min-w-0">
               <div className="font-semibold text-ink leading-tight text-[13.5px]">{l.full_name}</div>
@@ -134,7 +142,7 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
       },
     },
     { id: 'updated_at', accessorKey: 'updated_at', header: '', cell: () => null },
-  ], []);
+  ], [toggleSpotlight, updateLead]);
 
   const table = useReactTable({
     data: segmented,
@@ -161,11 +169,21 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
     return () => window.removeEventListener('click', onClick);
   }, [stageMenu]);
 
-  const segments: Segment[] = ['all', ...STAGE_ORDER];
+  const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER];
 
   return (
     <>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <button
+          onClick={() => setSegment('spotlight')}
+          className={cn('filter-chip', segment === 'spotlight' && 'active')}
+          style={segment === 'spotlight'
+            ? { background: '#F59E0B', color: '#fff', borderColor: '#F59E0B' }
+            : { background: '#FEF6E7', color: '#854F0B', borderColor: '#F3D9A4' }}
+        >
+          <Star className="w-3 h-3" style={{ fill: 'currentColor', marginRight: 4 }} />Spotlight
+          <span className="count" style={segment === 'spotlight' ? { background: 'rgba(255,255,255,0.25)', color: '#fff' } : undefined}>{counts.spotlight}</span>
+        </button>
         {segments.map((s) => {
           const meta = s === 'all' ? null : STAGE_META[s];
           const label = s === 'all' ? 'All' : meta!.label;

@@ -34,6 +34,7 @@ interface AppData {
   createLead: (input: Partial<Lead>) => Promise<Lead | null>;
   updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
+  toggleSpotlight: (id: string) => Promise<void>;
   addNote: (leadId: string, body: string) => Promise<void>;
   getNotes: (leadId: string) => Promise<Note[]>;
   recordPayment: (input: Partial<Payment> & { lead_id: string; milestone: Payment['milestone']; amount: number }) => Promise<void>;
@@ -104,6 +105,13 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     }
   }, [supabase]);
 
+  // Lightweight: refresh a single lead row instead of re-fetching everything.
+  // Used after payment/follow-up mutations where only one lead's totals changed.
+  const refreshLead = useCallback(async (leadId: string) => {
+    const { data } = await supabase.from('leads').select('*').eq('id', leadId).maybeSingle();
+    if (data) setLeads((prev) => prev.map((l) => l.id === leadId ? (data as Lead) : l));
+  }, [supabase]);
+
   const refreshMembers = useCallback(async () => {
     const { data, error } = await supabase.rpc('list_workspace_members', { p_workspace_id: workspace.id });
     if (error) {
@@ -139,12 +147,19 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     if (data) setFollowUps(data as FollowUp[]);
   }, [supabase, workspace.id]);
 
-  // Load members + cases + follow-ups on mount and when window regains focus
+  // Load members + cases + follow-ups on mount and when window regains focus (throttled)
   useEffect(() => {
     refreshMembers();
     refreshCases();
     refreshFollowUps();
-    const onFocus = () => { refreshMembers(); refreshCases(); refreshFollowUps(); };
+    let lastFocusRefresh = Date.now();
+    const onFocus = () => {
+      // Only re-fetch if it's been more than 60s since the last focus refresh.
+      // Prevents a heavy re-fetch every time the user switches browser tabs.
+      if (Date.now() - lastFocusRefresh < 60_000) return;
+      lastFocusRefresh = Date.now();
+      refreshMembers(); refreshCases(); refreshFollowUps();
+    };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [refreshMembers, refreshCases, refreshFollowUps]);
@@ -267,6 +282,21 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     toast.success('Lead deleted');
   }, [supabase, leads, role]);
 
+  const toggleSpotlight = useCallback(async (id: string) => {
+    const lead = leads.find((l) => l.id === id);
+    if (!lead) return;
+    const next = !lead.is_spotlight;
+    // Optimistic update
+    setLeads((prev) => prev.map((l) => l.id === id ? { ...l, is_spotlight: next } : l));
+    const { error } = await supabase.from('leads').update({ is_spotlight: next }).eq('id', id);
+    if (error) {
+      setLeads((prev) => prev.map((l) => l.id === id ? { ...l, is_spotlight: !next } : l));
+      toast.error(`Couldn't update: ${error.message}`);
+      return;
+    }
+    toast.success(next ? 'Added to Spotlight' : 'Removed from Spotlight');
+  }, [supabase, leads]);
+
   const addNote = useCallback(async (leadId: string, body: string) => {
     const trimmed = body.trim();
     if (!trimmed) return;
@@ -305,12 +335,12 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     setPayments((prev) => prev.some((p) => p.id === data.id) ? prev : [data as Payment, ...prev]);
 
     // DB trigger payments_sync_lead automatically updates lead.amount_paid and payment_status.
-    // Refresh leads from DB so the in-memory state reflects what the trigger did.
-    await refresh();
+    // Refresh ONLY the affected lead (fast) instead of re-fetching everything.
+    await refreshLead(input.lead_id);
 
     logActivity('recorded_payment', input.lead_id, { milestone: input.milestone, amount: input.amount });
     toast.success(`Payment recorded`);
-  }, [supabase, workspace.id, user.id, refresh, logActivity]);
+  }, [supabase, workspace.id, user.id, refreshLead, logActivity]);
 
   const updatePayment = useCallback(async (id: string, patch: Partial<Payment>) => {
     const before = payments.find((p) => p.id === id);
@@ -322,10 +352,10 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
       toast.error(`Update failed: ${error.message}`);
       return;
     }
-    // DB trigger payments_sync_lead recomputes lead.amount_paid — refresh to pick up the new total
-    await refresh();
+    // DB trigger recomputes lead.amount_paid — refresh just that lead
+    if (before?.lead_id) await refreshLead(before.lead_id);
     toast.success('Payment updated');
-  }, [supabase, payments, refresh]);
+  }, [supabase, payments, refreshLead]);
 
   const deletePayment = useCallback(async (id: string) => {
     const before = payments;
@@ -336,10 +366,13 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
       toast.error(`Delete failed: ${error.message}`);
       return;
     }
-    // DB trigger recomputes lead.amount_paid
-    await refresh();
+    // DB trigger recomputes lead.amount_paid — refresh just that lead
+    if (before.length) {
+      const deleted = before.find((p) => p.id === id);
+      if (deleted?.lead_id) await refreshLead(deleted.lead_id);
+    }
     toast.success('Payment deleted');
-  }, [supabase, payments, refresh]);
+  }, [supabase, payments, refreshLead]);
 
   const bulkInsertLeads = useCallback(async (rows: Partial<Lead>[]): Promise<{ inserted: number }> => {
     if (rows.length === 0) return { inserted: 0 };
@@ -533,11 +566,11 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     const { data, error } = await supabase.from('follow_ups').insert(payload).select().single();
     if (error) { toast.error(`Couldn't schedule: ${error.message}`); return null; }
     setFollowUps((prev) => [...prev, data as FollowUp].sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()));
-    // The DB trigger updates lead.next_follow_up — refresh leads in background
-    refresh();
+    // The DB trigger updates lead.next_follow_up — refresh just that lead
+    refreshLead(input.lead_id);
     toast.success('Follow-up scheduled');
     return data as FollowUp;
-  }, [supabase, workspace.id, user.id]);
+  }, [supabase, workspace.id, user.id, refreshLead]);
 
   const updateFollowUp = useCallback(async (id: string, patch: Partial<FollowUp>) => {
     const before = followUps.find((f) => f.id === id);
@@ -548,11 +581,12 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
       toast.error(`Update failed: ${error.message}`);
       return;
     }
-    refresh();
-  }, [supabase, followUps]);
+    if (before?.lead_id) refreshLead(before.lead_id);
+  }, [supabase, followUps, refreshLead]);
 
   const deleteFollowUp = useCallback(async (id: string) => {
     const before = followUps;
+    const target = followUps.find((f) => f.id === id);
     setFollowUps((prev) => prev.filter((f) => f.id !== id));
     const { error } = await supabase.from('follow_ups').delete().eq('id', id);
     if (error) {
@@ -560,9 +594,9 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
       toast.error(`Delete failed: ${error.message}`);
       return;
     }
-    refresh();
+    if (target?.lead_id) refreshLead(target.lead_id);
     toast.success('Follow-up deleted');
-  }, [supabase, followUps]);
+  }, [supabase, followUps, refreshLead]);
 
   const completeFollowUp = useCallback(async (id: string, outcome?: string | null) => {
     const patch = {
@@ -571,34 +605,37 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
       outcome: outcome || null,
     };
     setFollowUps((prev) => prev.map((f) => f.id === id ? { ...f, ...patch } as FollowUp : f));
+    const target = followUps.find((f) => f.id === id);
     const { error } = await supabase.from('follow_ups').update(patch).eq('id', id);
     if (error) { toast.error(`Couldn't complete: ${error.message}`); return; }
-    refresh();
+    if (target?.lead_id) refreshLead(target.lead_id);
     toast.success('Follow-up completed');
-  }, [supabase]);
+  }, [supabase, followUps, refreshLead]);
 
   const reopenFollowUp = useCallback(async (id: string) => {
     const patch = { status: 'pending' as const, completed_at: null, outcome: null };
     setFollowUps((prev) => prev.map((f) => f.id === id ? { ...f, ...patch } as FollowUp : f));
+    const target = followUps.find((f) => f.id === id);
     const { error } = await supabase.from('follow_ups').update(patch).eq('id', id);
     if (error) { toast.error(`Couldn't reopen: ${error.message}`); return; }
-    refresh();
+    if (target?.lead_id) refreshLead(target.lead_id);
     toast.success('Follow-up reopened');
-  }, [supabase]);
+  }, [supabase, followUps, refreshLead]);
 
   const cancelFollowUp = useCallback(async (id: string) => {
     const patch = { status: 'cancelled' as const };
     setFollowUps((prev) => prev.map((f) => f.id === id ? { ...f, ...patch } as FollowUp : f));
+    const target = followUps.find((f) => f.id === id);
     const { error } = await supabase.from('follow_ups').update(patch).eq('id', id);
     if (error) { toast.error(`Couldn't cancel: ${error.message}`); return; }
-    refresh();
+    if (target?.lead_id) refreshLead(target.lead_id);
     toast.success('Follow-up cancelled');
-  }, [supabase]);
+  }, [supabase, followUps, refreshLead]);
 
   const value: AppData = {
     user, workspace, role, leads, payments, activity, cases, followUps, members, loading,
     refresh, refreshMembers, refreshCases, refreshFollowUps, memberNameById,
-    createLead, updateLead, deleteLead, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
+    createLead, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
     createCase, updateCase, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
     createFollowUp, updateFollowUp, deleteFollowUp, completeFollowUp, reopenFollowUp, cancelFollowUp,
   };

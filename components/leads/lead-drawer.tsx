@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus } from 'lucide-react';
+import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star } from 'lucide-react';
 import type { Lead, Note, Payment, LeadStage } from '@/lib/types';
 import { STAGE_META, MILESTONE_META } from '@/lib/types';
 import { useApp } from '@/components/shared/app-provider';
@@ -22,7 +22,7 @@ interface Props {
 }
 
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
-  const { leads, payments, followUps, updateLead, deleteLead, addNote, getNotes, role, memberNameById } = useApp();
+  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, role, memberNameById } = useApp();
   const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups'>('overview');
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
@@ -108,7 +108,16 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                   </div>
                   <div className="text-[12px] text-muted leading-tight mt-1 truncate">{[effectiveLead.phone, effectiveLead.email].filter(Boolean).join(' · ') || '—'}</div>
                 </div>
-                <button onClick={handleClose} className="btn btn-ghost p-2"><X className="w-4 h-4" /></button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => toggleSpotlight(effectiveLead.id)}
+                    title={effectiveLead.is_spotlight ? 'Remove from Spotlight' : 'Add to Spotlight'}
+                    className="btn btn-ghost p-2"
+                  >
+                    <Star className="w-4 h-4" style={effectiveLead.is_spotlight ? { fill: '#F59E0B', color: '#F59E0B' } : { color: '#9CA3AF' }} />
+                  </button>
+                  <button onClick={handleClose} className="btn btn-ghost p-2"><X className="w-4 h-4" /></button>
+                </div>
               </div>
 
               <div className="flex items-center gap-1 mx-6 mt-5 p-1 rounded-md bg-surface-2 w-fit">

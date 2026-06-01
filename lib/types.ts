@@ -52,6 +52,7 @@ export interface Lead {
   last_note_at: string | null;
   tags: string[];
   industry: string | null;
+  is_spotlight: boolean;
   created_at: string;
   created_by: string | null;
   updated_at: string;
