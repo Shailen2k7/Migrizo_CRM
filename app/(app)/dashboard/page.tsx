@@ -12,7 +12,7 @@ import { greeting, todayDateString, timeAgo } from '@/lib/utils';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { leads, payments, activity, user, memberNameById } = useApp();
+  const { leads, payments, activity, user, memberNameById, canViewPayments } = useApp();
   const ui = useUI();
 
   const followUpsToday = useMemo(() => {
@@ -37,7 +37,7 @@ export default function DashboardPage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-3">
-        <KPICards leads={leads} payments={payments} />
+        <KPICards leads={leads} payments={payments} canViewPayments={canViewPayments} />
       </div>
 
       <AIInsightsStrip leads={leads} payments={payments} />
@@ -55,9 +55,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts row 2 */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-3">
+      <div className={canViewPayments ? "grid grid-cols-1 xl:grid-cols-2 gap-3 mb-3" : "grid grid-cols-1 gap-3 mb-3"}>
         <div className="panel panel-pad"><div className="section-h mb-5"><div><h2>Daily New Leads</h2><div className="sub">Last 14 days inflow</div></div></div><DailyChart leads={leads} /></div>
-        <div className="panel panel-pad"><div className="section-h mb-5"><div><h2>Revenue Trend</h2><div className="sub">Last 6 months closed revenue</div></div></div><RevenueChart payments={payments} /></div>
+        {canViewPayments && <div className="panel panel-pad"><div className="section-h mb-5"><div><h2>Revenue Trend</h2><div className="sub">Last 6 months closed revenue</div></div></div><RevenueChart payments={payments} /></div>}
       </div>
 
       {/* Activity + Quick Access */}

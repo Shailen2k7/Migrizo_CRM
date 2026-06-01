@@ -9,7 +9,7 @@ import { formatINR, timeAgo, initials, avatarColor } from '@/lib/utils';
 // =========================================
 // KPI Cards
 // =========================================
-export function KPICards({ leads, payments }: { leads: Lead[]; payments: Payment[] }) {
+export function KPICards({ leads, payments, canViewPayments = true }: { leads: Lead[]; payments: Payment[]; canViewPayments?: boolean }) {
   const stats = useMemo(() => {
     const now = Date.now(); const weekMs = 7 * 86400000; const monthMs = 30 * 86400000;
     const newThisWeek = leads.filter((l) => now - new Date(l.created_at).getTime() < weekMs).length;
@@ -42,10 +42,10 @@ export function KPICards({ leads, payments }: { leads: Lead[]; payments: Payment
   const cards = [
     { label: 'New this week', value: stats.newThisWeek, sub: stats.weekDelta != null ? `${stats.weekDelta >= 0 ? '+' : ''}${stats.weekDelta.toFixed(0)}% vs last week` : 'No prior data', deltaPositive: (stats.weekDelta ?? 0) >= 0, icon: Users },
     { label: 'Follow-ups today', value: stats.followUpsToday, sub: stats.overdue > 0 ? `${stats.overdue} overdue` : 'On track', deltaPositive: stats.overdue === 0, icon: Clock },
-    { label: 'Revenue this month', value: formatINR(stats.revenueThisMonth), sub: `${formatINR(stats.revenueAllTime)} all-time`, deltaPositive: true, icon: IndianRupee, isMoney: true },
+    { label: 'Revenue this month', value: formatINR(stats.revenueThisMonth), sub: `${formatINR(stats.revenueAllTime)} all-time`, deltaPositive: true, icon: IndianRupee, isMoney: true, money: true },
     { label: 'Closed won', value: stats.wonCount, sub: `${stats.conversion.toFixed(0)}% conversion`, deltaPositive: stats.conversion >= 20, icon: Target },
     { label: 'Active pipeline', value: leads.filter((l) => !['won', 'junk', 'won'].includes(l.stage)).length, sub: 'In active stages', deltaPositive: true, icon: BarChart3 },
-  ];
+  ].filter((c) => canViewPayments || !(c as { money?: boolean }).money);
 
   return (
     <>

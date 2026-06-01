@@ -28,13 +28,14 @@ interface Props {
   user: { id: string; email: string; name: string };
   workspace: Workspace;
   role: 'admin' | 'member';
+  canViewPayments: boolean;
   initialLeads: Lead[];
   initialPayments: Payment[];
   initialActivity: Activity[];
   children: React.ReactNode;
 }
 
-export function AppShell({ user, workspace, role, initialLeads, initialPayments, initialActivity, children }: Props) {
+export function AppShell({ user, workspace, role, canViewPayments, initialLeads, initialPayments, initialActivity, children }: Props) {
   const [addLeadOpen, setAddLeadOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
@@ -49,7 +50,7 @@ export function AppShell({ user, workspace, role, initialLeads, initialPayments,
   };
 
   return (
-    <AppProvider user={user} workspace={workspace} role={role} initialLeads={initialLeads} initialPayments={initialPayments} initialActivity={initialActivity}>
+    <AppProvider user={user} workspace={workspace} role={role} initialCanViewPayments={canViewPayments} initialLeads={initialLeads} initialPayments={initialPayments} initialActivity={initialActivity}>
       <UIContext.Provider value={ui}>
         <Sidebar user={user} workspaceName={workspace.name} leadsCount={initialLeads.length} onAddLead={ui.openAddLead} />
         <main style={{ marginLeft: 240 }}>{children}</main>

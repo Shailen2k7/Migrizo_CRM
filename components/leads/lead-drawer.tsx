@@ -22,7 +22,7 @@ interface Props {
 }
 
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
-  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, role, memberNameById } = useApp();
+  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, role, memberNameById, canViewPayments } = useApp();
   const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups'>('overview');
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
@@ -121,7 +121,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
               </div>
 
               <div className="flex items-center gap-1 mx-6 mt-5 p-1 rounded-md bg-surface-2 w-fit">
-                {(['overview', 'notes', 'followups', 'payments'] as const).map((t) => (
+                {(['overview', 'notes', 'followups', ...(canViewPayments ? ['payments'] as const : [])] as const).map((t) => (
                   <button key={t} onClick={() => setTab(t)} className={cn('px-3 py-1.5 rounded-md text-[12.5px] font-medium', tab === t ? 'bg-surface shadow-sm' : 'text-muted hover:bg-surface')}>
                     {t === 'followups' ? 'Follow-ups' : t.charAt(0).toUpperCase() + t.slice(1)}
                     {t === 'notes' && notes.length > 0 ? ` · ${notes.length}` : ''}
@@ -172,6 +172,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     <Row label="Email">
                       <InlineText value={effectiveLead.email} onChange={(v) => setLeadPending({ email: v })} placeholder="email@…" />
                     </Row>
+                    {canViewPayments && <>
                     <Row label="Total fee">
                       <InlineNumber
                         value={effectiveLead.amount_total}
@@ -212,6 +213,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                         <span className="text-[10.5px] text-faint ml-2">· total − paid</span>
                       </Row>
                     )}
+                    </>}
                     <Row label="Created">
                       <span className="text-[13px] text-ink-2">
                         {new Date(effectiveLead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -326,7 +328,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                 <a href={effectiveLead.phone ? `tel:${effectiveLead.phone}` : '#'} className={cn('btn btn-outline btn-sm', !effectiveLead.phone && 'opacity-50 pointer-events-none')}><Phone className="w-3.5 h-3.5" /> Call</a>
                 <a href={effectiveLead.email ? `mailto:${effectiveLead.email}` : '#'} className={cn('btn btn-outline btn-sm', !effectiveLead.email && 'opacity-50 pointer-events-none')}><Mail className="w-3.5 h-3.5" /> Email</a>
                 <button onClick={() => setTab('notes')} className="btn btn-outline btn-sm"><MessageSquare className="w-3.5 h-3.5" /> Note</button>
-                <button onClick={() => onRecordPayment(lead.id)} className="btn btn-primary btn-sm ml-auto"><IndianRupee className="w-3.5 h-3.5" /> Record payment</button>
+                {canViewPayments && <button onClick={() => onRecordPayment(lead.id)} className="btn btn-primary btn-sm ml-auto"><IndianRupee className="w-3.5 h-3.5" /> Record payment</button>}
                 {role === 'admin' && (
                   <button onClick={() => setConfirmDelete(true)} className="btn btn-ghost p-2" title="Delete lead">
                     <Trash2 className="w-4 h-4 text-danger" />

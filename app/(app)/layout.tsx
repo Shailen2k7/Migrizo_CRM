@@ -18,7 +18,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   // 2. Look up membership (this works regardless of status because the RLS policy allows users to see their own row)
   const { data: member } = await supabase
     .from('workspace_members')
-    .select('workspace_id, role, status, workspaces:workspaces(*)')
+    .select('workspace_id, role, status, can_view_payments, workspaces:workspaces(*)')
     .eq('user_id', user.id)
     .maybeSingle();
 
@@ -64,6 +64,8 @@ export default async function ProtectedLayout({ children }: { children: React.Re
 
   const workspace = member.workspaces as unknown as Workspace;
   const role = (member.role as 'admin' | 'member') || 'member';
+  // Admins always see payments; members depend on their flag (default true)
+  const canViewPayments = role === 'admin' ? true : ((member as { can_view_payments?: boolean }).can_view_payments ?? true);
 
   const [leadsRes, paymentsRes, activityRes] = await Promise.all([
     supabase.from('leads').select('*').order('updated_at', { ascending: false }),
@@ -76,6 +78,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
       user={{ id: user.id, email: user.email || '', name: displayName }}
       workspace={workspace}
       role={role}
+      canViewPayments={canViewPayments}
       initialLeads={(leadsRes.data || []) as Lead[]}
       initialPayments={(paymentsRes.data || []) as Payment[]}
       initialActivity={(activityRes.data || []) as Activity[]}

@@ -13,7 +13,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 type PaySegment = 'all' | 'active' | 'overdue' | 'completed';
 
 export default function PaymentsPage() {
-  const { leads, payments, updateLead } = useApp();
+  const { leads, payments, updateLead, canViewPayments } = useApp();
   const ui = useUI();
   const [seg, setSeg] = useState<PaySegment>('all');
   const [search, setSearch] = useState('');
@@ -107,6 +107,18 @@ export default function PaymentsPage() {
     URL.revokeObjectURL(url);
     toast.success(`Exported ${payments.length} payments`);
   };
+
+  if (!canViewPayments) {
+    return (
+      <div className="px-8 py-16 max-w-md mx-auto text-center">
+        <div className="w-12 h-12 rounded-full bg-surface-2 flex items-center justify-center mx-auto mb-4">
+          <IndianRupee className="w-5 h-5 text-faint" />
+        </div>
+        <h2 className="text-[16px] font-semibold mb-1">Payments aren&apos;t available to you</h2>
+        <p className="text-[13px] text-muted">Your admin hasn&apos;t enabled payment visibility for your account. Reach out to them if you think this is a mistake.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[1480px] mx-auto px-8 pt-7 pb-10 animate-pageIn">

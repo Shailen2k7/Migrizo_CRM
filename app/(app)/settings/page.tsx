@@ -11,7 +11,7 @@ import {
   User as UserIcon, Users, Bell, Database, AlertTriangle,
   Trash2, Eraser, Check, X as XIcon, Crown, Pencil,
   BellRing, Volume2, ShieldCheck, ShieldAlert, Pause, Play, UserCheck, UserX,
-  Hourglass, PauseCircle,
+  Hourglass, PauseCircle, IndianRupee,
 } from 'lucide-react';
 import {
   getPrefs, setPrefs, requestBrowserPermission, getBrowserPermission, sendBrowserNotification, playAlertSound,
@@ -183,7 +183,7 @@ function ProfileSection() {
 // TEAM (approval-based)
 // =========================================
 function TeamSection() {
-  const { workspace, role, user, members, refreshMembers } = useApp();
+  const { workspace, role, user, members, refreshMembers, setMemberPaymentAccess } = useApp();
   const supabase = useMemo(() => createClient(), []);
 
   const pending = members.filter((m) => m.status === 'pending');
@@ -284,6 +284,19 @@ function TeamSection() {
                 <MemberRow key={m.user_id} m={m} isOwner={isOwner} isSelf={isSelf} canManage={isAdmin}>
                   {isAdmin && !isOwner && !isSelf && (
                     <>
+                      {m.role !== 'admin' && (
+                        <button
+                          onClick={() => setMemberPaymentAccess(m.user_id, !m.can_view_payments)}
+                          title={m.can_view_payments ? 'Click to hide payments from this member' : 'Click to let this member see payments'}
+                          className="inline-flex items-center gap-1.5 text-[11.5px] py-1 px-2 rounded border transition"
+                          style={m.can_view_payments
+                            ? { background: 'hsl(var(--green-soft))', color: '#047857', borderColor: 'transparent' }
+                            : { background: 'hsl(var(--surface-2))', color: 'hsl(var(--muted))', borderColor: 'hsl(var(--border))' }}
+                        >
+                          <IndianRupee className="w-3 h-3" />
+                          {m.can_view_payments ? 'Payments: On' : 'Payments: Off'}
+                        </button>
+                      )}
                       <select className="text-[11.5px] py-1 px-2 rounded border border-border bg-surface" value={m.role} onChange={(e) => changeRole(m, e.target.value as 'admin' | 'member')}>
                         <option value="member">Member</option>
                         <option value="admin">Admin</option>

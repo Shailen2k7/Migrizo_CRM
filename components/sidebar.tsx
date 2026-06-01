@@ -31,13 +31,16 @@ interface Props {
 }
 
 export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
-  const { cases, followUps } = useApp();
+  const { cases, followUps, canViewPayments } = useApp();
   const casesCount = cases.filter((c) => c.status === 'active').length;
   const urgentFollowUps = followUps.filter((f) => isFollowUpOverdue(f) || isFollowUpToday(f)).length;
   const path = usePathname();
   const router = useRouter();
   const supabase = createClient();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Hide the Payments item for team members the admin hasn't granted access to.
+  const nav = canViewPayments ? NAV : NAV.filter((item) => item.href !== '/payments');
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -57,7 +60,7 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
       </div>
 
       <nav className="px-3 flex-1 overflow-y-auto space-y-0.5">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const Icon = item.icon;
           const active = path === item.href || path.startsWith(item.href + '/');
           return (

@@ -13,6 +13,7 @@ export interface Member {
   role: 'admin' | 'member';
   status: 'pending' | 'active' | 'paused';
   joined_at: string;
+  can_view_payments: boolean;
 }
 
 interface AppData {
@@ -26,6 +27,8 @@ interface AppData {
   followUps: FollowUp[];
   members: Member[];
   loading: boolean;
+  canViewPayments: boolean;
+  setMemberPaymentAccess: (userId: string, canView: boolean) => Promise<void>;
   refresh: () => Promise<void>;
   refreshMembers: () => Promise<void>;
   refreshCases: () => Promise<void>;
@@ -73,13 +76,14 @@ interface ProviderProps {
   user: { id: string; email: string; name: string };
   workspace: Workspace;
   role: 'admin' | 'member';
+  initialCanViewPayments: boolean;
   initialLeads: Lead[];
   initialPayments: Payment[];
   initialActivity: Activity[];
   children: React.ReactNode;
 }
 
-export function AppProvider({ user, workspace, role, initialLeads, initialPayments, initialActivity, children }: ProviderProps) {
+export function AppProvider({ user, workspace, role, initialCanViewPayments, initialLeads, initialPayments, initialActivity, children }: ProviderProps) {
   const supabase = useMemo(() => createClient(), []);
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [payments, setPayments] = useState<Payment[]>(initialPayments);
@@ -88,6 +92,8 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
   const [cases, setCases] = useState<Case[]>([]);
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [loading, setLoading] = useState(false);
+  // Current user's effective payment visibility. Admins always see payments.
+  const [canViewPayments, setCanViewPayments] = useState<boolean>(role === 'admin' ? true : initialCanViewPayments);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -118,8 +124,20 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
       console.error('[Migrizo] list_workspace_members failed:', error.message);
       return;
     }
-    if (data) setMembers(data as Member[]);
-  }, [supabase, workspace.id]);
+    // The RPC may not include can_view_payments — fetch it directly and merge in.
+    const { data: perms } = await supabase
+      .from('workspace_members')
+      .select('user_id, can_view_payments')
+      .eq('workspace_id', workspace.id);
+    const permMap = new Map((perms || []).map((p: { user_id: string; can_view_payments: boolean }) => [p.user_id, p.can_view_payments]));
+    if (data) {
+      const merged = (data as Member[]).map((m) => ({ ...m, can_view_payments: permMap.get(m.user_id) ?? true }));
+      setMembers(merged);
+      // Keep the current user's own permission in sync (in case admin changed it live).
+      const me = merged.find((m) => m.user_id === user.id);
+      if (me) setCanViewPayments(role === 'admin' ? true : me.can_view_payments);
+    }
+  }, [supabase, workspace.id, user.id, role]);
 
   const refreshCases = useCallback(async () => {
     const { data, error } = await supabase
@@ -296,6 +314,25 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
     }
     toast.success(next ? 'Added to Spotlight' : 'Removed from Spotlight');
   }, [supabase, leads]);
+
+  const setMemberPaymentAccess = useCallback(async (userId: string, canView: boolean) => {
+    if (role !== 'admin') { toast.error('Only the admin can change this'); return; }
+    // Optimistic update of the members list
+    setMembers((prev) => prev.map((m) => m.user_id === userId ? { ...m, can_view_payments: canView } : m));
+    const { error } = await supabase
+      .from('workspace_members')
+      .update({ can_view_payments: canView })
+      .eq('workspace_id', workspace.id)
+      .eq('user_id', userId);
+    if (error) {
+      setMembers((prev) => prev.map((m) => m.user_id === userId ? { ...m, can_view_payments: !canView } : m));
+      toast.error(`Couldn't update access: ${error.message}`);
+      return;
+    }
+    // If the admin changed their OWN flag (shouldn't normally, admins always see), keep state consistent
+    if (userId === user.id && role !== 'admin') setCanViewPayments(canView);
+    toast.success(canView ? 'Payments access granted' : 'Payments access removed');
+  }, [supabase, workspace.id, role, user.id]);
 
   const addNote = useCallback(async (leadId: string, body: string) => {
     const trimmed = body.trim();
@@ -634,6 +671,7 @@ export function AppProvider({ user, workspace, role, initialLeads, initialPaymen
 
   const value: AppData = {
     user, workspace, role, leads, payments, activity, cases, followUps, members, loading,
+    canViewPayments, setMemberPaymentAccess,
     refresh, refreshMembers, refreshCases, refreshFollowUps, memberNameById,
     createLead, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
     createCase, updateCase, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
