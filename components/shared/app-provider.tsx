@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Lead, Payment, Activity, Workspace, Note, Case, CaseChecklistItem, CaseActivity, CaseStage, ChecklistStatus, FollowUp } from '@/lib/types';
+import type { CaseJourneyState } from '@/lib/journey';
 import { buildSampleLeads } from '@/lib/sample-data';
 import { toast } from 'sonner';
 
@@ -47,8 +48,9 @@ interface AppData {
   resetWorkspace: (sampleOnly: boolean) => Promise<void>;
   loadSampleData: () => Promise<void>;
   // Cases
-  createCase: (input: { lead_id: string | null; client_name: string; visa_type: string }) => Promise<string | null>;
+  createCase: (input: { lead_id: string | null; client_name: string; visa_type: string; client_email?: string | null; client_phone?: string | null }) => Promise<string | null>;
   updateCase: (caseId: string, patch: Partial<Case>) => Promise<void>;
+  updateCaseJourney: (caseId: string, journey: import('@/lib/journey').CaseJourneyState, extra?: Partial<Case>) => Promise<void>;
   deleteCase: (caseId: string) => Promise<void>;
   getChecklist: (caseId: string) => Promise<CaseChecklistItem[]>;
   updateChecklistItem: (itemId: string, patch: Partial<CaseChecklistItem>) => Promise<void>;
@@ -467,18 +469,46 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
   // =========================================
   // CASES
   // =========================================
-  const createCase = useCallback(async (input: { lead_id: string | null; client_name: string; visa_type: string }): Promise<string | null> => {
-    const { data, error } = await supabase.rpc('create_case_with_defaults', {
-      p_workspace_id: workspace.id,
-      p_lead_id: input.lead_id,
-      p_client_name: input.client_name,
-      p_visa_type: input.visa_type,
-    });
+  const createCase = useCallback(async (input: { lead_id: string | null; client_name: string; visa_type: string; client_email?: string | null; client_phone?: string | null }): Promise<string | null> => {
+    const now = new Date().toISOString();
+    // Creating the case IS the first task ("Create case + assign owner") — tick it.
+    const journey = {
+      tasks: { start_create: { done: true, at: now, by: user.id } },
+      pillars: {},
+      gates: {},
+    };
+    const { data, error } = await supabase.from('cases').insert({
+      workspace_id: workspace.id,
+      lead_id: input.lead_id,
+      client_name: input.client_name,
+      client_email: input.client_email ?? null,
+      client_phone: input.client_phone ?? null,
+      visa_type: input.visa_type,
+      current_phase: 'start',
+      journey,
+      owner_id: user.id,
+      owner_name: user.name,
+      decision: 'pending',
+      created_by: user.id,
+    }).select().single();
     if (error) { toast.error(`Couldn't create case: ${error.message}`); return null; }
     toast.success(`Case opened for ${input.client_name}`);
     await refreshCases();
-    return data as string;
-  }, [supabase, workspace.id, refreshCases]);
+    return (data as Case).id;
+  }, [supabase, workspace.id, user.id, user.name, refreshCases]);
+
+  // Write the whole journey blob (and optionally other case fields) in one update.
+  // Read-modify-write keeps it simple and is safe for single-owner cases.
+  const updateCaseJourney = useCallback(async (caseId: string, journey: CaseJourneyState, extra?: Partial<Case>) => {
+    const before = cases.find((c) => c.id === caseId);
+    const patch = { journey, ...(extra || {}) } as Partial<Case>;
+    setCases((prev) => prev.map((c) => c.id === caseId ? { ...c, ...patch } as Case : c));
+    const { error } = await supabase.from('cases').update(patch).eq('id', caseId);
+    if (error) {
+      if (before) setCases((prev) => prev.map((c) => c.id === caseId ? before : c));
+      toast.error(`Couldn't save: ${error.message}`);
+    }
+  }, [supabase, cases]);
 
   const updateCase = useCallback(async (caseId: string, patch: Partial<Case>) => {
     const before = cases.find((c) => c.id === caseId);
@@ -674,7 +704,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     canViewPayments, setMemberPaymentAccess,
     refresh, refreshMembers, refreshCases, refreshFollowUps, memberNameById,
     createLead, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
-    createCase, updateCase, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
+    createCase, updateCase, updateCaseJourney, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
     createFollowUp, updateFollowUp, deleteFollowUp, completeFollowUp, reopenFollowUp, cancelFollowUp,
   };
 

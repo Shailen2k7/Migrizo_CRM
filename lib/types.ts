@@ -166,6 +166,16 @@ export interface Case {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  // ---- New 6-phase journey model (drives both CRM + client dashboard) ----
+  current_phase: import('./journey').PhaseKey;
+  journey: import('./journey').CaseJourneyState;
+  owner_id: string | null;
+  owner_name: string | null;
+  endorsing_body: string | null;
+  submission_ref: string | null;
+  submitted_at: string | null;
+  decision: import('./journey').Decision;
+  decided_at: string | null;
 }
 
 export interface CaseChecklistItem {
