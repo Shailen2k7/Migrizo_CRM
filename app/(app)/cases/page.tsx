@@ -40,7 +40,7 @@ export default function CasesPage() {
   const phaseCounts = useMemo(() => {
     const m: Record<string, number> = {};
     for (const s of snapshots) {
-      if (s.finished || s.archived) continue;
+      if (s.archived) continue;
       m[s.phase.key] = (m[s.phase.key] || 0) + 1;
     }
     return m;
@@ -59,7 +59,7 @@ export default function CasesPage() {
     let list = snapshots;
     if (segment === 'closed') list = list.filter((s) => s.archived);
     else if (segment === 'all') list = list.filter((s) => !s.archived);
-    else list = list.filter((s) => !s.archived && !s.finished && s.phase.key === segment);
+    else list = list.filter((s) => !s.archived && s.phase.key === segment);
     const q = search.trim().toLowerCase();
     if (q) list = list.filter((s) => s.case.client_name.toLowerCase().includes(q) || (s.case.visa_type || '').toLowerCase().includes(q));
     return [...list].sort((a, b) => new Date(b.case.updated_at).getTime() - new Date(a.case.updated_at).getTime());
