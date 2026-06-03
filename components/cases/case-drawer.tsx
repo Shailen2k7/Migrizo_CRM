@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Check, Lock, ChevronDown, Trash2, Plus, Link2, Flag,
   CircleCheck, Sparkles, Trophy, Megaphone, Lightbulb, LineChart,
+  PartyPopper, Archive, RotateCcw, Copy, ExternalLink,
 } from 'lucide-react';
 import { useApp } from '@/components/shared/app-provider';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -12,6 +13,7 @@ import { cn, initials, avatarColor } from '@/lib/utils';
 import {
   JOURNEY, DECISION_META, normalizeJourney, phaseProgress, isPhaseComplete,
   isGatePassed, isPhaseUnlocked, activePhase, overallProgress, phasesCleared,
+  allGatesPassed, clientPortalUrl,
   type JourneyPhase, type CaseJourneyState, type Decision,
 } from '@/lib/journey';
 import type { Case } from '@/lib/types';
@@ -40,8 +42,21 @@ export function CaseDrawer({ caseId, onClose }: Props) {
   const effectiveExpanded = expanded ?? active.key;
   const progress = overallProgress(journey);
   const cleared = phasesCleared(journey);
+  const journeyDone = allGatesPassed(journey);
+  const archived = !!caseData?.archived_at;
+  const [copied, setCopied] = useState(false);
 
   if (!caseData) return null;
+
+  const setArchived = (on: boolean) => {
+    updateCase(caseData.id, { archived_at: on ? new Date().toISOString() : null });
+  };
+
+  const copyPortal = async () => {
+    const url = clientPortalUrl(caseData.client_token);
+    if (!url) return;
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1600); } catch { /* noop */ }
+  };
 
   const toggleTask = (taskKey: string) => {
     const cur = journey.tasks[taskKey]?.done;
@@ -100,11 +115,17 @@ export function CaseDrawer({ caseId, onClose }: Props) {
               <div className="flex items-start gap-3">
                 <div className="av" style={{ background: avatarColor(caseData.id), width: 40, height: 40, fontSize: 14 }}>{initials(caseData.client_name)}</div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[16px] font-semibold leading-tight truncate">{caseData.client_name}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-[16px] font-semibold leading-tight truncate">{caseData.client_name}</div>
+                    <StatusPill archived={archived} journeyDone={journeyDone} decision={caseData.decision} />
+                  </div>
                   <div className="text-[12px] text-muted mt-0.5 truncate">
-                    {caseData.visa_type || 'UK Global Talent'}{caseData.owner_name ? ` \u00b7 Owner: ${caseData.owner_name}` : ''}
+                    {caseData.visa_type || 'UK Global Talent'}{caseData.owner_name ? ` · Owner: ${caseData.owner_name}` : ''}
                   </div>
                 </div>
+                {archived
+                  ? <button onClick={() => setArchived(false)} title="Reopen case" className="p-2 rounded hover:bg-surface-2 text-muted hover:text-ink"><RotateCcw className="w-4 h-4" /></button>
+                  : <button onClick={() => setArchived(true)} title="Close case" className="p-2 rounded hover:bg-surface-2 text-muted hover:text-ink"><Archive className="w-4 h-4" /></button>}
                 {role === 'admin' && (
                   <button onClick={() => setConfirmDelete(true)} title="Delete case" className="p-2 rounded hover:bg-rose-50 text-muted hover:text-danger"><Trash2 className="w-4 h-4" /></button>
                 )}
@@ -116,7 +137,7 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                 <div className="flex-1">
                   <div className="flex items-baseline justify-between mb-1.5">
                     <div className="text-[13px] font-semibold">
-                      {cleared >= 6 ? 'All phases cleared' : <>Phase {active.index} of 6 \u00b7 <span style={{ color: active.accent }}>{active.code}</span></>}
+                      {cleared >= 6 ? 'All phases cleared' : <>Phase {active.index} of 6 · <span style={{ color: active.accent }}>{active.code}</span></>}
                     </div>
                     <div className="text-[11.5px] text-muted num">{progress.done}/{progress.total} done</div>
                   </div>
@@ -139,6 +160,27 @@ export function CaseDrawer({ caseId, onClose }: Props) {
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
+              {archived && (
+                <div className="rounded-[14px] px-4 py-3 flex items-center gap-3" style={{ background: 'hsl(var(--surface-2))', border: '1px solid hsl(var(--border))' }}>
+                  <Archive className="w-4 h-4 text-muted flex-shrink-0" />
+                  <div className="flex-1 text-[12.5px] text-ink-2">This case is <span className="font-semibold">closed</span> and hidden from the main list.</div>
+                  <button onClick={() => setArchived(false)} className="text-[12px] font-medium text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-1"><RotateCcw className="w-3.5 h-3.5" /> Reopen</button>
+                </div>
+              )}
+
+              {journeyDone && !archived && (
+                <div className="rounded-[16px] p-4 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #ECFDF5 0%, #EFF6FF 100%)', border: '1px solid #BBF7D0' }}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: '#10B981' }}><PartyPopper className="w-5 h-5 text-white" /></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[14px] font-semibold text-emerald-900">Journey complete</div>
+                      <div className="text-[12px] text-emerald-700">All six gates cleared. Close the case to move it out of your active list.</div>
+                    </div>
+                    <button onClick={() => setArchived(true)} className="btn btn-sm flex-shrink-0 text-white" style={{ background: '#10B981' }}><Archive className="w-3.5 h-3.5" /> Close case</button>
+                  </div>
+                </div>
+              )}
+
               {JOURNEY.map((phase) => (
                 <PhaseCard
                   key={phase.key}
@@ -155,6 +197,22 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                   onUpdateCase={(patch) => updateCase(caseData.id, patch)}
                 />
               ))}
+
+              {/* Client portal link — what the customer will see live on the Migrizo site */}
+              <div className="rounded-[14px] border border-border p-4 mt-1">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <ExternalLink className="w-3.5 h-3.5 text-indigo-600" />
+                  <span className="text-[11px] font-bold tracking-wide text-ink-2">CLIENT TRACKING LINK</span>
+                </div>
+                <p className="text-[11.5px] text-muted mb-2.5 leading-relaxed">Share this private link with {caseData.client_name.split(' ')[0]}. The customer dashboard (coming next) reads this exact journey live — no extra setup needed.</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-[11px] bg-surface-2 rounded-md px-2.5 py-2 text-ink-2 truncate">{clientPortalUrl(caseData.client_token) || 'Save the case to generate a link'}</code>
+                  <button onClick={copyPortal} disabled={!caseData.client_token} className="btn btn-outline btn-sm flex-shrink-0 disabled:opacity-40">
+                    {copied ? <><Check className="w-3.5 h-3.5 text-emerald-600" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                  </button>
+                </div>
+              </div>
+
               <div className="h-2" />
             </div>
           </motion.aside>
@@ -391,7 +449,7 @@ function DecisionPanel({ caseData, onUpdateCase, accent }: { caseData: Case; onU
         <div>
           <label className="block text-[10.5px] font-medium text-muted mb-1">Reference no.</label>
           <input value={ref} onChange={(e) => setRef(e.target.value)} onBlur={() => { if (ref !== (caseData.submission_ref || '')) onUpdateCase({ submission_ref: ref || null }); }}
-            placeholder="e.g. TN-2026-\u2026" className="w-full px-2 py-1.5 border border-border rounded-md bg-surface text-[12px] outline-none focus:border-indigo-400" />
+            placeholder="e.g. TN-2026-…" className="w-full px-2 py-1.5 border border-border rounded-md bg-surface text-[12px] outline-none focus:border-indigo-400" />
         </div>
         <div>
           <label className="block text-[10.5px] font-medium text-muted mb-1">Submitted on</label>
@@ -424,7 +482,7 @@ function GateBar({ phase, complete, passed, onPass }: { phase: JourneyPhase; com
     return (
       <div className="mt-3 rounded-xl px-3.5 py-3 flex items-center gap-2.5" style={{ background: `${phase.accent}14` }}>
         <CircleCheck className="w-4 h-4 flex-shrink-0" style={{ color: phase.accent }} />
-        <div className="flex-1 text-[12px] font-medium" style={{ color: phase.accent }}>Gate cleared \u00b7 {phase.gate}</div>
+        <div className="flex-1 text-[12px] font-medium" style={{ color: phase.accent }}>Gate cleared · {phase.gate}</div>
         <button onClick={onPass} className="text-[11px] text-muted hover:text-ink underline">Reopen</button>
       </div>
     );
@@ -439,8 +497,18 @@ function GateBar({ phase, complete, passed, onPass }: { phase: JourneyPhase; com
       <button onClick={onPass} disabled={!complete}
         className="text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed text-white"
         style={{ background: complete ? phase.accent : 'hsl(var(--faint))' }}>
-        {complete ? 'Pass gate \u2192' : 'Finish tasks first'}
+        {complete ? 'Pass gate →' : 'Finish tasks first'}
       </button>
     </div>
   );
+}
+
+function StatusPill({ archived, journeyDone, decision }: { archived: boolean; journeyDone: boolean; decision: Decision }) {
+  if (archived) {
+    if (decision === 'approved') return <span className="chip" style={{ background: '#D1FAE5', color: '#047857', border: 'none' }}>Closed · Endorsed</span>;
+    if (decision === 'rejected') return <span className="chip" style={{ background: '#F4F4F6', color: '#6B7280', border: 'none' }}>Closed · Rejected</span>;
+    return <span className="chip" style={{ background: '#F4F4F6', color: '#6B7280', border: 'none' }}>Closed</span>;
+  }
+  if (journeyDone) return <span className="chip" style={{ background: '#D1FAE5', color: '#047857', border: 'none' }}>Complete</span>;
+  return <span className="chip" style={{ background: '#EEF0FF', color: '#4338CA', border: 'none' }}>Open</span>;
 }

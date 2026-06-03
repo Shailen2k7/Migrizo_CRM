@@ -176,6 +176,8 @@ export interface Case {
   submitted_at: string | null;
   decision: import('./journey').Decision;
   decided_at: string | null;
+  archived_at: string | null;
+  client_token: string | null;
 }
 
 export interface CaseChecklistItem {

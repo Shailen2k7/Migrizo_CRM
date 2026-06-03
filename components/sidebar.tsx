@@ -32,7 +32,7 @@ interface Props {
 
 export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
   const { cases, followUps, canViewPayments } = useApp();
-  const casesCount = cases.filter((c) => c.status === 'active').length;
+  const casesCount = cases.filter((c) => c.status === 'active' && !c.archived_at).length;
   const urgentFollowUps = followUps.filter((f) => isFollowUpOverdue(f) || isFollowUpToday(f)).length;
   const path = usePathname();
   const router = useRouter();

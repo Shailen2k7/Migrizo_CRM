@@ -207,3 +207,16 @@ export function overallProgress(state: CaseJourneyState): { done: number; total:
 export function phasesCleared(state: CaseJourneyState): number {
   return JOURNEY.filter((p) => isGatePassed(state, p.key)).length;
 }
+
+// -----------------------------------------------------------------------------
+// CLIENT PORTAL
+// The future customer dashboard lives at this base; each case is reached by its
+// client_token. Change CLIENT_PORTAL_BASE once that site has a real domain.
+// The CRM shows clientPortalUrl(token) as a copy-able link; the portal reads the
+// same case via supabase.rpc('get_case_journey', { p_token: token }).
+// -----------------------------------------------------------------------------
+export const CLIENT_PORTAL_BASE = 'https://track.migrizo.com';
+
+export function clientPortalUrl(token: string | null | undefined): string {
+  return token ? `${CLIENT_PORTAL_BASE}/${token}` : '';
+}

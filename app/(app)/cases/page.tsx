@@ -12,7 +12,7 @@ import {
   isGatePassed, allGatesPassed, DECISION_META, type PhaseKey,
 } from '@/lib/journey';
 
-type Segment = 'all' | 'decided' | PhaseKey;
+type Segment = 'all' | 'closed' | PhaseKey;
 
 export default function CasesPage() {
   const { cases, leads } = useApp();
@@ -32,34 +32,36 @@ export default function CasesPage() {
       cleared: phasesCleared(j),
       finished: allGatesPassed(j),
       decided: c.decision && c.decision !== 'pending',
+      archived: !!c.archived_at,
     };
   }), [cases]);
 
-  // How many cases are currently sitting in each phase (by active phase, not yet finished).
+  // How many OPEN cases are currently sitting in each phase.
   const phaseCounts = useMemo(() => {
     const m: Record<string, number> = {};
     for (const s of snapshots) {
-      if (s.finished) continue;
+      if (s.finished || s.archived) continue;
       m[s.phase.key] = (m[s.phase.key] || 0) + 1;
     }
     return m;
   }, [snapshots]);
 
-  const decidedCount = snapshots.filter((s) => s.decided).length;
+  const openCount = snapshots.filter((s) => !s.archived).length;
+  const closedCount = snapshots.filter((s) => s.archived).length;
 
   const segments: { id: Segment; label: string; count: number; accent?: string }[] = [
-    { id: 'all', label: 'All', count: cases.length },
+    { id: 'all', label: 'All open', count: openCount },
     ...JOURNEY.map((p) => ({ id: p.key as Segment, label: p.code, count: phaseCounts[p.key] || 0, accent: p.accent })),
-    { id: 'decided', label: 'Decided', count: decidedCount },
+    { id: 'closed', label: 'Closed', count: closedCount },
   ];
 
   const filtered = useMemo(() => {
     let list = snapshots;
-    if (segment === 'decided') list = list.filter((s) => s.decided);
-    else if (segment !== 'all') list = list.filter((s) => !s.finished && s.phase.key === segment);
+    if (segment === 'closed') list = list.filter((s) => s.archived);
+    else if (segment === 'all') list = list.filter((s) => !s.archived);
+    else list = list.filter((s) => !s.archived && !s.finished && s.phase.key === segment);
     const q = search.trim().toLowerCase();
     if (q) list = list.filter((s) => s.case.client_name.toLowerCase().includes(q) || (s.case.visa_type || '').toLowerCase().includes(q));
-    // Sort: most recently updated first
     return [...list].sort((a, b) => new Date(b.case.updated_at).getTime() - new Date(a.case.updated_at).getTime());
   }, [snapshots, segment, search]);
 
@@ -131,13 +133,17 @@ export default function CasesPage() {
   );
 }
 
-function CaseRow({ snap, onOpen }: { snap: { case: Case; phase: ReturnType<typeof activePhase>; progress: { pct: number; done: number; total: number }; cleared: number; finished: boolean }; onOpen: () => void }) {
+function CaseRow({ snap, onOpen }: { snap: { case: Case; phase: ReturnType<typeof activePhase>; progress: { pct: number; done: number; total: number }; cleared: number; finished: boolean; archived: boolean }; onOpen: () => void }) {
   const c = snap.case;
   const phase = snap.phase;
+  const archived = snap.archived;
   const decision = c.decision && c.decision !== 'pending' ? DECISION_META[c.decision] : null;
+  const phaseLabel = archived ? 'Closed' : snap.finished ? 'Completed' : `${phase.code} · Phase ${phase.index}/6`;
+  const barColor = archived ? 'hsl(var(--faint))' : snap.finished ? '#10B981' : phase.accent;
+  const labelColor = archived ? 'hsl(var(--muted))' : snap.finished ? '#047857' : phase.accent;
 
   return (
-    <button onClick={onOpen} className="panel w-full p-4 flex items-center gap-4 hover:border-border-strong transition-all text-left group">
+    <button onClick={onOpen} className={cn('panel w-full p-4 flex items-center gap-4 hover:border-border-strong transition-all text-left group', archived && 'opacity-65 hover:opacity-100')}>
       <div className="av" style={{ background: avatarColor(c.id), width: 38, height: 38, fontSize: 13 }}>{initials(c.client_name)}</div>
 
       <div className="min-w-0 flex-1">
@@ -148,21 +154,17 @@ function CaseRow({ snap, onOpen }: { snap: { case: Case; phase: ReturnType<typeo
         <div className="text-[11.5px] text-muted truncate">{c.visa_type || 'UK Global Talent'}{c.owner_name ? ` · ${c.owner_name}` : ''} · updated {timeAgo(c.updated_at)}</div>
       </div>
 
-      {/* Phase + progress */}
       <div className="hidden sm:block w-[220px] flex-shrink-0">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-[11px] font-semibold" style={{ color: snap.finished ? '#047857' : phase.accent }}>
-            {snap.finished ? 'Completed' : `${phase.code} · Phase ${phase.index}/6`}
-          </span>
+          <span className="text-[11px] font-semibold" style={{ color: labelColor }}>{phaseLabel}</span>
           <span className="text-[10.5px] text-muted num">{snap.progress.pct}%</span>
         </div>
         <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
-          <div className="h-full rounded-full transition-all" style={{ width: `${snap.progress.pct}%`, background: snap.finished ? '#10B981' : phase.accent }} />
+          <div className="h-full rounded-full transition-all" style={{ width: `${snap.progress.pct}%`, background: barColor }} />
         </div>
-        {/* 6 phase ticks */}
         <div className="flex items-center gap-1 mt-1.5">
           {JOURNEY.map((p) => (
-            <div key={p.key} className="flex-1 h-1 rounded-full" style={{ background: isGatePassed(normalizeJourney(c.journey), p.key) ? p.accent : 'hsl(var(--surface-2))' }} />
+            <div key={p.key} className="flex-1 h-1 rounded-full" style={{ background: isGatePassed(normalizeJourney(c.journey), p.key) ? (archived ? 'hsl(var(--faint))' : p.accent) : 'hsl(var(--surface-2))' }} />
           ))}
         </div>
       </div>
