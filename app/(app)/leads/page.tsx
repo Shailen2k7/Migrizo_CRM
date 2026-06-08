@@ -33,7 +33,7 @@ function LeadsPageInner() {
   };
 
   return (
-    <div className="max-w-[1480px] mx-auto px-8 pt-7 pb-10 animate-pageIn">
+    <div className="max-w-[1480px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-10 animate-pageIn">
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
           <h1 className="text-[28px] font-bold tracking-tight leading-[1.1]">Leads</h1>

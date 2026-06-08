@@ -24,7 +24,7 @@ export default function DashboardPage() {
   const overdueCount = useMemo(() => leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < Date.now() && !['won', 'junk'].includes(l.stage)).length, [leads]);
 
   return (
-    <div className="max-w-[1480px] mx-auto px-8 pt-7 pb-10 animate-pageIn">
+    <div className="max-w-[1480px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-10 animate-pageIn">
       <div className="flex items-start justify-between mb-7 gap-4 flex-wrap">
         <div>
           <h1 className="text-[28px] md:text-[30px] font-bold tracking-tight leading-[1.1] flex items-center gap-2.5">

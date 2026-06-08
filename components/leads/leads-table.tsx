@@ -5,12 +5,37 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel,
   flexRender, type ColumnDef, type SortingState
 } from '@tanstack/react-table';
-import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Search, Star } from 'lucide-react';
+import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Search, Star, Copy, Check } from 'lucide-react';
 import { useApp } from '@/components/shared/app-provider';
 import type { Lead, LeadStage } from '@/lib/types';
-import { STAGE_META, STAGE_ORDER, PAYMENT_META, getStageMeta } from '@/lib/types';
+import { STAGE_META, STAGE_ORDER, PAYMENT_META, getStageMeta, getVisaMeta } from '@/lib/types';
 import { initials, avatarColor, formatINRFull, scoreColor, timeAgo, cn } from '@/lib/utils';
 import { IndustryChip } from '@/components/shared/industry-chip';
+
+// Small copy-to-clipboard button with tick feedback
+function CopyBtn({ value, label }: { value: string; label: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      onClick={async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(value); setDone(true); setTimeout(() => setDone(false), 1400); } catch { /* noop */ } }}
+      title={`Copy ${label}`}
+      className="flex-shrink-0 p-1 rounded hover:bg-white/15 transition-colors"
+    >
+      {done ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3 opacity-70 hover:opacity-100" />}
+    </button>
+  );
+}
+
+// Beautiful visa-type tag (GTV / IFV)
+function VisaTag({ visa }: { visa: string | null }) {
+  const m = getVisaMeta(visa);
+  if (!m) return null;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold tracking-wide" style={{ background: m.bg, color: m.fg }} title={m.full}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.dot }} />{m.short}
+    </span>
+  );
+}
 
 type Segment = 'all' | 'spotlight' | LeadStage;
 
@@ -60,14 +85,14 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
             <div className="min-w-0">
               <div className="font-semibold text-ink leading-tight text-[13.5px]">{l.full_name}</div>
               <div className="flex items-center gap-1.5 mt-0.5">
-                {l.visa_type && <div className="text-[11px] text-muted truncate">{l.visa_type}</div>}
+                <VisaTag visa={l.visa_type} />
                 {l.industry && <IndustryChip industry={l.industry} size="xs" />}
               </div>
             </div>
             {(l.phone || l.email) && (
-              <div className="absolute left-0 -top-2 -translate-y-full opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-ink text-surface px-3 py-2 rounded-md text-[11.5px] whitespace-nowrap z-30 shadow-lg">
-                {l.phone && <div className="flex items-center gap-1.5"><Phone className="w-3 h-3" />{l.phone}</div>}
-                {l.email && <div className="flex items-center gap-1.5 mt-0.5"><Mail className="w-3 h-3" />{l.email}</div>}
+              <div className="absolute left-0 -top-2 -translate-y-full opacity-0 group-hover:opacity-100 transition-opacity bg-ink text-surface px-3 py-2 rounded-md text-[11.5px] whitespace-nowrap z-30 shadow-lg">
+                {l.phone && <div className="flex items-center gap-1.5"><Phone className="w-3 h-3" />{l.phone}<CopyBtn value={l.phone} label="phone" /></div>}
+                {l.email && <div className="flex items-center gap-1.5 mt-0.5"><Mail className="w-3 h-3" />{l.email}<CopyBtn value={l.email} label="email" /></div>}
               </div>
             )}
           </div>

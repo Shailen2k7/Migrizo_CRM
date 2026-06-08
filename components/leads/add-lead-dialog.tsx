@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Modal } from '@/components/shared/modal';
 import { useApp } from '@/components/shared/app-provider';
-import { STAGE_META } from '@/lib/types';
+import { STAGE_META, VISA_META } from '@/lib/types';
 import type { LeadStage, Industry } from '@/lib/types';
 import { normalizePhone, normalizeEmail } from '@/lib/utils';
 import { IndustrySelector } from '@/components/shared/industry-chip';
@@ -79,7 +79,23 @@ export function AddLeadDialog({ open, onClose }: Props) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="input-label">Visa type</label>
-            <input className="input" placeholder="UK GTV, Innovator…" value={visaType} onChange={(e) => setVisaType(e.target.value)} />
+            <div className="grid grid-cols-2 gap-2">
+              {(['gtv', 'ifv'] as const).map((k) => {
+                const m = VISA_META[k];
+                const on = visaType === k;
+                return (
+                  <button key={k} type="button" onClick={() => setVisaType(on ? '' : k)}
+                    className="flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-all"
+                    style={on ? { borderColor: m.dot, background: m.bg } : { borderColor: 'hsl(var(--border))', background: 'hsl(var(--surface))' }}>
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: m.dot }} />
+                    <span className="min-w-0">
+                      <span className="block text-[12px] font-bold leading-none" style={{ color: on ? m.fg : 'hsl(var(--ink))' }}>{m.short}</span>
+                      <span className="block text-[9.5px] text-muted leading-tight mt-0.5 truncate">{m.full}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div>
             <label className="input-label">Stage</label>

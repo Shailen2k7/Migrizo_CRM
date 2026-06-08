@@ -11,7 +11,7 @@ import { formatINR, timeAgo, initials, avatarColor } from '@/lib/utils';
 // =========================================
 export function KPICards({ leads, payments, canViewPayments = true }: { leads: Lead[]; payments: Payment[]; canViewPayments?: boolean }) {
   const stats = useMemo(() => {
-    const now = Date.now(); const weekMs = 7 * 86400000; const monthMs = 30 * 86400000;
+    const now = Date.now(); const weekMs = 7 * 86400000;
     const newThisWeek = leads.filter((l) => now - new Date(l.created_at).getTime() < weekMs).length;
     const newPrevWeek = leads.filter((l) => {
       const t = new Date(l.created_at).getTime();
@@ -29,20 +29,23 @@ export function KPICards({ leads, payments, canViewPayments = true }: { leads: L
 
     const overdue = leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < now && l.stage !== 'won' && l.stage !== 'junk').length;
 
-    const revenueThisMonth = payments.filter((p) => p.status === 'paid' && p.paid_at && now - new Date(p.paid_at).getTime() < monthMs).reduce((s, p) => s + p.amount, 0);
-    const revenueAllTime = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
+    // Revenue reads the SAME source as the Payments tab (lead-level amount_paid,
+    // excluding leads hidden from payments) so the two screens always agree.
+    const paymentLeads = leads.filter((l) => !l.hidden_from_payments);
+    const revenueCollected = paymentLeads.reduce((s, l) => s + (l.amount_paid || 0), 0);
+    const revenuePending = paymentLeads.reduce((s, l) => s + Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0)), 0);
 
     const wonCount = leads.filter((l) => l.stage === 'won').length;
     const closableCount = leads.filter((l) => !['won', 'junk'].includes(l.stage)).length;
     const conversion = closableCount === 0 ? 0 : (wonCount / (wonCount + closableCount)) * 100;
 
-    return { newThisWeek, weekDelta, followUpsToday, overdue, revenueThisMonth, revenueAllTime, conversion, wonCount };
+    return { newThisWeek, weekDelta, followUpsToday, overdue, revenueCollected, revenuePending, conversion, wonCount };
   }, [leads, payments]);
 
   const cards = [
     { label: 'New this week', value: stats.newThisWeek, sub: stats.weekDelta != null ? `${stats.weekDelta >= 0 ? '+' : ''}${stats.weekDelta.toFixed(0)}% vs last week` : 'No prior data', deltaPositive: (stats.weekDelta ?? 0) >= 0, icon: Users },
     { label: 'Follow-ups today', value: stats.followUpsToday, sub: stats.overdue > 0 ? `${stats.overdue} overdue` : 'On track', deltaPositive: stats.overdue === 0, icon: Clock },
-    { label: 'Revenue this month', value: formatINR(stats.revenueThisMonth), sub: `${formatINR(stats.revenueAllTime)} all-time`, deltaPositive: true, icon: IndianRupee, isMoney: true, money: true },
+    { label: 'Revenue collected', value: formatINR(stats.revenueCollected), sub: `${formatINR(stats.revenuePending)} outstanding`, deltaPositive: true, icon: IndianRupee, isMoney: true, money: true },
     { label: 'Closed won', value: stats.wonCount, sub: `${stats.conversion.toFixed(0)}% conversion`, deltaPositive: stats.conversion >= 20, icon: Target },
     { label: 'Active pipeline', value: leads.filter((l) => !['won', 'junk', 'won'].includes(l.stage)).length, sub: 'In active stages', deltaPositive: true, icon: BarChart3 },
   ].filter((c) => canViewPayments || !(c as { money?: boolean }).money);
@@ -52,7 +55,7 @@ export function KPICards({ leads, payments, canViewPayments = true }: { leads: L
       {cards.map((c) => {
         const Icon = c.icon;
         return (
-          <div key={c.label} className="kpi">
+          <div key={c.label} className="kpi transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.12)]">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{c.label}</span>
               <Icon className="w-3.5 h-3.5 text-faint" />

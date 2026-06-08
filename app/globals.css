@@ -91,3 +91,24 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: hsl(var(--border-strong)); border-radius: 999px; border: 2px solid hsl(var(--bg)); }
 ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted)); }
+
+/* ===== AI COO banner ===== */
+.coo-banner {
+  background: linear-gradient(110deg, #4F46E5 0%, #6D28D9 48%, #7C3AED 100%);
+  box-shadow: 0 12px 32px -14px rgba(79, 70, 229, 0.55);
+}
+.coo-banner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 32%, rgba(255, 255, 255, 0.14) 50%, transparent 68%);
+  transform: translateX(-100%);
+  animation: cooShimmer 7s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes cooShimmer { 0% { transform: translateX(-100%); } 55%, 100% { transform: translateX(100%); } }
+.coo-orb { background: rgba(255, 255, 255, 0.18); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25); }
+.coo-orb-live { animation: cooPulse 1.1s ease-in-out infinite; }
+@keyframes cooPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.09); } }
+.coo-ring { position: absolute; inset: -5px; border-radius: 9999px; border: 2px solid rgba(255, 255, 255, 0.55); animation: cooRing 1.5s ease-out infinite; pointer-events: none; }
+@keyframes cooRing { 0% { transform: scale(0.85); opacity: 0.85; } 100% { transform: scale(1.6); opacity: 0; } }

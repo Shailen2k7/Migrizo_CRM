@@ -66,7 +66,7 @@ export default function CasesPage() {
   }, [snapshots, segment, search]);
 
   return (
-    <div className="max-w-[1240px] mx-auto px-8 pt-7 pb-10 animate-pageIn">
+    <div className="max-w-[1240px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-10 animate-pageIn">
       {/* Header */}
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>

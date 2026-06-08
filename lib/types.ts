@@ -50,6 +50,7 @@ export interface Lead {
   last_note: string | null;
   last_note_author_id: string | null;
   last_note_at: string | null;
+  won_at: string | null;
   tags: string[];
   industry: string | null;
   is_spotlight: boolean;
@@ -127,6 +128,22 @@ export const MILESTONE_META: Record<Milestone, { label: string; pct: number; ord
 export function getStageMeta(stage: string | null | undefined): { label: string; bg: string; fg: string; dot: string } {
   if (stage && stage in STAGE_META) return STAGE_META[stage as LeadStage];
   return { label: stage ? stage.toString() : 'Unknown', bg: '#F4F4F6', fg: '#6B7280', dot: '#9CA3AF' };
+}
+
+// ---- Visa type tags (GTV / IFV) shown across the whole system ----
+export type VisaType = 'gtv' | 'ifv';
+export const VISA_META: Record<VisaType, { short: string; full: string; bg: string; fg: string; dot: string }> = {
+  gtv: { short: 'GTV', full: 'Global Talent Visa',     bg: '#EEF2FF', fg: '#4338CA', dot: '#6366F1' },
+  ifv: { short: 'IFV', full: 'Innovator Founder Visa', bg: '#ECFEFF', fg: '#0E7490', dot: '#06B6D4' },
+};
+// Resolve a stored value (clean 'gtv'/'ifv' OR legacy free-text) into a tag, or null.
+export function getVisaMeta(v: string | null | undefined): (typeof VISA_META)[VisaType] | null {
+  if (!v) return null;
+  const k = v.toLowerCase().trim();
+  if (k === 'gtv' || k === 'ifv') return VISA_META[k as VisaType];
+  if (k.includes('global') || k.includes('talent') || k.includes('gtv')) return VISA_META.gtv;
+  if (k.includes('innovator') || k.includes('founder') || k.includes('ifv')) return VISA_META.ifv;
+  return null;
 }
 
 // =========================================

@@ -135,7 +135,7 @@ export default function AIPage() {
   const reset = () => { stop(); setMessages([]); };
 
   return (
-    <div className="max-w-[1080px] mx-auto px-6 md:px-8 pt-7 pb-4 h-screen flex flex-col">
+    <div className="max-w-[1080px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-4 h-screen flex flex-col">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-[26px] md:text-[28px] font-bold tracking-tight leading-[1.1] flex items-center gap-2.5">

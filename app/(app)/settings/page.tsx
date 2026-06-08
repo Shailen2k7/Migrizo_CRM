@@ -10,34 +10,36 @@ import { toast } from 'sonner';
 import {
   User as UserIcon, Users, Bell, Database, AlertTriangle,
   Trash2, Eraser, Check, X as XIcon, Crown, Pencil,
-  BellRing, Volume2, ShieldCheck, ShieldAlert, Pause, Play, UserCheck, UserX,
+  BellRing, Volume2, Sparkles, ShieldCheck, ShieldAlert, Pause, Play, UserCheck, UserX,
   Hourglass, PauseCircle, IndianRupee,
 } from 'lucide-react';
 import {
   getPrefs, setPrefs, requestBrowserPermission, getBrowserPermission, sendBrowserNotification, playAlertSound,
   type NotifPref,
 } from '@/lib/notifications';
+import { readCoo, writeCoo } from '@/lib/coo';
 
-type Section = 'profile' | 'team' | 'notifications' | 'sample' | 'danger';
+type Section = 'profile' | 'team' | 'notifications' | 'ai-coo' | 'sample' | 'danger';
 
 function SettingsInner() {
   const router = useRouter();
   const params = useSearchParams();
   const initial = (params.get('section') as Section) || 'profile';
   const [section, setSection] = useState<Section>(initial);
-  const { members } = useApp();
+  const { members, role } = useApp();
   const pendingCount = members.filter((m) => m.status === 'pending').length;
 
   const NAV = [
     { id: 'profile' as const,       label: 'Profile & Workspace', icon: UserIcon },
     { id: 'team' as const,          label: 'Team',                icon: Users, badge: pendingCount > 0 ? pendingCount : undefined },
     { id: 'notifications' as const, label: 'Notifications',       icon: Bell },
+    ...(role === 'admin' ? [{ id: 'ai-coo' as const, label: 'AI COO', icon: Sparkles }] : []),
     { id: 'sample' as const,        label: 'Sample data',         icon: Database },
     { id: 'danger' as const,        label: 'Danger zone',         icon: AlertTriangle },
   ];
 
   return (
-    <div className="max-w-[1100px] mx-auto px-6 md:px-8 pt-7 pb-10 animate-pageIn">
+    <div className="max-w-[1100px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-10 animate-pageIn">
       <div className="mb-6">
         <h1 className="text-[28px] font-bold tracking-tight leading-[1.1]">Settings</h1>
         <p className="text-[13.5px] text-muted mt-2">Manage your workspace, team, notifications, and data</p>
@@ -71,6 +73,7 @@ function SettingsInner() {
           {section === 'profile' && <ProfileSection />}
           {section === 'team' && <TeamSection />}
           {section === 'notifications' && <NotificationsSection />}
+          {section === 'ai-coo' && <CooSection />}
           {section === 'sample' && <SampleDataSection />}
           {section === 'danger' && <DangerSection />}
         </div>
@@ -587,5 +590,59 @@ function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean
         }}
       />
     </button>
+  );
+}
+
+// ===== AI COO settings (admin only) =====
+function CooSection() {
+  const [s, setS] = useState(() => readCoo());
+  const update = (patch: Partial<typeof s>) => { const next = { ...s, ...patch }; setS(next); writeCoo(next); };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-[17px] font-semibold flex items-center gap-2"><Sparkles className="w-4 h-4 text-indigo-600" /> AI COO</h2>
+        <p className="text-[13px] text-muted mt-1">A spoken briefing and banner that greets you when you open the CRM \u2014 your last conversion and this month\u2019s tally. Only you (the owner) see and control this.</p>
+      </div>
+
+      <div className="panel divide-y divide-border">
+        <CooToggle
+          label="AI COO briefing"
+          desc="Show the briefing banner at the top of the CRM."
+          on={s.enabled}
+          onClick={() => update({ enabled: !s.enabled })}
+        />
+        <CooToggle
+          label="Voice on open"
+          desc="Speak the briefing aloud once when you open the CRM."
+          on={s.enabled && s.voice}
+          disabled={!s.enabled}
+          onClick={() => update({ voice: !s.voice })}
+        />
+      </div>
+
+      <p className="text-[12px] text-muted">Tip: switch the briefing off to disable both the banner and the voice. Your choice is saved on this device.</p>
+    </div>
+  );
+}
+
+function CooToggle({ label, desc, on, onClick, disabled }: { label: string; desc: string; on: boolean; onClick: () => void; disabled?: boolean }) {
+  return (
+    <div className={cn('flex items-center justify-between gap-4 px-5 py-4', disabled && 'opacity-50')}>
+      <div className="min-w-0">
+        <div className="text-[13.5px] font-medium">{label}</div>
+        <div className="text-[12px] text-muted mt-0.5">{desc}</div>
+      </div>
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        role="switch"
+        aria-checked={on}
+        className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:cursor-not-allowed"
+        style={{ background: on ? '#4F46E5' : 'hsl(var(--border-strong))' }}
+      >
+        <span className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform" style={{ transform: on ? 'translateX(20px)' : 'translateX(0)' }} />
+      </button>
+    </div>
   );
 }

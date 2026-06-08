@@ -270,6 +270,11 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     const { data, error } = await supabase.from('leads').insert(payload).select().single();
     if (error) { toast.error(`Failed to create lead: ${error.message}`); return null; }
     setLeads((prev) => prev.some((l) => l.id === data.id) ? prev : [data as Lead, ...prev]);
+    // If an initial note was entered at creation, store it as a real note so it
+    // shows up in the lead drawer's Notes section (not just the last_note field).
+    if (payload.last_note) {
+      await supabase.from('notes').insert({ lead_id: data.id, workspace_id: workspace.id, body: payload.last_note, author_id: user.id });
+    }
     logActivity('created_lead', data.id, { name: data.full_name });
     toast.success(`Added ${data.full_name}`);
     return data as Lead;
@@ -277,8 +282,13 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
 
   const updateLead = useCallback(async (id: string, patch: Partial<Lead>) => {
     const before = leads.find((l) => l.id === id);
-    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } as Lead : l)));
-    const { error } = await supabase.from('leads').update(patch).eq('id', id);
+    // Stamp the conversion time the moment a lead first becomes 'won' (powers the AI COO).
+    const effPatch: Partial<Lead> = { ...patch };
+    if (patch.stage === 'won' && before?.stage !== 'won') {
+      effPatch.won_at = new Date().toISOString();
+    }
+    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...effPatch } as Lead : l)));
+    const { error } = await supabase.from('leads').update(effPatch).eq('id', id);
     if (error) {
       if (before) setLeads((prev) => prev.map((l) => (l.id === id ? before : l)));
       toast.error(`Update failed: ${error.message}`);

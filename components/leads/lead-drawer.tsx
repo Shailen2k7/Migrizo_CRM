@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star } from 'lucide-react';
 import type { Lead, Note, Payment, LeadStage } from '@/lib/types';
-import { STAGE_META, MILESTONE_META } from '@/lib/types';
+import { STAGE_META, MILESTONE_META, VISA_META, getVisaMeta } from '@/lib/types';
 import { useApp } from '@/components/shared/app-provider';
 import { Select } from '@/components/shared/select';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -104,6 +104,10 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <div className="text-[16px] font-semibold leading-tight truncate">{effectiveLead.full_name}</div>
+                    {getVisaMeta(effectiveLead.visa_type) && (() => { const m = getVisaMeta(effectiveLead.visa_type)!; return (
+                      <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold tracking-wide flex-shrink-0" style={{ background: m.bg, color: m.fg }} title={m.full}>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.dot }} />{m.short}
+                      </span>); })()}
                     <IndustryChip industry={effectiveLead.industry} size="xs" />
                   </div>
                   <div className="text-[12px] text-muted leading-tight mt-1 truncate">{[effectiveLead.phone, effectiveLead.email].filter(Boolean).join(' · ') || '—'}</div>
@@ -159,7 +163,20 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                       <InlineText value={effectiveLead.full_name} onChange={(v) => setLeadPending({ full_name: v || '' })} placeholder="Full name" />
                     </Row>
                     <Row label="Visa type">
-                      <InlineText value={effectiveLead.visa_type} onChange={(v) => setLeadPending({ visa_type: v })} placeholder="UK GTV…" />
+                      <div className="flex items-center gap-1.5 py-1">
+                        {(['gtv', 'ifv'] as const).map((k) => {
+                          const m = VISA_META[k];
+                          const on = (effectiveLead.visa_type || '').toLowerCase() === k || getVisaMeta(effectiveLead.visa_type) === m;
+                          return (
+                            <button key={k} type="button" onClick={() => setLeadPending({ visa_type: on ? null : k })}
+                              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold tracking-wide border transition-all"
+                              style={on ? { background: m.bg, color: m.fg, borderColor: m.dot } : { background: 'hsl(var(--surface))', color: 'hsl(var(--muted))', borderColor: 'hsl(var(--border))' }}
+                              title={m.full}>
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: on ? m.dot : 'hsl(var(--faint))' }} />{m.short}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </Row>
                     <Row label="Industry">
                       <div className="py-1">

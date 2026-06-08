@@ -16,7 +16,7 @@ export default function DailyTrackerPage() {
   const urgentFollowUps = followUps.filter((f) => isFollowUpOverdue(f) || isFollowUpToday(f)).length;
 
   return (
-    <div className="max-w-[1480px] mx-auto px-6 md:px-8 pt-7 pb-10">
+    <div className="max-w-[1480px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-10">
       <div className="inline-flex items-center gap-1 p-1 rounded-md bg-surface-2 mb-6">
         <button
           onClick={() => setTab('daily')}

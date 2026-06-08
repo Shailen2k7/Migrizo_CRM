@@ -28,9 +28,11 @@ interface Props {
   workspaceName: string;
   leadsCount: number;
   onAddLead: () => void;
+  mobileOpen?: boolean;
+  onClose?: () => void;
 }
 
-export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
+export function Sidebar({ user, workspaceName, leadsCount, onAddLead, mobileOpen = false, onClose }: Props) {
   const { cases, followUps, canViewPayments } = useApp();
   const casesCount = cases.filter((c) => c.status === 'active' && !c.archived_at).length;
   const urgentFollowUps = followUps.filter((f) => isFollowUpOverdue(f) || isFollowUpToday(f)).length;
@@ -50,7 +52,13 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
   };
 
   return (
-    <aside className="fixed left-0 top-0 bottom-0 w-[240px] bg-surface border-r border-border flex flex-col z-30">
+    <>
+      {/* Mobile backdrop */}
+      <div
+        onClick={onClose}
+        className={`md:hidden fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] transition-opacity duration-300 ${mobileOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+      />
+      <aside className={`fixed left-0 top-0 bottom-0 w-[260px] md:w-[240px] bg-surface border-r border-border flex flex-col z-50 transition-transform duration-300 ease-out md:translate-x-0 ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}>
       <div className="px-5 pt-5 pb-5 flex items-center gap-2.5">
         <div className="w-9 h-9 rounded-[10px] flex items-center justify-center text-white font-bold text-[15px]" style={{ background: '#4F46E5' }}>M</div>
         <div>
@@ -64,7 +72,7 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
           const Icon = item.icon;
           const active = path === item.href || path.startsWith(item.href + '/');
           return (
-            <Link key={item.href} href={item.href} className={`nav-item ${active ? 'active' : ''}`}>
+            <Link key={item.href} href={item.href} onClick={onClose} className={`nav-item ${active ? 'active' : ''}`}>
               <Icon className={item.href === '/ai' ? 'w-[17px] h-[17px] text-indigo-600' : 'w-[17px] h-[17px]'} />
               <span>{item.label}</span>
               {item.href === '/leads' && leadsCount > 0 && (
@@ -112,5 +120,6 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead }: Props) {
         </button>
       </div>
     </aside>
+    </>
   );
 }
