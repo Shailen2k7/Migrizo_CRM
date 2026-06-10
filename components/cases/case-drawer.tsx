@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Check, Lock, ChevronDown, Trash2, Plus, Link2, Flag,
@@ -48,6 +48,8 @@ export function CaseDrawer({ caseId, onClose }: Props) {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [sending, setSending] = useState(false);
+  const [emailVal, setEmailVal] = useState('');
+  useEffect(() => { setEmailVal(caseData?.client_email || ''); }, [caseData?.id, caseData?.client_email]);
 
   if (!caseData) return null;
 
@@ -229,6 +231,12 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                   <Mail className="w-3.5 h-3.5 text-indigo-600" />
                   <span className="text-[11px] font-bold tracking-wide text-ink-2">EMAIL THE CLIENT</span>
                 </div>
+                <label className="block text-[11px] text-muted mb-1">Client email</label>
+                <input type="email" value={emailVal} onChange={(e) => setEmailVal(e.target.value)}
+                  onBlur={() => { const v = emailVal.trim(); if (v !== (caseData.client_email || '')) updateCase(caseData.id, { client_email: v || null }); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                  placeholder="name@example.com"
+                  className="w-full text-[12px] border border-border rounded-md px-2.5 py-2 mb-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
                 {caseData.client_email ? (
                   <>
                     <p className="text-[11.5px] text-muted mb-2.5 leading-relaxed">Phase changes and decisions email {caseData.client_name.split(' ')[0]} automatically. Send a custom note whenever you like.</p>
@@ -249,7 +257,7 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                     )}
                   </>
                 ) : (
-                  <p className="text-[11.5px] text-muted leading-relaxed">Add a client email to this case to enable update emails.</p>
+                  <p className="text-[11.5px] text-muted leading-relaxed">Enter the client&rsquo;s email above to enable update emails.</p>
                 )}
               </div>
 
