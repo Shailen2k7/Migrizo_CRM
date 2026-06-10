@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Check, Lock, ChevronDown, Trash2, Plus, Link2, Flag,
   CircleCheck, Sparkles, Trophy, Megaphone, Lightbulb, LineChart,
-  PartyPopper, Archive, RotateCcw, Copy, ExternalLink,
+  PartyPopper, Archive, RotateCcw, Copy, ExternalLink, Mail, Send,
 } from 'lucide-react';
 import { useApp } from '@/components/shared/app-provider';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -31,7 +31,7 @@ const PILLAR_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
 };
 
 export function CaseDrawer({ caseId, onClose }: Props) {
-  const { cases, updateCase, updateCaseJourney, deleteCase, role, user } = useApp();
+  const { cases, updateCase, updateCaseJourney, sendClientUpdate, deleteCase, role, user } = useApp();
   const caseData = caseId ? cases.find((c) => c.id === caseId) || null : null;
 
   const journey: CaseJourneyState = useMemo(() => normalizeJourney(caseData?.journey), [caseData?.journey]);
@@ -45,6 +45,9 @@ export function CaseDrawer({ caseId, onClose }: Props) {
   const journeyDone = allGatesPassed(journey);
   const archived = !!caseData?.archived_at;
   const [copied, setCopied] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [sending, setSending] = useState(false);
 
   if (!caseData) return null;
 
@@ -56,6 +59,13 @@ export function CaseDrawer({ caseId, onClose }: Props) {
     const url = clientPortalUrl(caseData.client_token);
     if (!url) return;
     try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1600); } catch { /* noop */ }
+  };
+
+  const sendUpdate = async () => {
+    setSending(true);
+    const ok = await sendClientUpdate(caseData.id, noteText.trim() || undefined);
+    setSending(false);
+    if (ok) { setNoteText(''); setNoteOpen(false); }
   };
 
   const toggleTask = (taskKey: string) => {
@@ -211,6 +221,36 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                     {copied ? <><Check className="w-3.5 h-3.5 text-emerald-600" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
                   </button>
                 </div>
+              </div>
+
+              {/* Email the client an update (auto on phase/decision changes; manual note any time) */}
+              <div className="rounded-[14px] border border-border p-4 mt-3">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Mail className="w-3.5 h-3.5 text-indigo-600" />
+                  <span className="text-[11px] font-bold tracking-wide text-ink-2">EMAIL THE CLIENT</span>
+                </div>
+                {caseData.client_email ? (
+                  <>
+                    <p className="text-[11.5px] text-muted mb-2.5 leading-relaxed">Phase changes and decisions email {caseData.client_name.split(' ')[0]} automatically. Send a custom note whenever you like.</p>
+                    {noteOpen ? (
+                      <div className="space-y-2">
+                        <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={3}
+                          placeholder={`Write a quick update for ${caseData.client_name.split(' ')[0]}…`}
+                          className="w-full text-[12px] border border-border rounded-md px-2.5 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        <div className="flex items-center gap-2">
+                          <button onClick={sendUpdate} disabled={sending} className="btn btn-sm text-white disabled:opacity-50" style={{ background: '#4F46E5' }}>
+                            <Send className="w-3.5 h-3.5" /> {sending ? 'Sending…' : 'Send email'}
+                          </button>
+                          <button onClick={() => { setNoteOpen(false); setNoteText(''); }} className="text-[11.5px] text-muted px-2 py-1">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => setNoteOpen(true)} className="btn btn-outline btn-sm"><Mail className="w-3.5 h-3.5" /> Send update</button>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-[11.5px] text-muted leading-relaxed">Add a client email to this case to enable update emails.</p>
+                )}
               </div>
 
               <div className="h-2" />
