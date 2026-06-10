@@ -483,6 +483,8 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
   // =========================================
   const createCase = useCallback(async (input: { lead_id: string | null; client_name: string; visa_type: string; client_email?: string | null; client_phone?: string | null }): Promise<string | null> => {
     const now = new Date().toISOString();
+    // Pull contact details from the linked lead if not explicitly provided.
+    const lead = input.lead_id ? leads.find((l) => l.id === input.lead_id) : null;
     // Creating the case IS the first task ("Create case + assign owner") — tick it.
     const journey = {
       tasks: { start_create: { done: true, at: now, by: user.id } },
@@ -493,8 +495,8 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
       workspace_id: workspace.id,
       lead_id: input.lead_id,
       client_name: input.client_name,
-      client_email: input.client_email ?? null,
-      client_phone: input.client_phone ?? null,
+      client_email: input.client_email ?? lead?.email ?? null,
+      client_phone: input.client_phone ?? lead?.phone ?? null,
       visa_type: input.visa_type,
       current_phase: 'start',
       journey,
@@ -507,7 +509,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     toast.success(`Case opened for ${input.client_name}`);
     await refreshCases();
     return (data as Case).id;
-  }, [supabase, workspace.id, user.id, user.name, refreshCases]);
+  }, [supabase, workspace.id, user.id, user.name, refreshCases, leads]);
 
   // Fire-and-forget client email via the server route. Never blocks the UI.
   const notifyClientEmail = useCallback(async (
