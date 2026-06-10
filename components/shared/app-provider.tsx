@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useCallback, useMemo } 
 import { createClient } from '@/lib/supabase/client';
 import type { Lead, Payment, Activity, Workspace, Note, Case, CaseChecklistItem, CaseActivity, CaseStage, ChecklistStatus, FollowUp } from '@/lib/types';
 import type { CaseJourneyState } from '@/lib/journey';
+import { getJourney, getPhase, normalizeVisaType } from '@/lib/journey';
 import { buildSampleLeads } from '@/lib/sample-data';
 import { toast } from 'sonner';
 
@@ -51,6 +52,7 @@ interface AppData {
   createCase: (input: { lead_id: string | null; client_name: string; visa_type: string; client_email?: string | null; client_phone?: string | null }) => Promise<string | null>;
   updateCase: (caseId: string, patch: Partial<Case>) => Promise<void>;
   updateCaseJourney: (caseId: string, journey: import('@/lib/journey').CaseJourneyState, extra?: Partial<Case>) => Promise<void>;
+  sendClientUpdate: (caseId: string, note?: string) => Promise<boolean>;
   deleteCase: (caseId: string) => Promise<void>;
   getChecklist: (caseId: string) => Promise<CaseChecklistItem[]>;
   updateChecklistItem: (itemId: string, patch: Partial<CaseChecklistItem>) => Promise<void>;
@@ -507,6 +509,33 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     return (data as Case).id;
   }, [supabase, workspace.id, user.id, user.name, refreshCases]);
 
+  // Fire-and-forget client email via the server route. Never blocks the UI.
+  const notifyClientEmail = useCallback(async (
+    caseId: string,
+    event: 'phase_advanced' | 'decision' | 'custom',
+    note?: string,
+  ): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/notify-client', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caseId, event, note: note || null }),
+      });
+      const json = await res.json().catch(() => ({}));
+      return !!json?.ok;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Public: the manual "Send update" button in the case drawer.
+  const sendClientUpdate = useCallback(async (caseId: string, note?: string): Promise<boolean> => {
+    const ok = await notifyClientEmail(caseId, 'custom', note);
+    if (ok) toast.success('Update emailed to the client');
+    else toast.error("Couldn't send — check the client's email and Resend setup");
+    return ok;
+  }, [notifyClientEmail]);
+
   // Write the whole journey blob (and optionally other case fields) in one update.
   // Read-modify-write keeps it simple and is safe for single-owner cases.
   const updateCaseJourney = useCallback(async (caseId: string, journey: CaseJourneyState, extra?: Partial<Case>) => {
@@ -517,8 +546,16 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     if (error) {
       if (before) setCases((prev) => prev.map((c) => c.id === caseId ? before : c));
       toast.error(`Couldn't save: ${error.message}`);
+      return;
     }
-  }, [supabase, cases]);
+    // Auto-email the client only when clearing a gate moves the case FORWARD.
+    if (extra?.current_phase && before && before.current_phase !== extra.current_phase) {
+      const jr = getJourney(normalizeVisaType(before.visa_type));
+      const fromIdx = getPhase(before.current_phase, jr).index;
+      const toIdx = getPhase(extra.current_phase, jr).index;
+      if (toIdx > fromIdx) void notifyClientEmail(caseId, 'phase_advanced');
+    }
+  }, [supabase, cases, notifyClientEmail]);
 
   const updateCase = useCallback(async (caseId: string, patch: Partial<Case>) => {
     const before = cases.find((c) => c.id === caseId);
@@ -543,7 +580,11 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
         p_meta: { from: before.status, to: patch.status },
       });
     }
-  }, [supabase, cases]);
+    // Auto-email the client when a decision is set (endorsed / rejected / resubmission).
+    if (patch.decision && before && before.decision !== patch.decision && patch.decision !== 'pending') {
+      void notifyClientEmail(caseId, 'decision');
+    }
+  }, [supabase, cases, notifyClientEmail]);
 
   const deleteCase = useCallback(async (caseId: string) => {
     if (role !== 'admin') { toast.error('Only admins can delete cases'); return; }
@@ -714,7 +755,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     canViewPayments, setMemberPaymentAccess,
     refresh, refreshMembers, refreshCases, refreshFollowUps, memberNameById,
     createLead, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
-    createCase, updateCase, updateCaseJourney, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
+    createCase, updateCase, updateCaseJourney, sendClientUpdate, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
     createFollowUp, updateFollowUp, deleteFollowUp, completeFollowUp, reopenFollowUp, cancelFollowUp,
   };
 
