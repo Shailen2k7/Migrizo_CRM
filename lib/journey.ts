@@ -94,7 +94,11 @@ export function getRouteMeta(visaType: VisaType): RouteMeta {
 }
 
 export function normalizeVisaType(raw: unknown): VisaType {
-  return raw === 'ifv' ? 'ifv' : 'gtv';
+  // `visa_type` is a free-text label in the CRM (e.g. "UK Innovator Founder",
+  // "UK Global Talent", "Canada Express Entry"). Derive the route from it.
+  const s = String(raw ?? '').toLowerCase();
+  if (s.includes('innovator') || s.includes('founder') || s === 'ifv') return 'ifv';
+  return 'gtv';
 }
 
 // -----------------------------------------------------------------------------
