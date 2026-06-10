@@ -4,7 +4,6 @@ import { createContext, useContext, useEffect, useState, useCallback, useMemo } 
 import { createClient } from '@/lib/supabase/client';
 import type { Lead, Payment, Activity, Workspace, Note, Case, CaseChecklistItem, CaseActivity, CaseStage, ChecklistStatus, FollowUp } from '@/lib/types';
 import type { CaseJourneyState } from '@/lib/journey';
-import { getJourney, getPhase, normalizeVisaType } from '@/lib/journey';
 import { buildSampleLeads } from '@/lib/sample-data';
 import { toast } from 'sonner';
 
@@ -548,16 +547,8 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     if (error) {
       if (before) setCases((prev) => prev.map((c) => c.id === caseId ? before : c));
       toast.error(`Couldn't save: ${error.message}`);
-      return;
     }
-    // Auto-email the client only when clearing a gate moves the case FORWARD.
-    if (extra?.current_phase && before && before.current_phase !== extra.current_phase) {
-      const jr = getJourney(normalizeVisaType(before.visa_type));
-      const fromIdx = getPhase(before.current_phase, jr).index;
-      const toIdx = getPhase(extra.current_phase, jr).index;
-      if (toIdx > fromIdx) void notifyClientEmail(caseId, 'phase_advanced');
-    }
-  }, [supabase, cases, notifyClientEmail]);
+  }, [supabase, cases]);
 
   const updateCase = useCallback(async (caseId: string, patch: Partial<Case>) => {
     const before = cases.find((c) => c.id === caseId);
@@ -582,11 +573,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
         p_meta: { from: before.status, to: patch.status },
       });
     }
-    // Auto-email the client when a decision is set (endorsed / rejected / resubmission).
-    if (patch.decision && before && before.decision !== patch.decision && patch.decision !== 'pending') {
-      void notifyClientEmail(caseId, 'decision');
-    }
-  }, [supabase, cases, notifyClientEmail]);
+  }, [supabase, cases]);
 
   const deleteCase = useCallback(async (caseId: string) => {
     if (role !== 'admin') { toast.error('Only admins can delete cases'); return; }
