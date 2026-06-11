@@ -8,7 +8,7 @@ import { Briefcase, Plus, Search, Moon, CheckCircle2 } from 'lucide-react';
 import { CaseDrawer } from '@/components/cases/case-drawer';
 import { AddCaseDialog } from '@/components/cases/add-case-dialog';
 import {
-  JOURNEY, normalizeJourney, activePhase, overallProgress, phasesCleared,
+  JOURNEY, getJourney, normalizeVisaType, normalizeJourney, activePhase, overallProgress, phasesCleared,
   isGatePassed, allGatesPassed, DECISION_META, type PhaseKey,
 } from '@/lib/journey';
 
@@ -37,14 +37,15 @@ export default function CasesPage() {
 
   const snapshots: Snap[] = useMemo(() => cases.map((c) => {
     const j = normalizeJourney(c.journey);
-    const finished = allGatesPassed(j);
+    const route = getJourney(normalizeVisaType(c.visa_type));
+    const finished = allGatesPassed(j, route);
     const archived = !!c.archived_at;
     const idleDays = Math.floor((Date.now() - new Date(c.updated_at).getTime()) / 86400000);
     return {
       case: c,
-      phase: activePhase(j),
-      progress: overallProgress(j),
-      cleared: phasesCleared(j),
+      phase: activePhase(j, route),
+      progress: overallProgress(j, route),
+      cleared: phasesCleared(j, route),
       finished,
       archived,
       dormant: !archived && !finished && idleDays >= DORMANT_DAYS,
