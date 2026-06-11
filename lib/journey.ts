@@ -117,8 +117,72 @@ const STEPS: JourneyPhase[] = [
 ];
 
 export const JOURNEY: JourneyPhase[] = STEPS;
-// Same simple journey for both routes (GTV/IFV share these 5 steps).
-export function getJourney(_visaType?: VisaType): JourneyPhase[] { return STEPS; }
+
+// ---- Innovator Founder Visa (IFV): same 5 step keys, business-led wording ----
+const IFV_STEPS: JourneyPhase[] = [
+  {
+    key: 'onboarding', index: 1, code: 'ONBOARD', name: 'Onboarding',
+    clientName: 'Getting started', clientBlurb: 'We set you up, collect your documents and agree the plan.',
+    macro: 'endorsement', kind: 'tasks', accent: '#6366F1', tint: '#EEF0FF',
+    tasks: [
+      { key: 'ob_agreement', label: 'Sign agreement & confirm payment' },
+      { key: 'ob_docs',      label: 'Collect documents & founder background' },
+      { key: 'ob_kickoff',   label: 'Kickoff call & agree the plan (choose endorsing body)' },
+    ],
+    gate: 'Onboarding complete — plan agreed',
+  },
+  {
+    key: 'profile', index: 2, code: 'BUSINESS', name: 'Build the Business Case',
+    clientName: 'Building your business case', clientBlurb: 'We shape your business plan and the evidence behind it.',
+    macro: 'endorsement', kind: 'tasks', accent: '#EC4899', tint: '#FCE7F3',
+    tasks: [
+      { key: 'pf_concept',    label: 'Shape the innovative concept' },
+      { key: 'pf_plan',       label: 'Write the business plan & financial projections' },
+      { key: 'pf_innovation', label: 'Evidence innovation, viability & scalability' },
+      { key: 'pf_market',     label: 'Market research & competitor analysis' },
+    ],
+    gate: 'Business case ready',
+  },
+  {
+    key: 'write_approve', index: 3, code: 'WRITE', name: 'Write & Approve',
+    clientName: 'Finalising your pack', clientBlurb: 'We finalise the pack and you give the sign-off.',
+    macro: 'endorsement', kind: 'tasks', accent: '#3B82F6', tint: '#DBEAFE',
+    tasks: [
+      { key: 'wr_qc',      label: 'Quality-check the full pack' },
+      { key: 'wr_client',  label: 'Founder reviews & approves' },
+      { key: 'wr_prep',    label: 'Prepare for the endorsement assessment' },
+    ],
+    gate: 'Pack approved by founder',
+  },
+  {
+    key: 'endorsement', index: 4, code: 'ENDORSE', name: 'Endorsement',
+    clientName: 'Endorsement decision', clientBlurb: 'We submit to the endorsing body and support the assessment.',
+    macro: 'endorsement', kind: 'tasks', accent: '#8B5CF6', tint: '#EDE9FE', decisionOf: 'endorsement',
+    tasks: [
+      { key: 'en_submit',    label: 'Submit to the endorsing body' },
+      { key: 'en_interview', label: 'Endorsement assessment / interview' },
+      { key: 'en_letter',    label: 'Receive endorsement letter' },
+    ],
+    gate: 'Endorsement letter received',
+  },
+  {
+    key: 'visa', index: 5, code: 'VISA', name: 'Visa & Approval',
+    clientName: 'Visa & approval', clientBlurb: 'We lodge your visa and help you land in the UK.',
+    macro: 'visa', kind: 'tasks', accent: '#10B981', tint: '#D1FAE5', decisionOf: 'visa',
+    tasks: [
+      { key: 'vi_apply',      label: 'Apply within the 3-month window' },
+      { key: 'vi_biometrics', label: 'Pay fees & biometrics' },
+      { key: 'vi_decision',   label: 'Visa decision & welcome to the UK' },
+    ],
+    gate: 'Visa decision received',
+  },
+];
+
+// Return the journey for a route. GTV and IFV share the same 5 step keys,
+// so everything downstream (gates, progress, current_phase) just works.
+export function getJourney(visaType?: VisaType): JourneyPhase[] {
+  return visaType === 'ifv' ? IFV_STEPS : STEPS;
+}
 
 // ------------------------------- DECISIONS -----------------------------------
 export const DECISION_META: Record<Decision, { label: string; bg: string; fg: string }> = {
