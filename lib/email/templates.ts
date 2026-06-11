@@ -3,7 +3,7 @@
 // Used by app/api/notify-client/route.ts. Emails are manual-only ("Send update").
 // =============================================================================
 import {
-  getJourney, getPhase, normalizeJourney, phasesCleared, allGatesPassed,
+  getJourney, getPhase, normalizeJourney, phasesCleared, allGatesPassed, normalizeVisaType,
   type Decision,
 } from '@/lib/journey';
 
@@ -65,7 +65,7 @@ function statusBox(label: string, sub: string): { html: string; text: string } {
 }
 
 export function buildClientEmail(c: NotifyCase, event: NotifyEvent, note?: string | null): BuiltEmail {
-  const journey = getJourney();
+  const journey = getJourney(normalizeVisaType(c.visa_type));
   const state = normalizeJourney(c.journey);
   const phase = getPhase(c.current_phase as never, journey);
   const total = journey.length;
