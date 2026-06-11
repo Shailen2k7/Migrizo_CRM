@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/components/shared/app-provider';
 import type { Case } from '@/lib/types';
 import { cn, initials, avatarColor, timeAgo } from '@/lib/utils';
-import { Briefcase, Plus, Search } from 'lucide-react';
+import { Briefcase, Plus, Search, Moon, CheckCircle2 } from 'lucide-react';
 import { CaseDrawer } from '@/components/cases/case-drawer';
 import { AddCaseDialog } from '@/components/cases/add-case-dialog';
 import {
@@ -12,7 +12,21 @@ import {
   isGatePassed, allGatesPassed, DECISION_META, type PhaseKey,
 } from '@/lib/journey';
 
-type Segment = 'all' | 'closed' | PhaseKey;
+type Segment = 'all' | 'dormant' | 'closed' | PhaseKey;
+
+// A case with no movement for this many days is treated as dormant (abandoned).
+const DORMANT_DAYS = 30;
+
+type Snap = {
+  case: Case;
+  phase: ReturnType<typeof activePhase>;
+  progress: { pct: number; done: number; total: number };
+  cleared: number;
+  finished: boolean;
+  archived: boolean;
+  dormant: boolean;
+  idleDays: number;
+};
 
 export default function CasesPage() {
   const { cases, leads } = useApp();
@@ -21,49 +35,52 @@ export default function CasesPage() {
   const [segment, setSegment] = useState<Segment>('all');
   const [search, setSearch] = useState('');
 
-  // Pre-compute each case's journey snapshot once.
-  const snapshots = useMemo(() => cases.map((c) => {
+  const snapshots: Snap[] = useMemo(() => cases.map((c) => {
     const j = normalizeJourney(c.journey);
+    const finished = allGatesPassed(j);
+    const archived = !!c.archived_at;
+    const idleDays = Math.floor((Date.now() - new Date(c.updated_at).getTime()) / 86400000);
     return {
       case: c,
-      journey: j,
       phase: activePhase(j),
       progress: overallProgress(j),
       cleared: phasesCleared(j),
-      finished: allGatesPassed(j),
-      decided: c.decision && c.decision !== 'pending',
-      archived: !!c.archived_at,
+      finished,
+      archived,
+      dormant: !archived && !finished && idleDays >= DORMANT_DAYS,
+      idleDays,
     };
   }), [cases]);
 
-  // How many OPEN cases are currently sitting in each phase.
+  // Active = open, not dormant, not closed.
+  const active = useMemo(() => snapshots.filter((s) => !s.archived && !s.dormant), [snapshots]);
   const phaseCounts = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const s of snapshots) {
-      if (s.archived) continue;
-      m[s.phase.key] = (m[s.phase.key] || 0) + 1;
-    }
+    for (const s of active) m[s.phase.key] = (m[s.phase.key] || 0) + 1;
     return m;
-  }, [snapshots]);
+  }, [active]);
 
-  const openCount = snapshots.filter((s) => !s.archived).length;
+  const openCount = active.length;
+  const dormantCount = snapshots.filter((s) => s.dormant).length;
   const closedCount = snapshots.filter((s) => s.archived).length;
 
-  const segments: { id: Segment; label: string; count: number; accent?: string }[] = [
-    { id: 'all', label: 'All open', count: openCount },
-    ...JOURNEY.map((p) => ({ id: p.key as Segment, label: p.code, count: phaseCounts[p.key] || 0, accent: p.accent })),
+  const segments: { id: Segment; label: string; count: number }[] = [
+    { id: 'all', label: 'All active', count: openCount },
+    ...JOURNEY.map((p) => ({ id: p.key as Segment, label: p.code, count: phaseCounts[p.key] || 0 })),
+    { id: 'dormant', label: 'Dormant', count: dormantCount },
     { id: 'closed', label: 'Closed', count: closedCount },
   ];
 
   const filtered = useMemo(() => {
-    let list = snapshots;
-    if (segment === 'closed') list = list.filter((s) => s.archived);
-    else if (segment === 'all') list = list.filter((s) => !s.archived);
-    else list = list.filter((s) => !s.archived && s.phase.key === segment);
+    let list: Snap[];
+    if (segment === 'closed') list = snapshots.filter((s) => s.archived);
+    else if (segment === 'dormant') list = snapshots.filter((s) => s.dormant);
+    else if (segment === 'all') list = active;
+    else list = active.filter((s) => s.phase.key === segment);
     const q = search.trim().toLowerCase();
     if (q) list = list.filter((s) => s.case.client_name.toLowerCase().includes(q) || (s.case.visa_type || '').toLowerCase().includes(q));
     return [...list].sort((a, b) => new Date(b.case.updated_at).getTime() - new Date(a.case.updated_at).getTime());
-  }, [snapshots, segment, search]);
+  }, [snapshots, active, segment, search]);
 
   return (
     <div className="max-w-[1240px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-10 animate-pageIn">
@@ -73,29 +90,46 @@ export default function CasesPage() {
           <h1 className="text-[26px] font-bold tracking-tight flex items-center gap-2.5">
             <Briefcase className="w-6 h-6 text-indigo-600" /> Cases
           </h1>
-          <p className="text-[13.5px] text-muted mt-1.5">Every endorsement client, tracked through one clear 6-phase journey</p>
+          <p className="text-[13.5px] text-muted mt-1.5">Every client, tracked through one clear 5-step journey</p>
         </div>
         <button onClick={() => setAddOpen(true)} className="btn btn-primary"><Plus className="w-4 h-4" /> New case</button>
       </div>
 
       {/* Phase funnel strip */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 mb-3">
         {JOURNEY.map((p) => {
           const count = phaseCounts[p.key] || 0;
+          const on = segment === p.key;
           return (
-            <button key={p.key} onClick={() => setSegment(p.key)}
-              className="rounded-xl border p-3 text-left transition-all hover:border-border-strong"
-              style={{ background: count > 0 ? p.tint : 'hsl(var(--surface))', borderColor: segment === p.key ? p.accent : 'hsl(var(--border))' }}>
-              <div className="flex items-center gap-1.5 mb-1.5">
+            <button key={p.key} onClick={() => setSegment(on ? 'all' : p.key)}
+              className="rounded-2xl border p-3.5 text-left transition-all hover:-translate-y-0.5 hover:shadow-md"
+              style={{
+                background: count > 0 ? p.tint : 'hsl(var(--surface))',
+                borderColor: on ? p.accent : 'hsl(var(--border))',
+                boxShadow: on ? `0 0 0 1px ${p.accent}` : undefined,
+              }}>
+              <div className="flex items-center gap-1.5 mb-2">
                 <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: p.accent }}>{p.index}</span>
                 <span className="text-[10px] font-bold tracking-wide" style={{ color: p.accent }}>{p.code}</span>
               </div>
-              <div className="text-[22px] font-bold num leading-none" style={{ color: count > 0 ? p.accent : 'hsl(var(--faint))' }}>{count}</div>
-              <div className="text-[10.5px] text-muted mt-0.5 leading-tight">{p.name}</div>
+              <div className="text-[24px] font-bold num leading-none" style={{ color: count > 0 ? p.accent : 'hsl(var(--faint))' }}>{count}</div>
+              <div className="text-[11px] text-ink-2 font-medium mt-1 leading-tight">{p.name}</div>
             </button>
           );
         })}
       </div>
+
+      {/* Dormant banner */}
+      {dormantCount > 0 && segment !== 'dormant' && (
+        <button onClick={() => setSegment('dormant')}
+          className="w-full mb-4 flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-left hover:bg-amber-100/70 transition-colors">
+          <Moon className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <span className="text-[12.5px] text-amber-900 font-medium">
+            {dormantCount} {dormantCount === 1 ? 'client has' : 'clients have'} gone quiet for {DORMANT_DAYS}+ days
+          </span>
+          <span className="ml-auto text-[12px] font-semibold text-amber-700">View dormant →</span>
+        </button>
+      )}
 
       {/* Filter chips + search */}
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
@@ -122,8 +156,8 @@ export default function CasesPage() {
           {cases.length === 0 && <button onClick={() => setAddOpen(true)} className="btn btn-primary btn-sm mx-auto"><Plus className="w-3.5 h-3.5" /> New case</button>}
         </div>
       ) : (
-        <div className="space-y-2.5">
-          {filtered.map((s) => <CaseRow key={s.case.id} snap={s} onOpen={() => setSelectedCaseId(s.case.id)} />)}
+        <div className="space-y-3">
+          {filtered.map((s) => <CaseCard key={s.case.id} snap={s} onOpen={() => setSelectedCaseId(s.case.id)} />)}
         </div>
       )}
 
@@ -133,39 +167,64 @@ export default function CasesPage() {
   );
 }
 
-function CaseRow({ snap, onOpen }: { snap: { case: Case; phase: ReturnType<typeof activePhase>; progress: { pct: number; done: number; total: number }; cleared: number; finished: boolean; archived: boolean }; onOpen: () => void }) {
+function CaseCard({ snap, onOpen }: { snap: Snap; onOpen: () => void }) {
   const c = snap.case;
   const phase = snap.phase;
-  const archived = snap.archived;
+  const { archived, dormant, finished } = snap;
   const decision = c.decision && c.decision !== 'pending' ? DECISION_META[c.decision] : null;
-  const phaseLabel = archived ? 'Closed' : snap.finished ? 'Completed' : `${phase.code} · Phase ${phase.index}/6`;
-  const barColor = archived ? 'hsl(var(--faint))' : snap.finished ? '#10B981' : phase.accent;
-  const labelColor = archived ? 'hsl(var(--muted))' : snap.finished ? '#047857' : phase.accent;
+
+  const accent = finished ? '#10B981' : dormant ? '#F59E0B' : archived ? '#9CA3AF' : phase.accent;
+  const phaseLabel = archived ? 'Closed' : finished ? 'Completed' : `${phase.name}`;
 
   return (
-    <button onClick={onOpen} className={cn('panel w-full p-4 flex items-center gap-4 hover:border-border-strong transition-all text-left group', archived && 'opacity-65 hover:opacity-100')}>
-      <div className="av" style={{ background: avatarColor(c.id), width: 38, height: 38, fontSize: 13 }}>{initials(c.client_name)}</div>
+    <button onClick={onOpen}
+      className={cn(
+        'relative w-full overflow-hidden rounded-2xl border bg-surface text-left transition-all',
+        'hover:-translate-y-0.5 hover:shadow-lg hover:border-border-strong group',
+        (archived || dormant) && 'opacity-90 hover:opacity-100',
+      )}
+      style={{ borderColor: 'hsl(var(--border))' }}>
+      {/* left accent rail */}
+      <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ background: accent }} />
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-[14px] font-semibold group-hover:underline truncate">{c.client_name}</span>
-          {decision && <span className="chip" style={{ background: decision.bg, color: decision.fg, border: 'none' }}>{decision.label}</span>}
+      <div className="flex items-center gap-4 pl-6 pr-4 py-4">
+        {/* avatar */}
+        <div className="relative flex-shrink-0">
+          <div className="av" style={{ background: avatarColor(c.id), width: 44, height: 44, fontSize: 15, boxShadow: `0 0 0 3px ${accent}22` }}>{initials(c.client_name)}</div>
         </div>
-        <div className="text-[11.5px] text-muted truncate">{c.visa_type || 'UK Global Talent'}{c.owner_name ? ` · ${c.owner_name}` : ''} · updated {timeAgo(c.updated_at)}</div>
-      </div>
 
-      <div className="hidden sm:block w-[220px] flex-shrink-0">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-[11px] font-semibold" style={{ color: labelColor }}>{phaseLabel}</span>
-          <span className="text-[10.5px] text-muted num">{snap.progress.pct}%</span>
+        {/* identity */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="text-[15px] font-semibold group-hover:underline truncate">{c.client_name}</span>
+            {decision && <span className="chip" style={{ background: decision.bg, color: decision.fg, border: 'none' }}>{decision.label}</span>}
+            {dormant && <span className="chip inline-flex items-center gap-1" style={{ background: '#FEF3C7', color: '#92400E', border: 'none' }}><Moon className="w-3 h-3" /> Dormant · {snap.idleDays}d</span>}
+            {finished && !archived && <span className="chip inline-flex items-center gap-1" style={{ background: '#D1FAE5', color: '#047857', border: 'none' }}><CheckCircle2 className="w-3 h-3" /> Done</span>}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-surface-2 text-ink-2">{c.visa_type || 'UK Global Talent'}</span>
+            <span className="text-[11.5px] text-muted truncate">{c.owner_name ? `${c.owner_name} · ` : ''}updated {timeAgo(c.updated_at)}</span>
+          </div>
         </div>
-        <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
-          <div className="h-full rounded-full transition-all" style={{ width: `${snap.progress.pct}%`, background: barColor }} />
-        </div>
-        <div className="flex items-center gap-1 mt-1.5">
-          {JOURNEY.map((p) => (
-            <div key={p.key} className="flex-1 h-1 rounded-full" style={{ background: isGatePassed(normalizeJourney(c.journey), p.key) ? (archived ? 'hsl(var(--faint))' : p.accent) : 'hsl(var(--surface-2))' }} />
-          ))}
+
+        {/* progress block */}
+        <div className="hidden sm:block w-[240px] flex-shrink-0">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11.5px] font-semibold truncate" style={{ color: accent }}>{phaseLabel}</span>
+            <span className="text-[11px] text-muted num font-medium">{snap.progress.pct}%</span>
+          </div>
+          {/* 5-step stepper */}
+          <div className="flex items-center gap-1">
+            {JOURNEY.map((p) => {
+              const passed = isGatePassed(normalizeJourney(c.journey), p.key);
+              const current = !archived && !finished && p.key === phase.key;
+              return (
+                <div key={p.key} className="flex-1 h-1.5 rounded-full transition-all"
+                  style={{ background: passed ? accent : current ? `${accent}66` : 'hsl(var(--surface-2))' }} />
+              );
+            })}
+          </div>
+          <div className="text-[10.5px] text-muted mt-1.5">{archived ? 'Case closed' : `Step ${phase.index} of ${JOURNEY.length}`}</div>
         </div>
       </div>
     </button>
