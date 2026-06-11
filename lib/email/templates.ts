@@ -1,17 +1,14 @@
 // =============================================================================
-// CLIENT EMAIL TEMPLATES — pure, route-aware, zero server deps.
-// Content is generated from lib/journey.ts so GTV and IFV read correctly with
-// no duplicated copy. Used by app/api/notify-client/route.ts.
+// CLIENT EMAIL TEMPLATES — pure, content built from lib/journey.ts.
+// Used by app/api/notify-client/route.ts. Emails are manual-only ("Send update").
 // =============================================================================
 import {
   getJourney, getPhase, normalizeJourney, phasesCleared, allGatesPassed,
-  normalizeVisaType, getRouteMeta, MACRO_STAGES,
   type Decision,
 } from '@/lib/journey';
 
 export type NotifyEvent = 'phase_advanced' | 'decision' | 'custom';
 
-// The subset of a case this builder needs.
 export interface NotifyCase {
   client_name: string;
   client_email: string | null;
@@ -29,12 +26,8 @@ function esc(s: string): string {
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] as string
   ));
 }
+function firstName(full: string): string { return (full || 'there').trim().split(/\s+/)[0] || 'there'; }
 
-function firstName(full: string): string {
-  return (full || 'there').trim().split(/\s+/)[0] || 'there';
-}
-
-// ---- shared layout -----------------------------------------------------------
 function shell(opts: { heading: string; bodyHtml: string; statusHtml: string; ownerName?: string | null }): string {
   const { heading, bodyHtml, statusHtml, ownerName } = opts;
   return `
@@ -71,64 +64,39 @@ function statusBox(label: string, sub: string): { html: string; text: string } {
   };
 }
 
-// ---- main builder ------------------------------------------------------------
 export function buildClientEmail(c: NotifyCase, event: NotifyEvent, note?: string | null): BuiltEmail {
-  const visa = normalizeVisaType(c.visa_type);
-  const route = getRouteMeta(visa);
-  const journey = getJourney(visa);
+  const journey = getJourney();
   const state = normalizeJourney(c.journey);
   const phase = getPhase(c.current_phase as never, journey);
-  const macroIdx = Math.max(0, MACRO_STAGES.findIndex((m) => m.key === phase.macro)) + 1;
-  const cleared = phasesCleared(state, journey);
+  const total = journey.length;
   const done = allGatesPassed(state, journey);
+  const cleared = phasesCleared(state, journey);
 
-  const stageLabel = done ? 'Decision & landing' : phase.clientName;
+  // e.g. "UK Global Talent" -> "your UK Global Talent application"
+  const visaLabel = (c.visa_type && c.visa_type.trim()) ? c.visa_type.trim() : 'visa';
+  const heading = `You got an update for your ${visaLabel} application`;
+
+  const stageLabel = done ? 'Visa approved 🎉' : phase.name;
   const stageSub = done
     ? 'Your journey with us is complete.'
-    : `Stage ${macroIdx} of ${MACRO_STAGES.length} · ${cleared} of ${journey.length} steps cleared`;
+    : `Step ${phase.index} of ${total} · ${cleared} of ${total} steps cleared`;
   const box = statusBox(stageLabel, stageSub);
+
   const hi = `<p style="font-size:14.5px;color:#0f1115;line-height:1.6;margin:0 0 14px;">Hi ${esc(firstName(c.client_name))},</p>`;
 
-  let heading = `An update on your ${route.label} application`;
-  let bodyHtml = '';
-  let textCore = '';
-
-  if (event === 'phase_advanced') {
-    heading = `Your case has moved to: ${stageLabel}`;
-    bodyHtml = `${hi}
-      <p style="font-size:14.5px;color:#0f1115;line-height:1.6;margin:0;">Good news — there's been movement on your application. We've just advanced your case, and you're now at <strong>${esc(stageLabel)}</strong>.</p>
-      <p style="font-size:13.5px;color:#3c3f46;line-height:1.6;margin:12px 0 0;">${esc(phase.clientBlurb)}</p>`;
-    textCore = `Good news — your case has moved to: ${stageLabel}. ${phase.clientBlurb}`;
-  } else if (event === 'decision') {
-    const d = c.decision;
-    if (d === 'approved') {
-      heading = `Congratulations — you've been endorsed! 🎉`;
-      bodyHtml = `${hi}<p style="font-size:14.5px;color:#0f1115;line-height:1.6;margin:0;">This is a huge milestone — your endorsement has come through. We'll now move into the visa application stage and guide you through every step.</p>`;
-      textCore = `Congratulations — your endorsement has come through. We now move into the visa stage.`;
-    } else if (d === 'rejected') {
-      heading = `An update on your endorsement`;
-      bodyHtml = `${hi}<p style="font-size:14.5px;color:#0f1115;line-height:1.6;margin:0;">We've received a decision on your endorsement, and unfortunately it wasn't successful this time. This isn't the end of the road — your case manager will reach out shortly to talk through your options and the strongest path forward.</p>`;
-      textCore = `We've received your endorsement decision and it wasn't successful this time. Your case manager will be in touch about next steps.`;
-    } else if (d === 'resubmission') {
-      heading = `Next steps on your endorsement`;
-      bodyHtml = `${hi}<p style="font-size:14.5px;color:#0f1115;line-height:1.6;margin:0;">The endorsing body has asked for a resubmission. That's a normal part of the process — we'll strengthen the areas raised and your case manager will walk you through what we need.</p>`;
-      textCore = `The endorsing body has asked for a resubmission. We'll strengthen the application and guide you through it.`;
-    } else {
-      heading = `An update on your endorsement`;
-      bodyHtml = `${hi}<p style="font-size:14.5px;color:#0f1115;line-height:1.6;margin:0;">There's an update on your endorsement. See where things stand below.</p>`;
-      textCore = `There's an update on your endorsement.`;
-    }
-  } else {
-    // custom note from the case manager
-    heading = `A note about your ${route.short} application`;
-    const safeNote = esc(note || '').replace(/\n/g, '<br/>');
+  let bodyHtml: string;
+  let textCore: string;
+  if (event === 'custom' && note && note.trim()) {
+    const safeNote = esc(note).replace(/\n/g, '<br/>');
     bodyHtml = `${hi}<div style="font-size:14.5px;color:#0f1115;line-height:1.65;margin:0;">${safeNote}</div>`;
-    textCore = note || '';
+    textCore = note;
+  } else {
+    bodyHtml = `${hi}<p style="font-size:14.5px;color:#0f1115;line-height:1.6;margin:0;">There's an update on your application. Here's where things stand right now.</p>`;
+    textCore = "There's an update on your application.";
   }
 
   const html = shell({ heading, bodyHtml, statusHtml: box.html, ownerName: c.owner_name });
-  const text = [`Hi ${firstName(c.client_name)},`, '', textCore, '', box.text, '', '— The Migrizo Team']
-    .join('\n');
+  const text = [`Hi ${firstName(c.client_name)},`, '', textCore, '', box.text, '', '— The Migrizo Team'].join('\n');
 
-  return { subject: heading.replace(/[🎉]/g, '').trim(), html, text };
+  return { subject: heading, html, text };
 }
