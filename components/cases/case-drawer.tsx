@@ -149,7 +149,7 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                 <div className="flex-1">
                   <div className="flex items-baseline justify-between mb-1.5">
                     <div className="text-[13px] font-semibold">
-                      {cleared >= 6 ? 'All phases cleared' : <>Phase {active.index} of 6 · <span style={{ color: active.accent }}>{active.code}</span></>}
+                      {cleared >= JOURNEY.length ? 'All steps cleared' : <>Step {active.index} of {JOURNEY.length} · <span style={{ color: active.accent }}>{active.code}</span></>}
                     </div>
                     <div className="text-[11.5px] text-muted num">{progress.done}/{progress.total} done</div>
                   </div>
@@ -160,7 +160,7 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                   <div className="flex items-center gap-1 mt-2">
                     {JOURNEY.map((p) => {
                       const done = isGatePassed(journey, p.key);
-                      const isActive = p.key === active.key && cleared < 6;
+                      const isActive = p.key === active.key && cleared < JOURNEY.length;
                       return (
                         <div key={p.key} className="flex-1 h-1 rounded-full transition-colors"
                           style={{ background: done ? p.accent : isActive ? `${p.accent}66` : 'hsl(var(--surface-2))' }} title={p.code} />
@@ -186,7 +186,7 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                     <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: '#10B981' }}><PartyPopper className="w-5 h-5 text-white" /></div>
                     <div className="flex-1 min-w-0">
                       <div className="text-[14px] font-semibold text-emerald-900">Journey complete</div>
-                      <div className="text-[12px] text-emerald-700">All six gates cleared. Close the case to move it out of your active list.</div>
+                      <div className="text-[12px] text-emerald-700">All steps cleared. Close the case to move it out of your active list.</div>
                     </div>
                     <button onClick={() => setArchived(true)} className="btn btn-sm flex-shrink-0 text-white" style={{ background: '#10B981' }}><Archive className="w-3.5 h-3.5" /> Close case</button>
                   </div>
@@ -239,7 +239,7 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                   className="w-full text-[12px] border border-border rounded-md px-2.5 py-2 mb-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
                 {caseData.client_email ? (
                   <>
-                    <p className="text-[11.5px] text-muted mb-2.5 leading-relaxed">Phase changes and decisions email {caseData.client_name.split(' ')[0]} automatically. Send a custom note whenever you like.</p>
+                    <p className="text-[11.5px] text-muted mb-2.5 leading-relaxed">Send {caseData.client_name.split(' ')[0]} an update on their application whenever you like — they only get an email when you click below.</p>
                     {noteOpen ? (
                       <div className="space-y-2">
                         <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={3}
@@ -383,7 +383,7 @@ function PhaseCard({
                 </div>
               )}
 
-              {phase.key === 'submit' && <DecisionPanel caseData={caseData} onUpdateCase={onUpdateCase} accent={phase.accent} />}
+              {phase.key === 'endorsement' && <DecisionPanel caseData={caseData} onUpdateCase={onUpdateCase} accent={phase.accent} />}
 
               <GateBar phase={phase} complete={complete} passed={gatePassed} onPass={onPassGate} />
             </div>
