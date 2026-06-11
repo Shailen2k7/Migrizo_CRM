@@ -11,9 +11,9 @@ import { useApp } from '@/components/shared/app-provider';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { cn, initials, avatarColor } from '@/lib/utils';
 import {
-  JOURNEY, DECISION_META, normalizeJourney, phaseProgress, isPhaseComplete,
+  DECISION_META, normalizeJourney, phaseProgress, isPhaseComplete,
   isGatePassed, isPhaseUnlocked, activePhase, overallProgress, phasesCleared,
-  allGatesPassed, clientPortalUrl,
+  allGatesPassed, clientPortalUrl, getJourney, normalizeVisaType,
   type JourneyPhase, type CaseJourneyState, type Decision,
 } from '@/lib/journey';
 import type { Case } from '@/lib/types';
@@ -35,14 +35,15 @@ export function CaseDrawer({ caseId, onClose }: Props) {
   const caseData = caseId ? cases.find((c) => c.id === caseId) || null : null;
 
   const journey: CaseJourneyState = useMemo(() => normalizeJourney(caseData?.journey), [caseData?.journey]);
-  const active = useMemo(() => activePhase(journey), [journey]);
+  const phases = useMemo(() => getJourney(normalizeVisaType(caseData?.visa_type)), [caseData?.visa_type]);
+  const active = useMemo(() => activePhase(journey, phases), [journey, phases]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const effectiveExpanded = expanded ?? active.key;
-  const progress = overallProgress(journey);
-  const cleared = phasesCleared(journey);
-  const journeyDone = allGatesPassed(journey);
+  const progress = overallProgress(journey, phases);
+  const cleared = phasesCleared(journey, phases);
+  const journeyDone = allGatesPassed(journey, phases);
   const archived = !!caseData?.archived_at;
   const [copied, setCopied] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
@@ -105,11 +106,11 @@ export function CaseDrawer({ caseId, onClose }: Props) {
     const passed = isGatePassed(journey, phase.key);
     const nextGates = { ...journey.gates, [phase.key]: passed ? { passed: false } : { passed: true, at: new Date().toISOString() } };
     const next: CaseJourneyState = { ...journey, gates: nextGates };
-    let cp = JOURNEY[JOURNEY.length - 1].key;
-    for (const p of JOURNEY) { if (!nextGates[p.key]?.passed) { cp = p.key; break; } }
+    let cp = phases[phases.length - 1].key;
+    for (const p of phases) { if (!nextGates[p.key]?.passed) { cp = p.key; break; } }
     updateCaseJourney(caseData.id, next, { current_phase: cp });
     if (!passed) {
-      const nextPhase = JOURNEY[phase.index];
+      const nextPhase = phases[phase.index];
       if (nextPhase) setExpanded(nextPhase.key);
     }
   };
@@ -149,7 +150,7 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                 <div className="flex-1">
                   <div className="flex items-baseline justify-between mb-1.5">
                     <div className="text-[13px] font-semibold">
-                      {cleared >= JOURNEY.length ? 'All steps cleared' : <>Step {active.index} of {JOURNEY.length} · <span style={{ color: active.accent }}>{active.code}</span></>}
+                      {cleared >= phases.length ? 'All steps cleared' : <>Step {active.index} of {phases.length} · <span style={{ color: active.accent }}>{active.code}</span></>}
                     </div>
                     <div className="text-[11.5px] text-muted num">{progress.done}/{progress.total} done</div>
                   </div>
@@ -158,9 +159,9 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                       initial={false} animate={{ width: `${progress.pct}%` }} transition={{ duration: 0.4 }} />
                   </div>
                   <div className="flex items-center gap-1 mt-2">
-                    {JOURNEY.map((p) => {
+                    {phases.map((p) => {
                       const done = isGatePassed(journey, p.key);
-                      const isActive = p.key === active.key && cleared < JOURNEY.length;
+                      const isActive = p.key === active.key && cleared < phases.length;
                       return (
                         <div key={p.key} className="flex-1 h-1 rounded-full transition-colors"
                           style={{ background: done ? p.accent : isActive ? `${p.accent}66` : 'hsl(var(--surface-2))' }} title={p.code} />
@@ -193,10 +194,11 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                 </div>
               )}
 
-              {JOURNEY.map((phase) => (
+              {phases.map((phase) => (
                 <PhaseCard
                   key={phase.key}
                   phase={phase}
+                  journeyPhases={phases}
                   journey={journey}
                   expanded={effectiveExpanded === phase.key}
                   onToggleExpand={() => setExpanded(effectiveExpanded === phase.key ? null : phase.key)}
@@ -295,10 +297,11 @@ function ProgressRing({ pct, accent }: { pct: number; accent: string }) {
 }
 
 function PhaseCard({
-  phase, journey, expanded, onToggleExpand, onToggleTask, onTogglePillarDone,
+  phase, journeyPhases, journey, expanded, onToggleExpand, onToggleTask, onTogglePillarDone,
   onAddEvidence, onRemoveEvidence, onPassGate, caseData, onUpdateCase,
 }: {
   phase: JourneyPhase;
+  journeyPhases: JourneyPhase[];
   journey: CaseJourneyState;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -310,11 +313,11 @@ function PhaseCard({
   caseData: Case;
   onUpdateCase: (patch: Partial<Case>) => void;
 }) {
-  const unlocked = isPhaseUnlocked(journey, phase);
+  const unlocked = isPhaseUnlocked(journey, phase, journeyPhases);
   const complete = isPhaseComplete(journey, phase);
   const gatePassed = isGatePassed(journey, phase.key);
   const { done, total } = phaseProgress(journey, phase);
-  const prev = phase.index > 1 ? JOURNEY[phase.index - 2] : null;
+  const prev = phase.index > 1 ? journeyPhases[phase.index - 2] : null;
   const statusColor = gatePassed ? phase.accent : unlocked ? 'hsl(var(--ink))' : 'hsl(var(--faint))';
 
   return (
