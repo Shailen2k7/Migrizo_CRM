@@ -4,9 +4,10 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/components/shared/app-provider';
 import type { Case } from '@/lib/types';
 import { cn, initials, avatarColor, timeAgo } from '@/lib/utils';
-import { Briefcase, Plus, Search, Moon, CheckCircle2 } from 'lucide-react';
+import { Briefcase, Plus, Search, Moon, CheckCircle2, Trash2 } from 'lucide-react';
 import { CaseDrawer } from '@/components/cases/case-drawer';
 import { AddCaseDialog } from '@/components/cases/add-case-dialog';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import {
   JOURNEY, getJourney, normalizeVisaType, normalizeJourney, activePhase, overallProgress, phasesCleared,
   isGatePassed, allGatesPassed, DECISION_META, type PhaseKey,
@@ -29,11 +30,12 @@ type Snap = {
 };
 
 export default function CasesPage() {
-  const { cases, leads } = useApp();
+  const { cases, leads, deleteCase } = useApp();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [segment, setSegment] = useState<Segment>('all');
   const [search, setSearch] = useState('');
+  const [confirmRemove, setConfirmRemove] = useState<Case | null>(null);
 
   const snapshots: Snap[] = useMemo(() => cases.map((c) => {
     const j = normalizeJourney(c.journey);
@@ -158,17 +160,30 @@ export default function CasesPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((s) => <CaseCard key={s.case.id} snap={s} onOpen={() => setSelectedCaseId(s.case.id)} />)}
+          {filtered.map((s) => <CaseCard key={s.case.id} snap={s} onOpen={() => setSelectedCaseId(s.case.id)} onRemove={() => setConfirmRemove(s.case)} />)}
         </div>
       )}
 
       <CaseDrawer caseId={selectedCaseId} onClose={() => setSelectedCaseId(null)} />
       <AddCaseDialog open={addOpen} onClose={() => setAddOpen(false)} leads={leads} onCreated={(id) => { setAddOpen(false); setSelectedCaseId(id); }} />
+
+      <ConfirmDialog
+        open={!!confirmRemove}
+        onClose={() => setConfirmRemove(null)}
+        onConfirm={async () => {
+          if (confirmRemove) { await deleteCase(confirmRemove.id); setConfirmRemove(null); }
+        }}
+        title={confirmRemove ? `Remove ${confirmRemove.client_name}'s case?` : 'Remove case?'}
+        description="This removes the case from the Cases tab only. The client stays in Leads (and Payments, if they have any) — only the visa-journey case is deleted. This cannot be undone."
+        confirmLabel="Remove from Cases"
+        cancelLabel="Keep case"
+        variant="danger"
+      />
     </div>
   );
 }
 
-function CaseCard({ snap, onOpen }: { snap: Snap; onOpen: () => void }) {
+function CaseCard({ snap, onOpen, onRemove }: { snap: Snap; onOpen: () => void; onRemove: () => void }) {
   const c = snap.case;
   const phase = snap.phase;
   const { archived, dormant, finished } = snap;
@@ -178,10 +193,11 @@ function CaseCard({ snap, onOpen }: { snap: Snap; onOpen: () => void }) {
   const phaseLabel = archived ? 'Closed' : finished ? 'Completed' : `${phase.name}`;
 
   return (
+    <div className="relative group">
     <button onClick={onOpen}
       className={cn(
         'relative w-full overflow-hidden rounded-2xl border bg-surface text-left transition-all',
-        'hover:-translate-y-0.5 hover:shadow-lg hover:border-border-strong group',
+        'hover:-translate-y-0.5 hover:shadow-lg hover:border-border-strong',
         (archived || dormant) && 'opacity-90 hover:opacity-100',
       )}
       style={{ borderColor: 'hsl(var(--border))' }}>
@@ -229,5 +245,12 @@ function CaseCard({ snap, onOpen }: { snap: Snap; onOpen: () => void }) {
         </div>
       </div>
     </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        title="Remove from Cases (client stays in Leads)"
+        className="absolute top-3 right-3 z-10 p-2 rounded-md bg-surface/80 backdrop-blur text-muted hover:text-danger hover:bg-rose-50 border border-border transition-colors">
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
   );
 }
