@@ -7,8 +7,8 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useApp } from '@/components/shared/app-provider';
 import type { Payment, Milestone } from '@/lib/types';
 import { MILESTONE_META } from '@/lib/types';
-import { formatINRFull, cn } from '@/lib/utils';
-import { FileText, Pencil, Trash2, IndianRupee } from 'lucide-react';
+import { formatMoney, moneySymbol, cn } from '@/lib/utils';
+import { FileText, Pencil, Trash2 } from 'lucide-react';
 
 interface Props {
   payment: Payment;
@@ -64,7 +64,7 @@ export function PaymentRow({ payment }: Props) {
           </div>
           <div className="flex items-center gap-2">
             <div className="text-right">
-              <div className="num font-bold">{formatINRFull(payment.amount)}</div>
+              <div className="num font-bold">{formatMoney(payment.amount, payment.currency)}</div>
               <span className="chip" style={{ background: statusMeta[payment.status].bg, color: statusMeta[payment.status].fg, border: 'none' }}>{statusMeta[payment.status].label}</span>
             </div>
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -108,12 +108,12 @@ export function PaymentRow({ payment }: Props) {
               />
             </div>
             <div>
-              <label className="input-label">Amount (₹)</label>
+              <label className="input-label">Amount ({moneySymbol(payment.currency)})</label>
               <div className="relative">
-                <IndianRupee className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-faint text-[13px] num">{moneySymbol(payment.currency)}</span>
                 <input type="number" min="0" className="input pl-8" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
               </div>
-              {amount && Number(amount) > 0 && <div className="text-[11px] text-muted mt-1">{formatINRFull(Math.round(Number(amount)))}</div>}
+              {amount && Number(amount) > 0 && <div className="text-[11px] text-muted mt-1">{formatMoney(Math.round(Number(amount)), payment.currency)}</div>}
             </div>
           </div>
 
@@ -146,7 +146,7 @@ export function PaymentRow({ payment }: Props) {
         onClose={() => setConfirmDelete(false)}
         onConfirm={async () => { await deletePayment(payment.id); setConfirmDelete(false); }}
         title="Delete this payment?"
-        description={`This will delete the ${MILESTONE_META[payment.milestone].label} payment of ${formatINRFull(payment.amount)}. The client's Collected total will be reduced automatically. This cannot be undone.`}
+        description={`This will delete the ${MILESTONE_META[payment.milestone].label} payment of ${formatMoney(payment.amount, payment.currency)}. The client's Collected total will be reduced automatically. This cannot be undone.`}
         confirmLabel="Delete payment"
         variant="danger"
       />
