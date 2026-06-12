@@ -47,6 +47,17 @@ export function formatMoneyShort(n: number, currency?: string | null): string {
   return `${sym}${n.toLocaleString('en-IN')}`;
 }
 
+// Approximate FX rates → INR. Used ONLY to roll foreign payments into the
+// rupee headline totals (Payments cards, Dashboard revenue card, revenue chart).
+// Per-payment and per-client amounts always display in their own currency.
+// Update these numbers whenever rates move materially.
+export const FX_TO_INR: Record<string, number> = { INR: 1, GBP: 127.5, USD: 95.2 };
+
+export function toINR(amount: number, currency?: string | null): number {
+  const rate = FX_TO_INR[currency || 'INR'] ?? 1;
+  return (amount || 0) * rate;
+}
+
 export function initials(name: string): string {
   if (!name) return '?';
   const parts = name.trim().split(/\s+/).filter(Boolean);
