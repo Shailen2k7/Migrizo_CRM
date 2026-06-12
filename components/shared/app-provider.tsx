@@ -260,6 +260,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
       score: input.score ?? 50,
       next_follow_up: input.next_follow_up || null,
       payment_status: input.payment_status || 'none',
+      currency: input.currency || 'INR',
       amount_paid: input.amount_paid || 0,
       amount_total: input.amount_total || 0,
       last_note: input.last_note || null,

@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Modal } from '@/components/shared/modal';
 import { useApp } from '@/components/shared/app-provider';
 import { MILESTONE_META } from '@/lib/types';
-import type { Milestone, Payment, Currency } from '@/lib/types';
+import type { Milestone, Payment, Currency, Lead } from '@/lib/types';
 import { formatMoney, moneySymbol, cn } from '@/lib/utils';
 import { Select } from '@/components/shared/select';
 import { Wallet, CheckCircle2, CalendarClock, AlertTriangle } from 'lucide-react';
@@ -14,7 +14,7 @@ interface Props { open: boolean; onClose: () => void; presetLeadId?: string | nu
 type RecordMode = 'received' | 'scheduled';
 
 export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
-  const { leads, payments, recordPayment, updateLead } = useApp();
+  const { leads, recordPayment, updateLead } = useApp();
   const [leadId, setLeadId] = useState<string>('');
   const [milestone, setMilestone] = useState<Milestone>('kickstart');
   const [amount, setAmount] = useState<string>('');
@@ -56,8 +56,7 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
   useEffect(() => {
     if (selectedLead) {
       setTotalFee(selectedLead.amount_total ? String(selectedLead.amount_total) : '');
-      const lp = payments.find((p) => p.lead_id === selectedLead.id);
-      setCurrency((lp?.currency as Currency) || 'INR');
+      setCurrency((selectedLead.currency as Currency) || 'INR');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLead?.id]);
@@ -67,9 +66,10 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
     if (!leadId || !n || n <= 0) return;
     if (mode === 'scheduled' && !dueDate) return;
     setBusy(true);
-    if (totalFeeInput > 0 && totalFeeInput !== currentTotal) {
-      await updateLead(leadId, { amount_total: totalFeeInput });
-    }
+    const leadPatch: Partial<Lead> = {};
+    if (totalFeeInput > 0 && totalFeeInput !== currentTotal) leadPatch.amount_total = totalFeeInput;
+    if (currency !== (selectedLead?.currency || 'INR')) leadPatch.currency = currency;
+    if (Object.keys(leadPatch).length > 0) await updateLead(leadId, leadPatch);
     // Determine status: if scheduled and due_date is in the past → overdue; otherwise pending
     const status: Payment['status'] = mode === 'received'
       ? 'paid'

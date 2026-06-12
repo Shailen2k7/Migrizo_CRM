@@ -101,6 +101,8 @@ export function TemperatureDonut({ leads }: { leads: Lead[] }) {
 // =========================================
 export function DailyChart({ leads }: { leads: Lead[] }) {
   const data = useMemo(() => {
+    const ccyByLead: Record<string, string> = {};
+    leads.forEach((l) => { ccyByLead[l.id] = l.currency || 'INR'; });
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const days: { date: Date; count: number; label: string }[] = [];
     for (let i = 13; i >= 0; i--) {
@@ -142,8 +144,10 @@ export function DailyChart({ leads }: { leads: Lead[] }) {
 // =========================================
 // Revenue trend — area chart, last 6 months
 // =========================================
-export function RevenueChart({ payments }: { payments: Payment[] }) {
+export function RevenueChart({ payments, leads }: { payments: Payment[]; leads: Lead[] }) {
   const data = useMemo(() => {
+    const ccyByLead: Record<string, string> = {};
+    leads.forEach((l) => { ccyByLead[l.id] = l.currency || 'INR'; });
     const today = new Date();
     const months: { date: Date; total: number; label: string }[] = [];
     for (let i = 5; i >= 0; i--) {
@@ -154,10 +158,10 @@ export function RevenueChart({ payments }: { payments: Payment[] }) {
       if (p.status !== 'paid' || !p.paid_at) return;
       const pd = new Date(p.paid_at);
       const idx = months.findIndex((m) => m.date.getMonth() === pd.getMonth() && m.date.getFullYear() === pd.getFullYear());
-      if (idx >= 0) months[idx].total += toINR(p.amount, p.currency);
+      if (idx >= 0) months[idx].total += toINR(p.amount, ccyByLead[p.lead_id] || 'INR');
     });
     return months;
-  }, [payments]);
+  }, [payments, leads]);
 
   const max = Math.max(1, ...data.map((d) => d.total));
   const total = data.reduce((s, d) => s + d.total, 0);

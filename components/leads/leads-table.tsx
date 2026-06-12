@@ -9,7 +9,7 @@ import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Search, Star, Cop
 import { useApp } from '@/components/shared/app-provider';
 import type { Lead, LeadStage } from '@/lib/types';
 import { STAGE_META, STAGE_ORDER, PAYMENT_META, getStageMeta, getVisaMeta } from '@/lib/types';
-import { initials, avatarColor, formatINRFull, scoreColor, timeAgo, cn } from '@/lib/utils';
+import { initials, avatarColor, formatMoney, scoreColor, timeAgo, cn } from '@/lib/utils';
 import { IndustryChip } from '@/components/shared/industry-chip';
 
 // Small copy-to-clipboard button with tick feedback
@@ -151,7 +151,7 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
     },
     {
       id: 'amount', accessorKey: 'amount_paid', header: 'Amount paid',
-      cell: ({ row }) => { const a = row.original.amount_paid; return <span className={cn('num text-[13px] font-semibold', a ? 'text-ink' : 'text-faint')}>{a ? formatINRFull(a) : '—'}</span>; },
+      cell: ({ row }) => { const a = row.original.amount_paid; return <span className={cn('num text-[13px] font-semibold', a ? 'text-ink' : 'text-faint')}>{a ? formatMoney(a, row.original.currency) : '—'}</span>; },
     },
     {
       id: 'note', header: 'Last note',

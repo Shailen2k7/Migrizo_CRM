@@ -12,7 +12,7 @@ import { FollowUpsList } from '@/components/followups/followups-list';
 import { AddFollowUpDialog } from '@/components/followups/add-followup-dialog';
 import { PaymentRow } from '@/components/payments/payment-row';
 import { IndustrySelector, IndustryChip } from '@/components/shared/industry-chip';
-import { initials, avatarColor, formatINRFull, timeAgo, scoreColor, cn } from '@/lib/utils';
+import { initials, avatarColor, formatMoney, timeAgo, scoreColor, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 interface Props {
@@ -86,6 +86,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   };
 
   const leadPayments: Payment[] = leadId ? payments.filter((p) => p.lead_id === leadId) : [];
+  const leadCurrency = effectiveLead?.currency || 'INR';
   const leadFollowUps = useMemo(() => followUps.filter((f) => f.lead_id === leadId), [followUps, leadId]);
   const pendingFollowUps = leadFollowUps.filter((f) => f.status === 'pending').length;
   const open = !!leadId && !!effectiveLead;
@@ -190,8 +191,20 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                       <InlineText value={effectiveLead.email} onChange={(v) => setLeadPending({ email: v })} placeholder="email@…" />
                     </Row>
                     {canViewPayments && <>
+                    <Row label="Currency">
+                      <div className="flex gap-1.5">
+                        {(['INR', 'GBP', 'USD'] as const).map((c) => (
+                          <button key={c} type="button" onClick={() => setLeadPending({ currency: c })}
+                            className={cn('inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[12px] font-semibold border transition', leadCurrency === c ? 'border-transparent' : 'border-border hover:bg-surface-2 text-muted')}
+                            style={leadCurrency === c ? { background: '#EEF0FF', color: '#3C3489' } : undefined}>
+                            <span className="text-[13px]">{c === 'INR' ? '₹' : c === 'GBP' ? '£' : '$'}</span> {c}
+                          </button>
+                        ))}
+                      </div>
+                    </Row>
                     <Row label="Total fee">
                       <InlineNumber
+                        currency={leadCurrency}
                         value={effectiveLead.amount_total}
                         onChange={(v) => {
                           const paid = effectiveLead.amount_paid || 0;
@@ -203,6 +216,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     </Row>
                     <Row label="Amount paid">
                       <InlineNumber
+                        currency={leadCurrency}
                         value={effectiveLead.amount_paid}
                         onChange={(v) => {
                           const total = effectiveLead.amount_total || 0;
@@ -214,6 +228,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     </Row>
                     <Row label="Overdue">
                       <InlineNumber
+                        currency={leadCurrency}
                         value={effectiveLead.amount_overdue}
                         onChange={(v) => setLeadPending({ amount_overdue: v })}
                         placeholder="0"
@@ -225,7 +240,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     {effectiveLead.amount_total > 0 && (
                       <Row label="Remaining">
                         <span className="text-[13px] font-semibold num" style={{ color: Math.max(0, (effectiveLead.amount_total || 0) - (effectiveLead.amount_paid || 0)) > 0 ? '#854F0B' : '#0F6E56' }}>
-                          {formatINRFull(Math.max(0, (effectiveLead.amount_total || 0) - (effectiveLead.amount_paid || 0)))}
+                          {formatMoney(Math.max(0, (effectiveLead.amount_total || 0) - (effectiveLead.amount_paid || 0)), leadCurrency)}
                         </span>
                         <span className="text-[10.5px] text-faint ml-2">· total − paid</span>
                       </Row>
@@ -331,7 +346,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     ) : (
                       <div className="space-y-2">
                         {leadPayments.map((p) => (
-                          <PaymentRow key={p.id} payment={p} />
+                          <PaymentRow key={p.id} payment={p} currency={leadCurrency} />
                         ))}
                       </div>
                     )}
@@ -428,7 +443,7 @@ function InlineText({ value, onChange, placeholder }: { value: string | null; on
   return <button onClick={() => setEditing(true)} className="text-[13px] text-ink-2 hover:text-ink hover:bg-surface-2 px-2 py-1 -mx-2 -my-1 rounded text-left">{value || <span className="text-faint">{placeholder || '—'}</span>}</button>;
 }
 
-function InlineNumber({ value, onChange, placeholder }: { value: number | null; onChange: (v: number) => void; placeholder?: string }) {
+function InlineNumber({ value, onChange, placeholder, currency = 'INR' }: { value: number | null; onChange: (v: number) => void; placeholder?: string; currency?: string }) {
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState((value ?? 0).toString());
   useEffect(() => setV((value ?? 0).toString()), [value]);
@@ -438,5 +453,5 @@ function InlineNumber({ value, onChange, placeholder }: { value: number | null; 
     if (n !== (value || 0)) onChange(n);
   };
   if (editing) return <input type="number" min="0" className="input py-1.5 px-2.5 text-[12px] w-[140px] num" autoFocus value={v} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setV((value ?? 0).toString()); setEditing(false); } }} placeholder={placeholder} />;
-  return <button onClick={() => setEditing(true)} className="num font-semibold text-[13px] hover:text-ink hover:bg-surface-2 px-2 py-1 -mx-2 -my-1 rounded text-left">{formatINRFull(value || 0)}</button>;
+  return <button onClick={() => setEditing(true)} className="num font-semibold text-[13px] hover:text-ink hover:bg-surface-2 px-2 py-1 -mx-2 -my-1 rounded text-left">{formatMoney(value || 0, currency)}</button>;
 }

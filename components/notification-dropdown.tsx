@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { Bell, AlertTriangle, Clock, IndianRupee, Zap, Check, CheckCheck, X, BellOff, ExternalLink } from 'lucide-react';
 import type { Lead, Payment } from '@/lib/types';
-import { formatINR, timeAgo, initials, avatarColor } from '@/lib/utils';
+import { formatMoney, timeAgo, initials, avatarColor } from '@/lib/utils';
 import { getReadSet, markRead, markUnread, clearAllRead, getPrefs } from '@/lib/notifications';
 
 type NotifType = 'overdue-fu' | 'today-fu' | 'overdue-pay' | 'hot-stale';
@@ -90,7 +90,7 @@ export function useNotifications({ leads, payments }: { leads: Lead[]; payments:
           id: 'pay-overdue-' + p.id,
           type: 'overdue-pay',
           text: `Payment overdue from ${lead.full_name}`,
-          sub: `${formatINR(p.amount)} · ${p.due_date ? `due ${timeAgo(p.due_date)}` : 'overdue'}`,
+          sub: `${formatMoney(p.amount, lead?.currency || 'INR')} · ${p.due_date ? `due ${timeAgo(p.due_date)}` : 'overdue'}`,
           leadId: p.lead_id,
           ts: p.due_date ? new Date(p.due_date).getTime() : new Date(p.created_at).getTime(),
           priority: 'high',

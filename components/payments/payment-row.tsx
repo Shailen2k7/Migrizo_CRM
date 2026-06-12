@@ -5,16 +5,17 @@ import { Modal } from '@/components/shared/modal';
 import { Select } from '@/components/shared/select';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useApp } from '@/components/shared/app-provider';
-import type { Payment, Milestone, Currency } from '@/lib/types';
+import type { Payment, Milestone } from '@/lib/types';
 import { MILESTONE_META } from '@/lib/types';
 import { formatMoney, moneySymbol, cn } from '@/lib/utils';
 import { FileText, Pencil, Trash2 } from 'lucide-react';
 
 interface Props {
   payment: Payment;
+  currency?: string; // the lead's currency — single source of truth
 }
 
-export function PaymentRow({ payment }: Props) {
+export function PaymentRow({ payment, currency = 'INR' }: Props) {
   const { updatePayment, deletePayment } = useApp();
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -22,7 +23,6 @@ export function PaymentRow({ payment }: Props) {
   const [milestone, setMilestone] = useState<Milestone>(payment.milestone);
   const [amount, setAmount] = useState<string>(String(payment.amount));
   const [status, setStatus] = useState<Payment['status']>(payment.status);
-  const [currency, setCurrency] = useState<Currency>(payment.currency || 'INR');
   const [note, setNote] = useState(payment.note || '');
   const [busy, setBusy] = useState(false);
 
@@ -30,7 +30,6 @@ export function PaymentRow({ payment }: Props) {
     setMilestone(payment.milestone);
     setAmount(String(payment.amount));
     setStatus(payment.status);
-    setCurrency(payment.currency || 'INR');
     setNote(payment.note || '');
     setEditOpen(true);
   };
@@ -42,7 +41,6 @@ export function PaymentRow({ payment }: Props) {
     await updatePayment(payment.id, {
       milestone,
       amount: Math.round(n),
-      currency,
       status,
       note: note.trim() || null,
       paid_at: status === 'paid' ? (payment.paid_at || new Date().toISOString()) : null,
@@ -67,7 +65,7 @@ export function PaymentRow({ payment }: Props) {
           </div>
           <div className="flex items-center gap-2">
             <div className="text-right">
-              <div className="num font-bold">{formatMoney(payment.amount, payment.currency)}</div>
+              <div className="num font-bold">{formatMoney(payment.amount, currency)}</div>
               <span className="chip" style={{ background: statusMeta[payment.status].bg, color: statusMeta[payment.status].fg, border: 'none' }}>{statusMeta[payment.status].label}</span>
             </div>
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -121,19 +119,6 @@ export function PaymentRow({ payment }: Props) {
           </div>
 
           <div>
-            <label className="input-label">Currency</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['INR', 'GBP', 'USD'] as Currency[]).map((c) => (
-                <button key={c} type="button" onClick={() => setCurrency(c)}
-                  className={cn('flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[12.5px] font-semibold border transition', currency === c ? 'border-transparent' : 'border-border hover:bg-surface-2 text-muted')}
-                  style={currency === c ? { background: '#EEF0FF', color: '#3C3489' } : undefined}>
-                  <span className="text-[14px]">{moneySymbol(c)}</span> {c}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
             <label className="input-label">Status</label>
             <div className="flex gap-2">
               {(['paid', 'pending', 'overdue'] as Payment['status'][]).map((s) => (
@@ -162,7 +147,7 @@ export function PaymentRow({ payment }: Props) {
         onClose={() => setConfirmDelete(false)}
         onConfirm={async () => { await deletePayment(payment.id); setConfirmDelete(false); }}
         title="Delete this payment?"
-        description={`This will delete the ${MILESTONE_META[payment.milestone].label} payment of ${formatMoney(payment.amount, payment.currency)}. The client's Collected total will be reduced automatically. This cannot be undone.`}
+        description={`This will delete the ${MILESTONE_META[payment.milestone].label} payment of ${formatMoney(payment.amount, currency)}. The client's Collected total will be reduced automatically. This cannot be undone.`}
         confirmLabel="Delete payment"
         variant="danger"
       />
