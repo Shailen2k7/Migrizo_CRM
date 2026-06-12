@@ -5,7 +5,7 @@ import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
 import { MILESTONE_META, PAYMENT_META } from '@/lib/types';
 import type { Milestone, Payment, Lead } from '@/lib/types';
-import { formatMoney, initials, avatarColor, cn } from '@/lib/utils';
+import { formatINR, formatMoney, initials, avatarColor, cn } from '@/lib/utils';
 import { Plus, Download, Search, IndianRupee, Check, Clock, AlertTriangle, TrendingUp, EyeOff, Eye, MoreVertical } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -73,17 +73,12 @@ export default function PaymentsPage() {
 
   const totals = useMemo(() => {
     const visibleLeads = leads.filter((l) => !l.hidden_from_payments);
-    const collected: Record<string, number> = {};
-    const pending: Record<string, number> = {};
-    const overdue: Record<string, number> = {};
-    for (const l of visibleLeads) {
-      const ccy = leadCcy[l.id] || 'INR';
-      collected[ccy] = (collected[ccy] || 0) + (l.amount_paid || 0);
-      pending[ccy] = (pending[ccy] || 0) + Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0));
-      overdue[ccy] = (overdue[ccy] || 0) + (l.amount_overdue || 0);
-    }
-    return { collected, pending, overdue };
-  }, [leads, leadCcy]);
+    const collected = visibleLeads.reduce((s, l) => s + (l.amount_paid || 0), 0);
+    const pending = visibleLeads.reduce((s, l) => s + Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0)), 0);
+    const overdue = visibleLeads.reduce((s, l) => s + (l.amount_overdue || 0), 0);
+    const forecast = pending;
+    return { collected, pending, overdue, forecast };
+  }, [leads]);
 
   // Milestone pipeline: count clients whose most recent milestone is X
   const milestoneCards = useMemo(() => {
@@ -147,10 +142,10 @@ export default function PaymentsPage() {
 
       {/* Payment KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-        <KPI label="Collected" totals={totals.collected} color="#10B981" icon={Check} />
-        <KPI label="Pending" totals={totals.pending} color="#F59E0B" icon={Clock} />
-        <KPI label="Overdue" totals={totals.overdue} color="#EF4444" icon={AlertTriangle} />
-        <KPI label="Forecast (30d)" totals={totals.pending} color="#6366F1" icon={TrendingUp} />
+        <KPI label="Collected" value={formatINR(totals.collected)} color="#10B981" icon={Check} />
+        <KPI label="Pending" value={formatINR(totals.pending)} color="#F59E0B" icon={Clock} />
+        <KPI label="Overdue" value={formatINR(totals.overdue)} color="#EF4444" icon={AlertTriangle} />
+        <KPI label="Forecast (30d)" value={formatINR(totals.forecast)} color="#6366F1" icon={TrendingUp} />
       </div>
 
       {/* Milestone Pipeline */}
@@ -246,23 +241,14 @@ export default function PaymentsPage() {
   );
 }
 
-function KPI({ label, totals, color, icon: Icon }: { label: string; totals: Record<string, number>; color: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }) {
-  const entries = Object.entries(totals).filter(([, v]) => v > 0);
+function KPI({ label, value, color, icon: Icon }: { label: string; value: string; color: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }) {
   return (
     <div className="kpi">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</span>
         <Icon className="w-3.5 h-3.5" style={{ color }} />
       </div>
-      {entries.length === 0 ? (
-        <div className="text-[26px] font-bold tracking-tight leading-none mt-3.5 num" style={{ color }}>{formatMoney(0, 'INR')}</div>
-      ) : (
-        <div className="mt-3 space-y-0.5">
-          {entries.map(([ccy, v]) => (
-            <div key={ccy} className="text-[22px] font-bold tracking-tight leading-tight num" style={{ color }}>{formatMoney(v, ccy)}</div>
-          ))}
-        </div>
-      )}
+      <div className="text-[26px] font-bold tracking-tight leading-none mt-3.5 num" style={{ color }}>{value}</div>
     </div>
   );
 }
