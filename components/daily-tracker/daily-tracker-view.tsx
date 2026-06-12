@@ -5,7 +5,7 @@ import { useApp } from '@/components/shared/app-provider';
 import type { Lead, LeadStage } from '@/lib/types';
 import { STAGE_META, getStageMeta, isFollowUpOverdue, isFollowUpToday } from '@/lib/types';
 import { Users, Flame, Snowflake, Trash2, Calendar, Download, AlertTriangle, ChevronRight, MessageCircle, Trophy, ArrowUpRight, ArrowDownRight } from 'lucide-react';
-import { cn, initials, avatarColor, formatINRFull } from '@/lib/utils';
+import { cn, initials, avatarColor, formatINRFull, toINR } from '@/lib/utils';
 import { IndustryChip } from '@/components/shared/industry-chip';
 import { LeadDrawer } from '@/components/leads/lead-drawer';
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog';
@@ -79,6 +79,11 @@ type StageFilter = 'all' | 'hot' | 'cold' | 'junk' | LeadStage;
 
 export function DailyTrackerView() {
   const { leads, followUps, payments, memberNameById } = useApp();
+  const leadCcy = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const p of payments) { if (!m[p.lead_id]) m[p.lead_id] = p.currency || 'INR'; }
+    return m;
+  }, [payments]);
   const today = useMemo(() => startOfDay(new Date()), []);
   const [from, setFrom] = useState<Date>(today);
   const [to, setTo] = useState<Date>(today);
@@ -101,7 +106,7 @@ export function DailyTrackerView() {
 
   // ------- Closed deals: leads currently 'won' whose updated_at is in range -------
   const closedInRange = useMemo(() => leads.filter((l) => l.stage === 'won' && inRange(l.updated_at, from, to)), [leads, from, to]);
-  const closedRevenue = useMemo(() => closedInRange.reduce((s, l) => s + (l.amount_paid || 0), 0), [closedInRange]);
+  const closedRevenue = useMemo(() => closedInRange.reduce((s, l) => s + toINR(l.amount_paid || 0, leadCcy[l.id] || 'INR'), 0), [closedInRange, leadCcy]);
 
   // ------- 7-day comparison for single-day view -------
   const comparison = useMemo(() => {
@@ -123,7 +128,7 @@ export function DailyTrackerView() {
 
   const overduePaymentInfo = useMemo(() => {
     const overdueLeads = leads.filter((l) => !l.hidden_from_payments && (l.amount_overdue || 0) > 0);
-    const total = overdueLeads.reduce((s, l) => s + (l.amount_overdue || 0), 0);
+    const total = overdueLeads.reduce((s, l) => s + toINR(l.amount_overdue || 0, leadCcy[l.id] || 'INR'), 0);
     return { clientCount: overdueLeads.length, totalAmount: total };
   }, [leads]);
 
