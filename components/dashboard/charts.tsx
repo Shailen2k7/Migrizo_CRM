@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import type { Lead, Payment } from '@/lib/types';
 import { STAGE_META } from '@/lib/types';
-import { formatINR } from '@/lib/utils';
+import { formatINR, toINR } from '@/lib/utils';
 
 // =========================================
 // Lead Funnel — horizontal stacked bars by stage
@@ -154,7 +154,7 @@ export function RevenueChart({ payments }: { payments: Payment[] }) {
       if (p.status !== 'paid' || !p.paid_at) return;
       const pd = new Date(p.paid_at);
       const idx = months.findIndex((m) => m.date.getMonth() === pd.getMonth() && m.date.getFullYear() === pd.getFullYear());
-      if (idx >= 0) months[idx].total += p.amount;
+      if (idx >= 0) months[idx].total += toINR(p.amount, p.currency);
     });
     return months;
   }, [payments]);
