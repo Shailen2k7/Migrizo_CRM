@@ -5,7 +5,7 @@ import { Modal } from '@/components/shared/modal';
 import { Select } from '@/components/shared/select';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useApp } from '@/components/shared/app-provider';
-import type { Payment, Milestone } from '@/lib/types';
+import type { Payment, Milestone, Currency } from '@/lib/types';
 import { MILESTONE_META } from '@/lib/types';
 import { formatMoney, moneySymbol, cn } from '@/lib/utils';
 import { FileText, Pencil, Trash2 } from 'lucide-react';
@@ -22,6 +22,7 @@ export function PaymentRow({ payment }: Props) {
   const [milestone, setMilestone] = useState<Milestone>(payment.milestone);
   const [amount, setAmount] = useState<string>(String(payment.amount));
   const [status, setStatus] = useState<Payment['status']>(payment.status);
+  const [currency, setCurrency] = useState<Currency>(payment.currency || 'INR');
   const [note, setNote] = useState(payment.note || '');
   const [busy, setBusy] = useState(false);
 
@@ -29,6 +30,7 @@ export function PaymentRow({ payment }: Props) {
     setMilestone(payment.milestone);
     setAmount(String(payment.amount));
     setStatus(payment.status);
+    setCurrency(payment.currency || 'INR');
     setNote(payment.note || '');
     setEditOpen(true);
   };
@@ -40,6 +42,7 @@ export function PaymentRow({ payment }: Props) {
     await updatePayment(payment.id, {
       milestone,
       amount: Math.round(n),
+      currency,
       status,
       note: note.trim() || null,
       paid_at: status === 'paid' ? (payment.paid_at || new Date().toISOString()) : null,
@@ -108,12 +111,25 @@ export function PaymentRow({ payment }: Props) {
               />
             </div>
             <div>
-              <label className="input-label">Amount ({moneySymbol(payment.currency)})</label>
+              <label className="input-label">Amount ({moneySymbol(currency)})</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-faint text-[13px] num">{moneySymbol(payment.currency)}</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-faint text-[13px] num">{moneySymbol(currency)}</span>
                 <input type="number" min="0" className="input pl-8" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
               </div>
-              {amount && Number(amount) > 0 && <div className="text-[11px] text-muted mt-1">{formatMoney(Math.round(Number(amount)), payment.currency)}</div>}
+              {amount && Number(amount) > 0 && <div className="text-[11px] text-muted mt-1">{formatMoney(Math.round(Number(amount)), currency)}</div>}
+            </div>
+          </div>
+
+          <div>
+            <label className="input-label">Currency</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['INR', 'GBP', 'USD'] as Currency[]).map((c) => (
+                <button key={c} type="button" onClick={() => setCurrency(c)}
+                  className={cn('flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[12.5px] font-semibold border transition', currency === c ? 'border-transparent' : 'border-border hover:bg-surface-2 text-muted')}
+                  style={currency === c ? { background: '#EEF0FF', color: '#3C3489' } : undefined}>
+                  <span className="text-[14px]">{moneySymbol(c)}</span> {c}
+                </button>
+              ))}
             </div>
           </div>
 
