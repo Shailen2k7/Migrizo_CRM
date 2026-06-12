@@ -374,6 +374,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
       workspace_id: workspace.id,
       milestone: input.milestone,
       amount: input.amount,
+      currency: input.currency || 'INR',
       status: input.status || 'paid',
       due_date: input.due_date || null,
       paid_at: input.status === 'paid' || !input.status ? new Date().toISOString() : null,
