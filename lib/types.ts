@@ -70,12 +70,15 @@ export interface Note {
   created_at: string;
 }
 
+export type Currency = 'INR' | 'GBP' | 'USD';
+
 export interface Payment {
   id: string;
   lead_id: string;
   workspace_id: string;
   milestone: Milestone;
   amount: number;
+  currency: Currency;
   status: MilestoneStatus;
   due_date: string | null;
   paid_at: string | null;

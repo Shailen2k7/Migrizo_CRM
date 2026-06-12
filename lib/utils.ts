@@ -18,6 +18,35 @@ export function formatINRFull(n: number): string {
   return '₹' + (n ?? 0).toLocaleString('en-IN');
 }
 
+// ----- Multi-currency (INR ₹, GBP £, USD $) -----
+export const CURRENCY_SYMBOLS: Record<string, string> = { INR: '₹', GBP: '£', USD: '$' };
+const CURRENCY_LOCALES: Record<string, string> = { INR: 'en-IN', GBP: 'en-GB', USD: 'en-US' };
+
+export function moneySymbol(currency?: string | null): string {
+  return CURRENCY_SYMBOLS[currency || 'INR'] || '₹';
+}
+
+// Full amount with the right symbol, e.g. formatMoney(50000,'GBP') -> "£50,000"
+export function formatMoney(n: number, currency?: string | null): string {
+  const code = currency && CURRENCY_SYMBOLS[currency] ? currency : 'INR';
+  return CURRENCY_SYMBOLS[code] + (n ?? 0).toLocaleString(CURRENCY_LOCALES[code]);
+}
+
+// Compact amount, e.g. "₹2.5L", "£4.0K", "$1.2M"
+export function formatMoneyShort(n: number, currency?: string | null): string {
+  if (!n && n !== 0) return '—';
+  const sym = moneySymbol(currency);
+  if (currency === 'GBP' || currency === 'USD') {
+    if (n >= 1000000) return `${sym}${(n / 1000000).toFixed(2)}M`;
+    if (n >= 1000) return `${sym}${(n / 1000).toFixed(1)}K`;
+    return `${sym}${n.toLocaleString('en-US')}`;
+  }
+  if (n >= 10000000) return `${sym}${(n / 10000000).toFixed(2)}Cr`;
+  if (n >= 100000) return `${sym}${(n / 100000).toFixed(2)}L`;
+  if (n >= 1000) return `${sym}${(n / 1000).toFixed(1)}K`;
+  return `${sym}${n.toLocaleString('en-IN')}`;
+}
+
 export function initials(name: string): string {
   if (!name) return '?';
   const parts = name.trim().split(/\s+/).filter(Boolean);
