@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { TrendingUp, TrendingDown, Users, Target, Clock, IndianRupee, BarChart3, Sparkles, ArrowRight, MessageSquarePlus, UserPlus, ArrowRightCircle } from 'lucide-react';
 import type { Lead, Payment, Activity } from '@/lib/types';
 import { STAGE_META } from '@/lib/types';
-import { formatINR, timeAgo, initials, avatarColor } from '@/lib/utils';
+import { formatINR, toINR, timeAgo, initials, avatarColor } from '@/lib/utils';
 
 // =========================================
 // KPI Cards
@@ -31,9 +31,13 @@ export function KPICards({ leads, payments, canViewPayments = true }: { leads: L
 
     // Revenue reads the SAME source as the Payments tab (lead-level amount_paid,
     // excluding leads hidden from payments) so the two screens always agree.
+    // Each lead's currency = its latest payment's currency (default INR); foreign
+    // amounts are converted to INR so this card matches the Payments tab card.
+    const leadCcy: Record<string, string> = {};
+    for (const p of payments) { if (!leadCcy[p.lead_id]) leadCcy[p.lead_id] = p.currency || 'INR'; }
     const paymentLeads = leads.filter((l) => !l.hidden_from_payments);
-    const revenueCollected = paymentLeads.reduce((s, l) => s + (l.amount_paid || 0), 0);
-    const revenuePending = paymentLeads.reduce((s, l) => s + Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0)), 0);
+    const revenueCollected = paymentLeads.reduce((s, l) => s + toINR(l.amount_paid || 0, leadCcy[l.id] || 'INR'), 0);
+    const revenuePending = paymentLeads.reduce((s, l) => s + toINR(Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0)), leadCcy[l.id] || 'INR'), 0);
 
     const wonCount = leads.filter((l) => l.stage === 'won').length;
     const closableCount = leads.filter((l) => !['won', 'junk'].includes(l.stage)).length;
