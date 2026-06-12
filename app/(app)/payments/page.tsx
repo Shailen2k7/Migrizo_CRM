@@ -5,7 +5,7 @@ import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
 import { MILESTONE_META, PAYMENT_META } from '@/lib/types';
 import type { Milestone, Payment, Lead } from '@/lib/types';
-import { formatINR, formatINRFull, initials, avatarColor, timeAgo, cn } from '@/lib/utils';
+import { formatMoney, initials, avatarColor, cn } from '@/lib/utils';
 import { Plus, Download, Search, IndianRupee, Check, Clock, AlertTriangle, TrendingUp, EyeOff, Eye, MoreVertical } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -46,6 +46,13 @@ export default function PaymentsPage() {
 
   const hiddenClients = useMemo(() => leads.filter((l) => l.hidden_from_payments), [leads]);
 
+  // Each lead's currency = the currency of its latest payment (default INR).
+  const leadCcy = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const p of payments) { if (!m[p.lead_id]) m[p.lead_id] = p.currency || 'INR'; }
+    return m;
+  }, [payments]);
+
   const filtered = useMemo(() => {
     return clientRows.filter((r) => {
       if (seg !== 'all' && r.status !== seg) return false;
@@ -66,12 +73,17 @@ export default function PaymentsPage() {
 
   const totals = useMemo(() => {
     const visibleLeads = leads.filter((l) => !l.hidden_from_payments);
-    const collected = visibleLeads.reduce((s, l) => s + (l.amount_paid || 0), 0);
-    const pending = visibleLeads.reduce((s, l) => s + Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0)), 0);
-    const overdue = visibleLeads.reduce((s, l) => s + (l.amount_overdue || 0), 0);
-    const forecast = pending;
-    return { collected, pending, overdue, forecast };
-  }, [leads]);
+    const collected: Record<string, number> = {};
+    const pending: Record<string, number> = {};
+    const overdue: Record<string, number> = {};
+    for (const l of visibleLeads) {
+      const ccy = leadCcy[l.id] || 'INR';
+      collected[ccy] = (collected[ccy] || 0) + (l.amount_paid || 0);
+      pending[ccy] = (pending[ccy] || 0) + Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0));
+      overdue[ccy] = (overdue[ccy] || 0) + (l.amount_overdue || 0);
+    }
+    return { collected, pending, overdue };
+  }, [leads, leadCcy]);
 
   // Milestone pipeline: count clients whose most recent milestone is X
   const milestoneCards = useMemo(() => {
@@ -95,10 +107,10 @@ export default function PaymentsPage() {
 
   const exportCsv = () => {
     if (payments.length === 0) { toast.error('No payments to export'); return; }
-    const headers = ['Client', 'Milestone', 'Amount', 'Status', 'Paid At', 'Note'];
+    const headers = ['Client', 'Milestone', 'Amount', 'Currency', 'Status', 'Paid At', 'Note'];
     const rows = payments.map((p) => {
       const l = leads.find((x) => x.id === p.lead_id);
-      return [l?.full_name || '—', MILESTONE_META[p.milestone].label, p.amount, p.status, p.paid_at || '', p.note || ''];
+      return [l?.full_name || '—', MILESTONE_META[p.milestone].label, p.amount, p.currency || 'INR', p.status, p.paid_at || '', p.note || ''];
     });
     const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -135,10 +147,10 @@ export default function PaymentsPage() {
 
       {/* Payment KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-        <KPI label="Collected" value={formatINR(totals.collected)} color="#10B981" icon={Check} />
-        <KPI label="Pending" value={formatINR(totals.pending)} color="#F59E0B" icon={Clock} />
-        <KPI label="Overdue" value={formatINR(totals.overdue)} color="#EF4444" icon={AlertTriangle} />
-        <KPI label="Forecast (30d)" value={formatINR(totals.forecast)} color="#6366F1" icon={TrendingUp} />
+        <KPI label="Collected" totals={totals.collected} color="#10B981" icon={Check} />
+        <KPI label="Pending" totals={totals.pending} color="#F59E0B" icon={Clock} />
+        <KPI label="Overdue" totals={totals.overdue} color="#EF4444" icon={AlertTriangle} />
+        <KPI label="Forecast (30d)" totals={totals.pending} color="#6366F1" icon={TrendingUp} />
       </div>
 
       {/* Milestone Pipeline */}
@@ -183,7 +195,7 @@ export default function PaymentsPage() {
             <button onClick={() => ui.openRecordPayment()} className="btn btn-primary"><Plus className="w-4 h-4" /> Record first payment</button>
           </div>
         ) : (
-          filtered.map((r) => <ClientPaymentRow key={r.lead.id} lead={r.lead} payments={r.payments} collected={r.collected} pending={r.pending} overdue={r.overdue} status={r.status} onOpen={() => ui.openLeadDrawer(r.lead.id)} onRecord={() => ui.openRecordPayment(r.lead.id)} onHide={() => setConfirmHide(r.lead)} />)
+          filtered.map((r) => <ClientPaymentRow key={r.lead.id} lead={r.lead} payments={r.payments} currency={leadCcy[r.lead.id] || 'INR'} collected={r.collected} pending={r.pending} overdue={r.overdue} status={r.status} onOpen={() => ui.openLeadDrawer(r.lead.id)} onRecord={() => ui.openRecordPayment(r.lead.id)} onHide={() => setConfirmHide(r.lead)} />)
         )}
       </div>
 
@@ -234,19 +246,28 @@ export default function PaymentsPage() {
   );
 }
 
-function KPI({ label, value, color, icon: Icon }: { label: string; value: string; color: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }) {
+function KPI({ label, totals, color, icon: Icon }: { label: string; totals: Record<string, number>; color: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }) {
+  const entries = Object.entries(totals).filter(([, v]) => v > 0);
   return (
     <div className="kpi">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</span>
         <Icon className="w-3.5 h-3.5" style={{ color }} />
       </div>
-      <div className="text-[26px] font-bold tracking-tight leading-none mt-3.5 num" style={{ color }}>{value}</div>
+      {entries.length === 0 ? (
+        <div className="text-[26px] font-bold tracking-tight leading-none mt-3.5 num" style={{ color }}>{formatMoney(0, 'INR')}</div>
+      ) : (
+        <div className="mt-3 space-y-0.5">
+          {entries.map(([ccy, v]) => (
+            <div key={ccy} className="text-[22px] font-bold tracking-tight leading-tight num" style={{ color }}>{formatMoney(v, ccy)}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function ClientPaymentRow({ lead, payments: pays, collected, pending, overdue, status, onOpen, onRecord, onHide }: { lead: Lead; payments: Payment[]; collected: number; pending: number; overdue: number; status: string; onOpen: () => void; onRecord: () => void; onHide: () => void }) {
+function ClientPaymentRow({ lead, payments: pays, currency, collected, pending, overdue, status, onOpen, onRecord, onHide }: { lead: Lead; payments: Payment[]; currency: string; collected: number; pending: number; overdue: number; status: string; onOpen: () => void; onRecord: () => void; onHide: () => void }) {
   const milestones: Milestone[] = ['kickstart', 'profile_building', 'endorsement', 'post_approval'];
   return (
     <div className="panel p-4 flex items-center gap-4 hover:border-border-strong transition-all group">
@@ -257,7 +278,7 @@ function ClientPaymentRow({ lead, payments: pays, collected, pending, overdue, s
           {status === 'overdue' && <span className="chip" style={{ background: 'hsl(var(--rose-soft))', color: '#B91C1C', border: 'none' }}>Overdue</span>}
           {status === 'completed' && <span className="chip" style={{ background: 'hsl(var(--green-soft))', color: '#047857', border: 'none' }}>Completed</span>}
         </div>
-        <div className="text-[11.5px] text-muted">{lead.visa_type || '—'} · {pays.length}/4 milestones {lead.amount_total > 0 && <>· Total {formatINR(lead.amount_total)}</>}</div>
+        <div className="text-[11.5px] text-muted">{lead.visa_type || '—'} · {pays.length}/4 milestones {lead.amount_total > 0 && <>· Total {formatMoney(lead.amount_total, currency)}</>}</div>
       </div>
       <div className="flex items-center gap-1.5">
         {milestones.map((m) => {
@@ -277,15 +298,15 @@ function ClientPaymentRow({ lead, payments: pays, collected, pending, overdue, s
       </div>
       <div className="text-right min-w-[110px]">
         <div className="text-[10px] text-muted uppercase tracking-wider font-semibold">Collected</div>
-        <div className="num text-[15px] font-bold mt-0.5" style={{ color: '#0F6E56' }}>{formatINR(collected)}</div>
+        <div className="num text-[15px] font-bold mt-0.5" style={{ color: '#0F6E56' }}>{formatMoney(collected, currency)}</div>
         {pending > 0 && (
           <div className="text-[10.5px] num mt-0.5" style={{ color: '#854F0B' }}>
-            {formatINR(pending)} pending
+            {formatMoney(pending, currency)} pending
           </div>
         )}
         {overdue > 0 && (
           <div className="text-[10.5px] num font-semibold mt-0.5" style={{ color: '#A32D2D' }}>
-            {formatINR(overdue)} overdue
+            {formatMoney(overdue, currency)} overdue
           </div>
         )}
         {pending === 0 && overdue === 0 && lead.amount_total > 0 && (
@@ -294,7 +315,7 @@ function ClientPaymentRow({ lead, payments: pays, collected, pending, overdue, s
       </div>
       <div className="flex items-center gap-1">
         <button onClick={onRecord} className="btn btn-outline btn-sm"><Plus className="w-3.5 h-3.5" /> Log</button>
-        <button onClick={onHide} title="Remove from Payments section (lead stays in Leads &amp; Dashboard)" className="p-2 rounded-md hover:bg-rose-50 text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity">
+        <button onClick={onHide} title="Remove from Payments section (lead stays in Leads &amp; Dashboard)" className="p-2 rounded-md hover:bg-rose-50 text-muted hover:text-danger transition-colors">
           <EyeOff className="w-3.5 h-3.5" />
         </button>
       </div>
