@@ -4,8 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { Modal } from '@/components/shared/modal';
 import { useApp } from '@/components/shared/app-provider';
 import { MILESTONE_META } from '@/lib/types';
-import type { Milestone, Payment } from '@/lib/types';
-import { formatINRFull, cn } from '@/lib/utils';
+import type { Milestone, Payment, Currency } from '@/lib/types';
+import { formatMoney, moneySymbol, cn } from '@/lib/utils';
 import { Select } from '@/components/shared/select';
 import { Wallet, CheckCircle2, CalendarClock, AlertTriangle } from 'lucide-react';
 
@@ -14,7 +14,7 @@ interface Props { open: boolean; onClose: () => void; presetLeadId?: string | nu
 type RecordMode = 'received' | 'scheduled';
 
 export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
-  const { leads, recordPayment, updateLead } = useApp();
+  const { leads, payments, recordPayment, updateLead } = useApp();
   const [leadId, setLeadId] = useState<string>('');
   const [milestone, setMilestone] = useState<Milestone>('kickstart');
   const [amount, setAmount] = useState<string>('');
@@ -23,6 +23,7 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<RecordMode>('received');
   const [dueDate, setDueDate] = useState<string>(''); // YYYY-MM-DD format
+  const [currency, setCurrency] = useState<Currency>('INR');
 
   const selectedLead = useMemo(() => leads.find((l) => l.id === leadId) || null, [leads, leadId]);
   const currentTotal = selectedLead?.amount_total || 0;
@@ -53,7 +54,11 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
   }, [open, presetLeadId, leads]);
 
   useEffect(() => {
-    if (selectedLead) setTotalFee(selectedLead.amount_total ? String(selectedLead.amount_total) : '');
+    if (selectedLead) {
+      setTotalFee(selectedLead.amount_total ? String(selectedLead.amount_total) : '');
+      const lp = payments.find((p) => p.lead_id === selectedLead.id);
+      setCurrency((lp?.currency as Currency) || 'INR');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLead?.id]);
 
@@ -73,6 +78,7 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
       lead_id: leadId,
       milestone,
       amount: Math.round(n),
+      currency,
       status,
       due_date: mode === 'scheduled' ? dueDate : null,
       note: note.trim() || null,
@@ -111,16 +117,16 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
           <div className="rounded-md p-3 grid grid-cols-3 gap-2 text-center" style={{ background: '#F7F8FA', border: '0.5px solid #E5E7EB' }}>
             <div>
               <div className="text-[10px] text-faint uppercase tracking-wider font-semibold">Total fee</div>
-              <div className="text-[14px] font-semibold mt-0.5 num">{currentTotal > 0 ? formatINRFull(currentTotal) : <span className="text-faint">Not set</span>}</div>
+              <div className="text-[14px] font-semibold mt-0.5 num">{currentTotal > 0 ? formatMoney(currentTotal, currency) : <span className="text-faint">Not set</span>}</div>
             </div>
             <div>
               <div className="text-[10px] text-faint uppercase tracking-wider font-semibold">Already paid</div>
-              <div className="text-[14px] font-semibold mt-0.5 num" style={{ color: '#0F6E56' }}>{formatINRFull(currentPaid)}</div>
+              <div className="text-[14px] font-semibold mt-0.5 num" style={{ color: '#0F6E56' }}>{formatMoney(currentPaid, currency)}</div>
             </div>
             <div>
               <div className="text-[10px] text-faint uppercase tracking-wider font-semibold">Pending</div>
               <div className="text-[14px] font-semibold mt-0.5 num" style={{ color: effectiveTotal > 0 ? '#A32D2D' : '#9CA3AF' }}>
-                {effectiveTotal > 0 ? formatINRFull(Math.max(0, effectiveTotal - currentPaid)) : '—'}
+                {effectiveTotal > 0 ? formatMoney(Math.max(0, effectiveTotal - currentPaid), currency) : '—'}
               </div>
             </div>
           </div>
@@ -157,6 +163,19 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
           </div>
         </div>
 
+        <div>
+          <label className="input-label">Currency *</label>
+          <div className="grid grid-cols-3 gap-2">
+            {(['INR', 'GBP', 'USD'] as Currency[]).map((c) => (
+              <button key={c} type="button" onClick={() => setCurrency(c)}
+                className={cn('flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[13px] font-semibold border transition', currency === c ? 'border-transparent' : 'border-border hover:bg-surface-2 text-muted')}
+                style={currency === c ? { background: '#EEF0FF', color: '#3C3489' } : undefined}>
+                <span className="text-[15px]">{moneySymbol(c)}</span> {c}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="input-label">Milestone *</label>
@@ -167,9 +186,9 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
             />
           </div>
           <div>
-            <label className="input-label">{mode === 'received' ? 'Amount received (₹) *' : 'Amount expected (₹) *'}</label>
+            <label className="input-label">{mode === 'received' ? `Amount received (${moneySymbol(currency)}) *` : `Amount expected (${moneySymbol(currency)}) *`}</label>
             <input type="number" min="0" className="input" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
-            {amount && Number(amount) > 0 && <div className="text-[11px] text-muted mt-1">{formatINRFull(Math.round(Number(amount)))}</div>}
+            {amount && Number(amount) > 0 && <div className="text-[11px] text-muted mt-1">{formatMoney(Math.round(Number(amount)), currency)}</div>}
           </div>
         </div>
 
@@ -198,11 +217,11 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
         )}
 
         <div>
-          <label className="input-label">Total fee for this client (₹) <span className="text-faint">{currentTotal > 0 ? '· update if it has changed' : '· set the full expected fee'}</span></label>
+          <label className="input-label">Total fee for this client ({moneySymbol(currency)}) <span className="text-faint">{currentTotal > 0 ? '· update if it has changed' : '· set the full expected fee'}</span></label>
           <input type="number" min="0" className="input" placeholder="0" value={totalFee} onChange={(e) => setTotalFee(e.target.value)} />
           <div className="text-[11px] text-faint mt-1">
             {totalFeeInput > 0 && currentTotal === 0 && <>You&apos;re setting the total fee. Pending will be auto-tracked from here.</>}
-            {totalFeeInput > 0 && currentTotal > 0 && totalFeeInput !== currentTotal && <>This will replace the current total ({formatINRFull(currentTotal)}).</>}
+            {totalFeeInput > 0 && currentTotal > 0 && totalFeeInput !== currentTotal && <>This will replace the current total ({formatMoney(currentTotal, currency)}).</>}
             {totalFeeInput === 0 && currentTotal === 0 && <>Without a total fee, pending stays uncalculated for this client.</>}
             {totalFeeInput > 0 && totalFeeInput === currentTotal && <>Total fee unchanged.</>}
           </div>
@@ -214,7 +233,7 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
             <div className="text-[12.5px]" style={{ color: remainingAfter === 0 ? '#0F6E56' : '#26215C' }}>
               {remainingAfter === 0
                 ? <>After this payment, <strong>{selectedLead.full_name}</strong> is fully paid up.</>
-                : <>After this payment, <strong>{formatINRFull(remainingAfter || 0)}</strong> will still be pending.</>}
+                : <>After this payment, <strong>{formatMoney(remainingAfter || 0, currency)}</strong> will still be pending.</>}
             </div>
           </div>
         )}
