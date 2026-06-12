@@ -46,13 +46,6 @@ export default function PaymentsPage() {
 
   const hiddenClients = useMemo(() => leads.filter((l) => l.hidden_from_payments), [leads]);
 
-  // Each lead's currency = the currency of its latest payment (default INR).
-  const leadCcy = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const p of payments) { if (!m[p.lead_id]) m[p.lead_id] = p.currency || 'INR'; }
-    return m;
-  }, [payments]);
-
   const filtered = useMemo(() => {
     return clientRows.filter((r) => {
       if (seg !== 'all' && r.status !== seg) return false;
@@ -75,7 +68,7 @@ export default function PaymentsPage() {
     const visibleLeads = leads.filter((l) => !l.hidden_from_payments);
     let collected = 0, pending = 0, overdue = 0;
     for (const l of visibleLeads) {
-      const ccy = leadCcy[l.id] || 'INR';
+      const ccy = l.currency || 'INR';
       collected += toINR(l.amount_paid || 0, ccy);
       pending += toINR(Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0)), ccy);
       overdue += toINR(l.amount_overdue || 0, ccy);
@@ -86,7 +79,7 @@ export default function PaymentsPage() {
       overdue: Math.round(overdue),
       forecast: Math.round(pending),
     };
-  }, [leads, leadCcy]);
+  }, [leads]);
 
   // Milestone pipeline: count clients whose most recent milestone is X
   const milestoneCards = useMemo(() => {
@@ -113,7 +106,7 @@ export default function PaymentsPage() {
     const headers = ['Client', 'Milestone', 'Amount', 'Currency', 'Status', 'Paid At', 'Note'];
     const rows = payments.map((p) => {
       const l = leads.find((x) => x.id === p.lead_id);
-      return [l?.full_name || '—', MILESTONE_META[p.milestone].label, p.amount, p.currency || 'INR', p.status, p.paid_at || '', p.note || ''];
+      return [l?.full_name || '—', MILESTONE_META[p.milestone].label, p.amount, l?.currency || 'INR', p.status, p.paid_at || '', p.note || ''];
     });
     const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -198,7 +191,7 @@ export default function PaymentsPage() {
             <button onClick={() => ui.openRecordPayment()} className="btn btn-primary"><Plus className="w-4 h-4" /> Record first payment</button>
           </div>
         ) : (
-          filtered.map((r) => <ClientPaymentRow key={r.lead.id} lead={r.lead} payments={r.payments} currency={leadCcy[r.lead.id] || 'INR'} collected={r.collected} pending={r.pending} overdue={r.overdue} status={r.status} onOpen={() => ui.openLeadDrawer(r.lead.id)} onRecord={() => ui.openRecordPayment(r.lead.id)} onHide={() => setConfirmHide(r.lead)} />)
+          filtered.map((r) => <ClientPaymentRow key={r.lead.id} lead={r.lead} payments={r.payments} currency={r.lead.currency || 'INR'} collected={r.collected} pending={r.pending} overdue={r.overdue} status={r.status} onOpen={() => ui.openLeadDrawer(r.lead.id)} onRecord={() => ui.openRecordPayment(r.lead.id)} onHide={() => setConfirmHide(r.lead)} />)
         )}
       </div>
 
