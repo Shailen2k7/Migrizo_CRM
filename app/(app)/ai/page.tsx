@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
 import { Sparkles, Send, RotateCcw, AlertTriangle, Zap, Target, TrendingUp, Clock, MessageSquare, Bot, User as UserIcon } from 'lucide-react';
-import { formatINR } from '@/lib/utils';
+import { formatINR, toINR } from '@/lib/utils';
 import { toast } from 'sonner';
 
 interface Msg {
@@ -45,7 +45,7 @@ export default function AIPage() {
     const hot = leads.filter((l) => l.score >= 75 && !['won', 'junk'].includes(l.stage));
     const proposals = leads.filter((l) => l.stage === 'invoice_sent');
     const overduePay = payments.filter((p) => p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < now));
-    const overduePayAmt = overduePay.reduce((s, p) => s + p.amount, 0);
+    const overduePayAmt = overduePay.reduce((s, p) => s + toINR(p.amount, p.currency), 0);
     return [
       { label: 'Overdue follow-ups', value: overdueFu.length, color: '#B91C1C', bg: 'hsl(var(--rose-soft))', icon: Clock },
       { label: 'Hot in pipeline',   value: hot.length,       color: '#B45309', bg: 'hsl(var(--amber-soft))', icon: Zap },
