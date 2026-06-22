@@ -33,7 +33,7 @@ interface Props {
 }
 
 export function Sidebar({ user, workspaceName, leadsCount, onAddLead, mobileOpen = false, onClose }: Props) {
-  const { cases, followUps, canViewPayments } = useApp();
+  const { cases, followUps, canViewPayments, role } = useApp();
   const casesCount = cases.filter((c) => c.status === 'active' && !c.archived_at).length;
   const urgentFollowUps = followUps.filter((f) => isFollowUpOverdue(f) || isFollowUpToday(f)).length;
   const path = usePathname();
@@ -42,7 +42,12 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead, mobileOpen
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Hide the Payments item for team members the admin hasn't granted access to.
-  const nav = canViewPayments ? NAV : NAV.filter((item) => item.href !== '/payments');
+  // Payments: hidden unless granted. Cases: admin/owner only.
+  const nav = NAV.filter((item) => {
+    if (item.href === '/payments' && !canViewPayments) return false;
+    if (item.href === '/cases' && role !== 'admin') return false;
+    return true;
+  });
 
   const signOut = async () => {
     await supabase.auth.signOut();

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Check, Lock, ChevronDown, Trash2, Plus, Link2, Flag,
   CircleCheck, Sparkles, Trophy, Megaphone, Lightbulb, LineChart,
-  PartyPopper, Archive, RotateCcw, Copy, ExternalLink, Mail, Send,
+  PartyPopper, Archive, RotateCcw, Copy, ExternalLink, Mail, Send, Pencil,
 } from 'lucide-react';
 import { useApp } from '@/components/shared/app-provider';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -13,8 +13,8 @@ import { cn, initials, avatarColor } from '@/lib/utils';
 import {
   DECISION_META, normalizeJourney, phaseProgress, isPhaseComplete,
   isGatePassed, isPhaseUnlocked, activePhase, overallProgress, phasesCleared,
-  allGatesPassed, clientPortalUrl, getJourney, normalizeVisaType,
-  type JourneyPhase, type CaseJourneyState, type Decision,
+  allGatesPassed, clientPortalUrl, getJourney, normalizeVisaType, applyCustomTasks,
+  type JourneyPhase, type CaseJourneyState, type Decision, type JourneyTask,
 } from '@/lib/journey';
 import type { Case } from '@/lib/types';
 
@@ -31,14 +31,19 @@ const PILLAR_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
 };
 
 export function CaseDrawer({ caseId, onClose }: Props) {
-  const { cases, updateCase, updateCaseJourney, sendClientUpdate, deleteCase, role, user } = useApp();
+  const { cases, updateCase, updateCaseJourney, sendClientUpdate, deleteCase, role, user, workspace } = useApp();
   const caseData = caseId ? cases.find((c) => c.id === caseId) || null : null;
 
   const journey: CaseJourneyState = useMemo(() => normalizeJourney(caseData?.journey), [caseData?.journey]);
-  const phases = useMemo(() => getJourney(normalizeVisaType(caseData?.visa_type)), [caseData?.visa_type]);
+  const templatePhases = useMemo(() => getJourney(normalizeVisaType(caseData?.visa_type)), [caseData?.visa_type]);
+  // Overlay any per-case custom tasks so progress, gates and rendering all agree.
+  const phases = useMemo(() => applyCustomTasks(templatePhases, journey), [templatePhases, journey]);
   const active = useMemo(() => activePhase(journey, phases), [journey, phases]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Who may edit/add/delete tasks: admins always; members only if the owner enabled it.
+  const canEditTasks = role === 'admin' || !!workspace?.allow_member_task_edit;
 
   const effectiveExpanded = expanded ?? active.key;
   const progress = overallProgress(journey, phases);
@@ -52,10 +57,52 @@ export function CaseDrawer({ caseId, onClose }: Props) {
   const [emailVal, setEmailVal] = useState('');
   useEffect(() => { setEmailVal(caseData?.client_email || ''); }, [caseData?.id, caseData?.client_email]);
 
+  // Close on Escape.
+  useEffect(() => {
+    if (!caseId) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [caseId, onClose]);
+
   if (!caseData) return null;
 
   const setArchived = (on: boolean) => {
     updateCase(caseData.id, { archived_at: on ? new Date().toISOString() : null });
+  };
+
+  // ---- per-case task editing (writes journey.customTasks) ----
+  const phaseTasksFor = (phaseKey: string): JourneyTask[] => {
+    const p = phases.find((ph) => ph.key === phaseKey);
+    return p?.tasks ? p.tasks.map((t) => ({ ...t })) : [];
+  };
+  const writeCustomTasks = (phaseKey: string, tasks: JourneyTask[]) => {
+    const next: CaseJourneyState = {
+      ...journey,
+      customTasks: { ...(journey.customTasks || {}), [phaseKey]: tasks },
+    };
+    updateCaseJourney(caseData.id, next);
+  };
+  const renameTask = (phaseKey: string, taskKey: string, label: string) => {
+    writeCustomTasks(phaseKey, phaseTasksFor(phaseKey).map((t) => t.key === taskKey ? { ...t, label } : t));
+  };
+  const addTask = (phaseKey: string, label: string) => {
+    const clean = label.trim();
+    if (!clean) return;
+    const key = `c_${phaseKey}_${Date.now().toString(36)}`;
+    writeCustomTasks(phaseKey, [...phaseTasksFor(phaseKey), { key, label: clean }]);
+  };
+  const deleteTask = (phaseKey: string, taskKey: string) => {
+    const tasks = phaseTasksFor(phaseKey).filter((t) => t.key !== taskKey);
+    // also clear any completion state for the removed task
+    const nextTasks = { ...journey.tasks };
+    delete nextTasks[taskKey];
+    const next: CaseJourneyState = {
+      ...journey,
+      tasks: nextTasks,
+      customTasks: { ...(journey.customTasks || {}), [phaseKey]: tasks },
+    };
+    updateCaseJourney(caseData.id, next);
   };
 
   const copyPortal = async () => {
@@ -209,6 +256,10 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                   onPassGate={() => passGate(phase)}
                   caseData={caseData}
                   onUpdateCase={(patch) => updateCase(caseData.id, patch)}
+                  canEditTasks={canEditTasks}
+                  onRenameTask={(taskKey, label) => renameTask(phase.key, taskKey, label)}
+                  onAddTask={(label) => addTask(phase.key, label)}
+                  onDeleteTask={(taskKey) => deleteTask(phase.key, taskKey)}
                 />
               ))}
 
@@ -299,6 +350,7 @@ function ProgressRing({ pct, accent }: { pct: number; accent: string }) {
 function PhaseCard({
   phase, journeyPhases, journey, expanded, onToggleExpand, onToggleTask, onTogglePillarDone,
   onAddEvidence, onRemoveEvidence, onPassGate, caseData, onUpdateCase,
+  canEditTasks, onRenameTask, onAddTask, onDeleteTask,
 }: {
   phase: JourneyPhase;
   journeyPhases: JourneyPhase[];
@@ -312,7 +364,12 @@ function PhaseCard({
   onPassGate: () => void;
   caseData: Case;
   onUpdateCase: (patch: Partial<Case>) => void;
+  canEditTasks: boolean;
+  onRenameTask: (taskKey: string, label: string) => void;
+  onAddTask: (label: string) => void;
+  onDeleteTask: (taskKey: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const unlocked = isPhaseUnlocked(journey, phase, journeyPhases);
   const complete = isPhaseComplete(journey, phase);
   const gatePassed = isGatePassed(journey, phase.key);
@@ -371,9 +428,23 @@ function PhaseCard({
             <div className="px-4 pb-4 pt-1">
               {phase.kind === 'tasks' ? (
                 <div className="space-y-1">
-                  {phase.tasks!.map((t) => (
-                    <TaskRow key={t.key} label={t.label} done={!!journey.tasks[t.key]?.done} accent={phase.accent} onToggle={() => onToggleTask(t.key)} />
-                  ))}
+                  {canEditTasks && (
+                    <div className="flex justify-end -mt-0.5 mb-0.5">
+                      <button onClick={() => setEditing((v) => !v)}
+                        className="text-[11px] font-medium inline-flex items-center gap-1 px-2 py-1 rounded-md hover:bg-surface-2 transition-colors"
+                        style={{ color: editing ? phase.accent : 'hsl(var(--muted))' }}>
+                        <Pencil className="w-3 h-3" /> {editing ? 'Done editing' : 'Edit tasks'}
+                      </button>
+                    </div>
+                  )}
+                  {editing ? (
+                    <EditableTasks tasks={phase.tasks!} accent={phase.accent}
+                      onRename={onRenameTask} onAdd={onAddTask} onDelete={onDeleteTask} />
+                  ) : (
+                    phase.tasks!.map((t) => (
+                      <TaskRow key={t.key} label={t.label} done={!!journey.tasks[t.key]?.done} accent={phase.accent} onToggle={() => onToggleTask(t.key)} />
+                    ))
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -406,6 +477,48 @@ function TaskRow({ label, done, accent, onToggle }: { label: string; done: boole
       </span>
       <span className={cn('text-[13px] transition-colors', done ? 'text-muted line-through' : 'text-ink-2 group-hover:text-ink')}>{label}</span>
     </button>
+  );
+}
+
+// Edit mode for a phase's tasks: rename inline, delete, and add new ones.
+function EditableTasks({ tasks, accent, onRename, onAdd, onDelete }: {
+  tasks: JourneyTask[];
+  accent: string;
+  onRename: (taskKey: string, label: string) => void;
+  onAdd: (label: string) => void;
+  onDelete: (taskKey: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  return (
+    <div className="space-y-1.5 rounded-xl p-2" style={{ background: 'hsl(var(--surface-2))' }}>
+      {tasks.map((t) => (
+        <div key={t.key} className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: accent }} />
+          <input
+            defaultValue={t.label}
+            onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== t.label) onRename(t.key, v); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            className="flex-1 px-2 py-1.5 border border-border rounded-md bg-surface text-[13px] outline-none focus:border-indigo-400"
+          />
+          <button onClick={() => onDelete(t.key)} title="Delete task" className="p-1.5 rounded-md text-faint hover:text-danger hover:bg-rose-50 transition-colors flex-shrink-0">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+      <div className="flex items-center gap-2 pt-0.5">
+        <Plus className="w-3.5 h-3.5 flex-shrink-0" style={{ color: accent }} />
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && draft.trim()) { onAdd(draft); setDraft(''); } }}
+          placeholder="Add a task & press Enter"
+          className="flex-1 px-2 py-1.5 border border-dashed border-border rounded-md bg-surface text-[13px] outline-none focus:border-indigo-400"
+        />
+        {draft.trim() && (
+          <button onClick={() => { onAdd(draft); setDraft(''); }} className="text-[11.5px] font-semibold px-2.5 py-1.5 rounded-md text-white flex-shrink-0" style={{ background: accent }}>Add</button>
+        )}
+      </div>
+    </div>
   );
 }
 

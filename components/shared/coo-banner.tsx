@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, Volume2, VolumeX, X } from 'lucide-react';
 import type { Lead } from '@/lib/types';
 import { readCoo, COO_EVENT } from '@/lib/coo';
+import { useApp } from '@/components/shared/app-provider';
 
 function daysSince(iso: string): number {
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
@@ -74,7 +75,11 @@ function speak(text: string) {
   } catch { /* speech not available */ }
 }
 
-export function CooBanner({ leads, isAdmin, userName = '' }: { leads: Lead[]; isAdmin: boolean; userName?: string }) {
+export function CooBanner({ leads: initialLeads, isAdmin, userName = '' }: { leads: Lead[]; isAdmin: boolean; userName?: string }) {
+  // Read LIVE leads from the provider so the briefing always matches the rest of
+  // the app (a conversion made this session is reflected immediately).
+  const { leads: liveLeads } = useApp();
+  const leads = liveLeads && liveLeads.length ? liveLeads : initialLeads;
   const [settings, setSettings] = useState(() => readCoo());
   const [dismissed, setDismissed] = useState(false);
   const [speaking, setSpeaking] = useState(false);
