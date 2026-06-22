@@ -205,11 +205,23 @@ export interface CaseJourneyState {
   tasks: Record<string, { done: boolean; at?: string; by?: string }>;
   pillars: Record<string, { done: boolean; evidence?: PillarEvidence[] }>;
   gates: Record<string, { passed: boolean; at?: string }>;
+  // Per-case task overrides. When a phase key is present here, these tasks
+  // replace the template tasks FOR THIS CASE ONLY (used by the edit feature).
+  customTasks?: Record<string, JourneyTask[]>;
 }
 export function emptyJourney(): CaseJourneyState { return { tasks: {}, pillars: {}, gates: {} }; }
 export function normalizeJourney(raw: unknown): CaseJourneyState {
   const j = (raw && typeof raw === 'object') ? raw as Partial<CaseJourneyState> : {};
-  return { tasks: j.tasks || {}, pillars: j.pillars || {}, gates: j.gates || {} };
+  return { tasks: j.tasks || {}, pillars: j.pillars || {}, gates: j.gates || {}, customTasks: j.customTasks };
+}
+
+// Overlay any per-case custom tasks onto the template phases. Everything
+// downstream (progress, gates, current_phase) is driven by the phases array,
+// so passing the result of this through the helpers "just works".
+export function applyCustomTasks(phases: JourneyPhase[], state: CaseJourneyState): JourneyPhase[] {
+  const ct = state.customTasks;
+  if (!ct) return phases;
+  return phases.map((p) => (ct[p.key] && Array.isArray(ct[p.key]) ? { ...p, tasks: ct[p.key] } : p));
 }
 
 // --------------------------------- COUNTS ------------------------------------

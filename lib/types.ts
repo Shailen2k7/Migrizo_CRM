@@ -23,6 +23,7 @@ export interface Workspace {
   name: string;
   owner_id: string;
   created_at: string;
+  allow_member_task_edit?: boolean;
 }
 
 export interface WorkspaceMember {
