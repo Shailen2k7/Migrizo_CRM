@@ -19,7 +19,7 @@ import {
 } from '@/lib/notifications';
 import { readCoo, writeCoo } from '@/lib/coo';
 
-type Section = 'profile' | 'team' | 'notifications' | 'ai-coo' | 'sample' | 'danger';
+type Section = 'profile' | 'team' | 'notifications' | 'ai-coo' | 'permissions' | 'sample' | 'danger';
 
 function SettingsInner() {
   const router = useRouter();
@@ -34,6 +34,7 @@ function SettingsInner() {
     { id: 'team' as const,          label: 'Team',                icon: Users, badge: pendingCount > 0 ? pendingCount : undefined },
     { id: 'notifications' as const, label: 'Notifications',       icon: Bell },
     ...(role === 'admin' ? [{ id: 'ai-coo' as const, label: 'AI COO', icon: Sparkles }] : []),
+    ...(role === 'admin' ? [{ id: 'permissions' as const, label: 'Permissions', icon: ShieldCheck }] : []),
     { id: 'sample' as const,        label: 'Sample data',         icon: Database },
     { id: 'danger' as const,        label: 'Danger zone',         icon: AlertTriangle },
   ];
@@ -74,6 +75,7 @@ function SettingsInner() {
           {section === 'team' && <TeamSection />}
           {section === 'notifications' && <NotificationsSection />}
           {section === 'ai-coo' && <CooSection />}
+          {section === 'permissions' && <PermissionsSection />}
           {section === 'sample' && <SampleDataSection />}
           {section === 'danger' && <DangerSection />}
         </div>
@@ -643,6 +645,42 @@ function CooToggle({ label, desc, on, onClick, disabled }: { label: string; desc
       >
         <span className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform" style={{ transform: on ? 'translateX(20px)' : 'translateX(0)' }} />
       </button>
+    </div>
+  );
+}
+
+// ===== Permissions (admin only) =====
+function PermissionsSection() {
+  const { workspace } = useApp();
+  const [on, setOn] = useState(!!workspace.allow_member_task_edit);
+  const [busy, setBusy] = useState(false);
+  const supabase = createClient();
+
+  const toggle = async () => {
+    const next = !on;
+    setOn(next); setBusy(true);
+    const { error } = await supabase.from('workspaces').update({ allow_member_task_edit: next }).eq('id', workspace.id);
+    setBusy(false);
+    if (error) { setOn(!next); toast.error(`Couldn't save: ${error.message}`); }
+    else toast.success(next ? 'Employees can now edit case tasks' : 'Task editing is now admin-only');
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-[17px] font-semibold flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-indigo-600" /> Permissions</h2>
+        <p className="text-[13px] text-muted mt-1">Control what your team can do. Admins and owners always have full access.</p>
+      </div>
+      <div className="panel divide-y divide-border">
+        <CooToggle
+          label="Let employees edit case tasks"
+          desc="Allow non-admin members to rename, add and delete tasks inside a case journey. Off by default — only owners/admins can edit tasks."
+          on={on}
+          disabled={busy}
+          onClick={toggle}
+        />
+      </div>
+      <p className="text-[12px] text-muted">Editing changes tasks for that one client only; it never affects other cases or the default journey.</p>
     </div>
   );
 }

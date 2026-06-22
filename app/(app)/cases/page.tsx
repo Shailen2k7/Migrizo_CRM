@@ -4,13 +4,13 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/components/shared/app-provider';
 import type { Case } from '@/lib/types';
 import { cn, initials, avatarColor, timeAgo } from '@/lib/utils';
-import { Briefcase, Plus, Search, Moon, CheckCircle2, Trash2 } from 'lucide-react';
+import { Briefcase, Plus, Search, Moon, CheckCircle2, Trash2, Lock } from 'lucide-react';
 import { CaseDrawer } from '@/components/cases/case-drawer';
 import { AddCaseDialog } from '@/components/cases/add-case-dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import {
   JOURNEY, getJourney, normalizeVisaType, normalizeJourney, activePhase, overallProgress, phasesCleared,
-  isGatePassed, allGatesPassed, DECISION_META, type PhaseKey,
+  isGatePassed, allGatesPassed, applyCustomTasks, DECISION_META, type PhaseKey,
 } from '@/lib/journey';
 
 type Segment = 'all' | 'dormant' | 'closed' | PhaseKey;
@@ -30,6 +30,23 @@ type Snap = {
 };
 
 export default function CasesPage() {
+  const { role } = useApp();
+  // Cases are visible to admins/owners only.
+  if (role !== 'admin') {
+    return (
+      <div className="max-w-[1240px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-10">
+        <div className="panel panel-pad text-center py-16 max-w-md mx-auto mt-10">
+          <div className="w-12 h-12 rounded-full bg-surface-2 flex items-center justify-center mx-auto mb-3"><Lock className="w-5 h-5 text-faint" /></div>
+          <div className="text-[15px] font-semibold mb-1">Cases are admin-only</div>
+          <div className="text-[13px] text-muted">This area is limited to workspace owners and admins. Ask your admin if you need access.</div>
+        </div>
+      </div>
+    );
+  }
+  return <CasesInner />;
+}
+
+function CasesInner() {
   const { cases, leads, deleteCase } = useApp();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -39,7 +56,7 @@ export default function CasesPage() {
 
   const snapshots: Snap[] = useMemo(() => cases.map((c) => {
     const j = normalizeJourney(c.journey);
-    const route = getJourney(normalizeVisaType(c.visa_type));
+    const route = applyCustomTasks(getJourney(normalizeVisaType(c.visa_type)), j);
     const finished = allGatesPassed(j, route);
     const archived = !!c.archived_at;
     const idleDays = Math.floor((Date.now() - new Date(c.updated_at).getTime()) / 86400000);

@@ -47,11 +47,14 @@ function buildSystemPrompt(
   leads.forEach((l) => { byStage[l.stage] = (byStage[l.stage] || 0) + 1; });
 
   // Revenue
-  const collected = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
-  const monthAgo = now.getTime() - 30 * dayMs;
-  const revenueThisMonth = payments.filter((p) => p.status === 'paid' && p.paid_at && new Date(p.paid_at).getTime() >= monthAgo).reduce((s, p) => s + p.amount, 0);
-  const overduePayments = payments.filter((p) => p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < now.getTime()));
-  const overduePayAmt = overduePayments.reduce((s, p) => s + p.amount, 0);
+  // Revenue reads the SAME source as the Dashboard & Payments tab (lead-level
+  // amount_paid, excluding leads hidden from payments) so the AI never quotes a
+  // figure that disagrees with the rest of the CRM.
+  const payLeads = leads.filter((l) => !l.hidden_from_payments);
+  const collected = payLeads.reduce((s, l) => s + (l.amount_paid || 0), 0);
+  const outstanding = payLeads.reduce((s, l) => s + Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0)), 0);
+  const overdueLeads = payLeads.filter((l) => (l.amount_overdue || 0) > 0);
+  const overduePayAmt = overdueLeads.reduce((s, l) => s + (l.amount_overdue || 0), 0);
 
   // Format INR
   const inr = (n: number) => {
@@ -98,9 +101,9 @@ function buildSystemPrompt(
 
 WORKSPACE: ${workspaceName}
 TOTAL LEADS: ${totalLeads} (${active} active, ${won} won, ${lost} lost — ${winRate}% win rate)
-REVENUE COLLECTED ALL-TIME: ${inr(collected)}
-REVENUE THIS MONTH: ${inr(revenueThisMonth)}
-OVERDUE PAYMENTS: ${overduePayments.length} totalling ${inr(overduePayAmt)}
+REVENUE COLLECTED: ${inr(collected)}
+OUTSTANDING (billed, not yet paid): ${inr(outstanding)}
+OVERDUE PAYMENTS: ${overdueLeads.length} client(s) totalling ${inr(overduePayAmt)}
 
 URGENCY METRICS:
 - ${overdueFu.length} overdue follow-ups
