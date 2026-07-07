@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star, Pencil } from 'lucide-react';
+import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star, Pencil, Send } from 'lucide-react';
 import type { Lead, Note, Payment, LeadStage } from '@/lib/types';
 import { STAGE_META, MILESTONE_META, VISA_META, getVisaMeta } from '@/lib/types';
 import { useApp } from '@/components/shared/app-provider';
@@ -33,6 +33,36 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const [confirmClose, setConfirmClose] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addFollowUpOpen, setAddFollowUpOpen] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState<null | 'sla' | 'onboarding'>(null);
+
+  // One-click branded emails (SLA / onboarding). Server logs to the activity feed.
+  const sendEmail = async (type: 'sla' | 'onboarding') => {
+    if (!lead) return;
+    if (!lead.email) { toast.error('This lead has no email address'); return; }
+    setSendingEmail(type);
+    try {
+      let res = await fetch('/api/email/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, leadId: lead.id }),
+      });
+      let j = await res.json().catch(() => null);
+      if (j?.already_sent) {
+        const again = window.confirm('Onboarding email was already sent to this client. Send again?');
+        if (!again) return;
+        res = await fetch('/api/email/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, leadId: lead.id, force: true }),
+        });
+        j = await res.json().catch(() => null);
+      }
+      if (j?.ok) toast.success(type === 'sla' ? `SLA sent to ${lead.email}` : `Onboarding email sent to ${lead.email}`);
+      else toast.error(`Send failed${j?.reason ? `: ${j.reason}` : ''}`);
+    } catch {
+      toast.error('Send failed — check your connection');
+    } finally {
+      setSendingEmail(null);
+    }
+  };
 
   const lead = leads.find((l) => l.id === leadId) as (Lead & { pipeline_id?: string | null }) | undefined;
   const effectiveLead = useMemo(() => (lead ? { ...lead, ...pendingLead } : null), [lead, pendingLead]);
@@ -141,6 +171,25 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
               <div className="flex-1 overflow-y-auto px-6 py-5">
                 {tab === 'overview' && (
                   <div className="space-y-1 mb-6">
+                    <div className="flex items-center gap-2 pb-3 mb-1 border-b border-border">
+                      <span className="text-[11px] font-semibold text-muted uppercase tracking-wide mr-1">Client emails</span>
+                      <button
+                        onClick={() => sendEmail('sla')}
+                        disabled={sendingEmail !== null || !effectiveLead.email}
+                        className="btn btn-outline btn-sm disabled:opacity-50"
+                        title={effectiveLead.email ? 'Email the branded service agreement, autofilled with this client\u2019s details' : 'Add an email address first'}
+                      >
+                        <FileText className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : 'Send SLA'}
+                      </button>
+                      <button
+                        onClick={() => sendEmail('onboarding')}
+                        disabled={sendingEmail !== null || !effectiveLead.email}
+                        className="btn btn-outline btn-sm disabled:opacity-50"
+                        title={effectiveLead.email ? 'Send the welcome/onboarding email (auto-sends on kickstart payment)' : 'Add an email address first'}
+                      >
+                        <Send className="w-3.5 h-3.5" /> {sendingEmail === 'onboarding' ? 'Sending…' : 'Send onboarding'}
+                      </button>
+                    </div>
                     <Row label="Pipeline">
                       <div style={{ maxWidth: 260 }}>
                         {(() => {
