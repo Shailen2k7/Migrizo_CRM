@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star } from 'lucide-react';
+import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star, Pencil } from 'lucide-react';
 import type { Lead, Note, Payment, LeadStage } from '@/lib/types';
 import { STAGE_META, MILESTONE_META, VISA_META, getVisaMeta } from '@/lib/types';
 import { useApp } from '@/components/shared/app-provider';
+import { usePipelines, getStageColor } from '@/lib/pipelines';
 import { Select } from '@/components/shared/select';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { FollowUpsList } from '@/components/followups/followups-list';
@@ -22,17 +23,18 @@ interface Props {
 }
 
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
-  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, role, memberNameById, canViewPayments } = useApp();
+  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, role, memberNameById, canViewPayments, workspace } = useApp();
+  const pl = usePipelines(workspace.id);
   const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups'>('overview');
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
-  const [pendingLead, setPendingLead] = useState<Partial<Lead>>({});
+  const [pendingLead, setPendingLead] = useState<Partial<Lead> & { pipeline_id?: string | null }>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addFollowUpOpen, setAddFollowUpOpen] = useState(false);
 
-  const lead = leads.find((l) => l.id === leadId);
+  const lead = leads.find((l) => l.id === leadId) as (Lead & { pipeline_id?: string | null }) | undefined;
   const effectiveLead = useMemo(() => (lead ? { ...lead, ...pendingLead } : null), [lead, pendingLead]);
   const pendingCount = Object.keys(pendingLead).length;
   const isDirty = pendingCount > 0;
@@ -51,12 +53,12 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
     setNotes(fresh);
   };
 
-  const setLeadPending = (patch: Partial<Lead>) => {
+  const setLeadPending = (patch: Partial<Lead> & { pipeline_id?: string | null }) => {
     setPendingLead((prev) => {
-      const next: Partial<Lead> = { ...prev, ...patch };
+      const next: Partial<Lead> & { pipeline_id?: string | null } = { ...prev, ...patch };
       if (lead) {
-        (Object.keys(next) as (keyof Lead)[]).forEach((k) => {
-          if (next[k] === lead[k]) delete next[k];
+        (Object.keys(next) as (keyof typeof next)[]).forEach((k) => {
+          if (next[k] === (lead as unknown as Record<string, unknown>)[k as string]) delete next[k];
         });
       }
       return next;
@@ -139,14 +141,63 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
               <div className="flex-1 overflow-y-auto px-6 py-5">
                 {tab === 'overview' && (
                   <div className="space-y-1 mb-6">
+                    <Row label="Pipeline">
+                      <div style={{ maxWidth: 260 }}>
+                        {(() => {
+                          const defaultP = pl.pipelines.find((p) => p.is_default) || pl.pipelines[0];
+                          const currentPid = effectiveLead.pipeline_id || defaultP?.id || '';
+                          if (!pl.pipelines.length) return <span className="text-[12.5px] text-faint">—</span>;
+                          return (
+                            <Select<string>
+                              value={currentPid}
+                              onChange={(pid) => {
+                                if (pid === currentPid) return;
+                                // Moving pipelines resets the lead to the target's first stage.
+                                const first = pl.stagesFor(pid)[0];
+                                setLeadPending({ pipeline_id: pid, ...(first ? { stage: first.stage_key as Lead['stage'] } : {}) });
+                              }}
+                              options={pl.pipelines.map((p) => ({ value: p.id, label: p.name + (p.is_default ? ' (default)' : '') }))}
+                              size="sm"
+                            />
+                          );
+                        })()}
+                      </div>
+                    </Row>
                     <Row label="Stage">
                       <div style={{ maxWidth: 220 }}>
-                        <Select<LeadStage>
-                          value={effectiveLead.stage}
-                          onChange={(v) => setLeadPending({ stage: v })}
-                          options={(Object.keys(STAGE_META) as LeadStage[]).map((k) => ({ value: k, label: STAGE_META[k].label, color: STAGE_META[k].dot }))}
-                          size="sm"
-                        />
+                        {(() => {
+                          const defaultP = pl.pipelines.find((p) => p.is_default) || pl.pipelines[0];
+                          const currentPid = effectiveLead.pipeline_id || defaultP?.id || '';
+                          const pStages = currentPid ? pl.stagesFor(currentPid) : [];
+                          // Custom pipelines: stage options come from the stages table.
+                          // Fallback to the built-in six if pipelines haven't loaded.
+                          if (pStages.length > 0) {
+                            const known = pStages.some((s) => s.stage_key === effectiveLead.stage);
+                            const options = pStages.map((s) => ({ value: s.stage_key, label: s.name, color: getStageColor(s.color).dot }));
+                            if (!known) options.unshift({ value: effectiveLead.stage, label: effectiveLead.stage, color: '#9CA3AF' });
+                            return (
+                              <Select<string>
+                                value={effectiveLead.stage}
+                                onChange={(v) => {
+                                  const target = pStages.find((s) => s.stage_key === v);
+                                  const patch: Partial<Lead> = { stage: v as Lead['stage'] };
+                                  if (target?.stage_type === 'won' && !effectiveLead.won_at) patch.won_at = new Date().toISOString();
+                                  setLeadPending(patch);
+                                }}
+                                options={options}
+                                size="sm"
+                              />
+                            );
+                          }
+                          return (
+                            <Select<LeadStage>
+                              value={effectiveLead.stage}
+                              onChange={(v) => setLeadPending({ stage: v })}
+                              options={(Object.keys(STAGE_META) as LeadStage[]).map((k) => ({ value: k, label: STAGE_META[k].label, color: STAGE_META[k].dot }))}
+                              size="sm"
+                            />
+                          );
+                        })()}
                       </div>
                     </Row>
                     <Row label="Lead score">
@@ -440,7 +491,12 @@ function InlineText({ value, onChange, placeholder }: { value: string | null; on
   useEffect(() => setV(value || ''), [value]);
   const commit = () => { setEditing(false); const t = v.trim(); if ((t || null) !== (value || null)) onChange(t || null); };
   if (editing) return <input className="input py-1.5 px-2.5 text-[12px]" autoFocus value={v} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setV(value || ''); setEditing(false); } }} placeholder={placeholder} />;
-  return <button onClick={() => setEditing(true)} className="text-[13px] text-ink-2 hover:text-ink hover:bg-surface-2 px-2 py-1 -mx-2 -my-1 rounded text-left">{value || <span className="text-faint">{placeholder || '—'}</span>}</button>;
+  return (
+    <button onClick={() => setEditing(true)} title="Click to edit" className="group/it inline-flex items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink hover:bg-surface-2 px-2 py-1 -mx-2 -my-1 rounded text-left">
+      <span className="border-b border-dashed border-transparent group-hover/it:border-border-strong">{value || <span className="text-faint">{placeholder || '—'}</span>}</span>
+      <Pencil className="w-3 h-3 text-faint opacity-0 group-hover/it:opacity-100 transition-opacity flex-shrink-0" />
+    </button>
+  );
 }
 
 function InlineNumber({ value, onChange, placeholder, currency = 'INR' }: { value: number | null; onChange: (v: number) => void; placeholder?: string; currency?: string }) {
