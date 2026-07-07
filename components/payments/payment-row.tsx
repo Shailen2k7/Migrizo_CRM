@@ -8,7 +8,8 @@ import { useApp } from '@/components/shared/app-provider';
 import type { Payment, Milestone } from '@/lib/types';
 import { MILESTONE_META } from '@/lib/types';
 import { formatMoney, moneySymbol, cn } from '@/lib/utils';
-import { FileText, Pencil, Trash2 } from 'lucide-react';
+import { FileText, Pencil, Trash2, Send } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Props {
   payment: Payment;
@@ -25,6 +26,26 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
   const [status, setStatus] = useState<Payment['status']>(payment.status);
   const [note, setNote] = useState(payment.note || '');
   const [busy, setBusy] = useState(false);
+  const [sendingInvoice, setSendingInvoice] = useState(false);
+
+  // One-click branded invoice email for this specific milestone payment.
+  const sendInvoice = async () => {
+    setSendingInvoice(true);
+    try {
+      const res = await fetch('/api/email/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'invoice', leadId: payment.lead_id, paymentId: payment.id }),
+      });
+      const j = await res.json().catch(() => null);
+      if (j?.ok) toast.success('Invoice emailed to client');
+      else if (j?.reason === 'no_email') toast.error('This lead has no email address');
+      else toast.error(`Send failed${j?.reason ? `: ${j.reason}` : ''}`);
+    } catch {
+      toast.error('Send failed — check your connection');
+    } finally {
+      setSendingInvoice(false);
+    }
+  };
 
   const openEditor = () => {
     setMilestone(payment.milestone);
@@ -69,6 +90,9 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
               <span className="chip" style={{ background: statusMeta[payment.status].bg, color: statusMeta[payment.status].fg, border: 'none' }}>{statusMeta[payment.status].label}</span>
             </div>
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button onClick={sendInvoice} disabled={sendingInvoice} className="p-1.5 rounded hover:bg-surface-2 text-muted hover:text-ink disabled:opacity-40" title="Email branded invoice to client">
+                <Send className="w-3.5 h-3.5" />
+              </button>
               <button onClick={openEditor} className="p-1.5 rounded hover:bg-surface-2 text-muted hover:text-ink" title="Edit payment">
                 <Pencil className="w-3.5 h-3.5" />
               </button>
