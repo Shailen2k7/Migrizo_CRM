@@ -1,16 +1,14 @@
 'use client';
 
 // =============================================================================
-// PIPELINE BOARD — Bigin-style kanban over leads
+// PIPELINE BOARD v2 — Bigin-style kanban over leads
 // -----------------------------------------------------------------------------
-// * Tabs across the top: one per pipeline (GTV, IFV, ...), plus "+ New".
-// * Columns = the selected pipeline's stages. Drag a lead card between columns
-//   to change its stage (uses the app's existing optimistic updateLead, so
-//   activity logging + realtime keep working untouched).
-// * "Manage" opens an inline editor: rename/recolor/reorder/delete stages,
-//   add stages, rename/delete pipelines — no separate settings page needed.
-// * Leads with no pipeline_id (e.g. fresh Meta ingests) appear in the default
-//   pipeline, so nothing ever disappears.
+// v2 changes:
+//  * Stronger column styling — solid tinted background + visible colored border.
+//  * No money on the board (amounts removed from cards and column headers).
+//  * Big columns are paged: newest 30 cards render first, "Show more" loads the
+//    rest in batches — keeps an 800-lead Cold column fast and scannable.
+//  * Cards sort by most recently updated, so live leads float to the top.
 // =============================================================================
 
 import { Suspense, useMemo, useRef, useState } from 'react';
@@ -18,12 +16,13 @@ import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
 import { usePipelines, getStageColor, STAGE_COLOR_LIST, type Pipeline, type Stage, type StageColor } from '@/lib/pipelines';
 import { getVisaMeta, type Lead } from '@/lib/types';
-import { formatMoneyShort } from '@/lib/utils';
 import { Plus, Settings2, X, ChevronUp, ChevronDown, Trash2, GripVertical, Check } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Lead may carry pipeline_id after migration 003; the base type doesn't know it yet.
 type LeadP = Lead & { pipeline_id?: string | null };
+
+const PAGE_SIZE = 30; // cards rendered per column before "Show more"
 
 // -----------------------------------------------------------------------------
 // Page shell
@@ -35,6 +34,8 @@ function PipelinePageInner() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
+  // Per-stage visible card count (stage.id -> n). Resets when switching pipeline.
+  const [visible, setVisible] = useState<Record<string, number>>({});
 
   const ordered = useMemo(
     () => [...pl.pipelines].sort((a, b) => (Number(b.is_default) - Number(a.is_default)) || a.sort_order - b.sort_order),
@@ -58,6 +59,8 @@ function PipelinePageInner() {
     for (const l of boardLeads) {
       if (map.has(l.stage)) map.get(l.stage)!.push(l);
     }
+    // Most recently touched first — live leads float to the top of each column.
+    for (const arr of map.values()) arr.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
     return map;
   }, [stages, boardLeads]);
 
@@ -129,7 +132,7 @@ function PipelinePageInner() {
           return (
             <button
               key={p.id}
-              onClick={() => setSelectedId(p.id)}
+              onClick={() => { setSelectedId(p.id); setVisible({}); }}
               className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-[13px] font-medium whitespace-nowrap border transition-all ${
                 active ? 'bg-[#4F46E5] text-white border-transparent shadow-sm' : 'bg-surface text-ink-2 border-border hover:border-border-strong'
               }`}
@@ -139,12 +142,12 @@ function PipelinePageInner() {
             </button>
           );
         })}
-        <NewPipelineButton onCreate={async (name) => { const p = await pl.createPipeline(name); if (p) setSelectedId(p.id); }} />
+        <NewPipelineButton onCreate={async (name) => { const p = await pl.createPipeline(name); if (p) { setSelectedId(p.id); setVisible({}); } }} />
       </div>
 
       {orphans.length > 0 && (
         <div className="mb-3 text-[12.5px] px-3.5 py-2.5 rounded-[10px] border" style={{ background: '#FEFAF0', borderColor: '#F5E3B5', color: '#8A5A0B' }}>
-          {orphans.length} lead{orphans.length === 1 ? '' : 's'} in this pipeline have a stage that no longer exists — drag them out of the “Unassigned” column.
+          {orphans.length} lead{orphans.length === 1 ? '' : 's'} in this pipeline have a stage that no longer exists — drag them out of the "Unassigned" column.
         </div>
       )}
 
@@ -154,20 +157,18 @@ function PipelinePageInner() {
           {stages.map((stage) => {
             const col = getStageColor(stage.color);
             const items = leadsByStage.get(stage.stage_key) || [];
-            const sums = new Map<string, number>();
-            for (const l of items) {
-              if (l.amount_total > 0) sums.set(l.currency || 'INR', (sums.get(l.currency || 'INR') || 0) + l.amount_total);
-            }
-            const sumLabel = sums.size === 0 ? '—' : Array.from(sums.entries()).map(([c, n]) => formatMoneyShort(n, c)).join(' · ');
+            const shown = visible[stage.id] ?? PAGE_SIZE;
+            const paged = items.slice(0, shown);
+            const remaining = items.length - paged.length;
             const isOver = overStage === stage.id;
             return (
               <div
                 key={stage.id}
-                className="flex flex-col w-[280px] flex-shrink-0 rounded-[14px] border transition-all"
+                className="flex flex-col w-[280px] flex-shrink-0 rounded-[14px] transition-all"
                 style={{
-                  background: isOver ? col.bg : col.soft,
-                  borderColor: isOver ? col.dot : 'hsl(var(--border))',
-                  boxShadow: isOver ? `0 0 0 2px ${col.dot}33` : undefined,
+                  background: col.bg,
+                  border: `1.5px solid ${isOver ? col.dot : `${col.dot}55`}`,
+                  boxShadow: isOver ? `0 0 0 3px ${col.dot}2E` : `0 1px 2px rgba(15,17,21,0.04)`,
                 }}
                 onDragEnter={(e) => { e.preventDefault(); dragCounter.current[stage.id] = (dragCounter.current[stage.id] || 0) + 1; setOverStage(stage.id); }}
                 onDragLeave={() => { dragCounter.current[stage.id] = (dragCounter.current[stage.id] || 1) - 1; if (dragCounter.current[stage.id] <= 0) setOverStage((s) => (s === stage.id ? null : s)); }}
@@ -175,19 +176,18 @@ function PipelinePageInner() {
                 onDrop={(e) => { e.preventDefault(); onDropToStage(stage); }}
               >
                 {/* Column header */}
-                <div className="px-3.5 pt-3.5 pb-2.5">
+                <div className="px-3.5 pt-3 pb-2.5 border-b" style={{ borderColor: `${col.dot}33` }}>
                   <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: col.dot }} />
-                    <span className="text-[13px] font-semibold truncate" style={{ color: col.fg }}>{stage.name}</span>
-                    <span className="ml-auto text-[11.5px] font-medium px-2 py-0.5 rounded-full" style={{ background: col.bg, color: col.fg }}>
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: col.dot }} />
+                    <span className="text-[13px] font-bold truncate" style={{ color: col.fg }}>{stage.name}</span>
+                    <span className="ml-auto text-[11.5px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.75)', color: col.fg }}>
                       {items.length}
                     </span>
                   </div>
-                  <div className="text-[11.5px] text-muted mt-1.5 pl-4">{sumLabel}</div>
                 </div>
                 {/* Cards */}
-                <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pb-2.5 space-y-2">
-                  {items.map((lead) => (
+                <div className="flex-1 min-h-0 overflow-y-auto px-2.5 py-2.5 space-y-2">
+                  {paged.map((lead) => (
                     <LeadCard
                       key={lead.id}
                       lead={lead}
@@ -197,8 +197,17 @@ function PipelinePageInner() {
                       onClick={() => ui.openLeadDrawer(lead.id)}
                     />
                   ))}
+                  {remaining > 0 && (
+                    <button
+                      onClick={() => setVisible((v) => ({ ...v, [stage.id]: shown + PAGE_SIZE }))}
+                      className="w-full py-2.5 rounded-[10px] text-[12px] font-semibold border border-dashed transition-all hover:shadow-sm"
+                      style={{ borderColor: `${col.dot}66`, color: col.fg, background: 'rgba(255,255,255,0.55)' }}
+                    >
+                      Show {Math.min(PAGE_SIZE, remaining)} more · {remaining} hidden
+                    </button>
+                  )}
                   {items.length === 0 && (
-                    <div className="border border-dashed rounded-[10px] py-8 text-center text-[12px] text-faint" style={{ borderColor: 'hsl(var(--border))' }}>
+                    <div className="border border-dashed rounded-[10px] py-8 text-center text-[12px]" style={{ borderColor: `${col.dot}55`, color: col.fg, opacity: 0.7 }}>
                       Drop leads here
                     </div>
                   )}
@@ -209,15 +218,15 @@ function PipelinePageInner() {
 
           {/* Orphans column (only when needed) */}
           {orphans.length > 0 && (
-            <div className="flex flex-col w-[280px] flex-shrink-0 rounded-[14px] border border-dashed" style={{ background: '#FBFBFC', borderColor: 'hsl(var(--border))' }}>
-              <div className="px-3.5 pt-3.5 pb-2.5">
+            <div className="flex flex-col w-[280px] flex-shrink-0 rounded-[14px]" style={{ background: '#F4F4F6', border: '1.5px dashed #9CA3AF' }}>
+              <div className="px-3.5 pt-3 pb-2.5 border-b" style={{ borderColor: '#9CA3AF44' }}>
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
-                  <span className="text-[13px] font-semibold text-ink-2">Unassigned</span>
-                  <span className="ml-auto text-[11.5px] font-medium px-2 py-0.5 rounded-full bg-surface-2 text-muted">{orphans.length}</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-gray-400 flex-shrink-0" />
+                  <span className="text-[13px] font-bold text-ink-2">Unassigned</span>
+                  <span className="ml-auto text-[11.5px] font-bold px-2 py-0.5 rounded-full bg-white/75 text-ink-2">{orphans.length}</span>
                 </div>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pb-2.5 space-y-2">
+              <div className="flex-1 min-h-0 overflow-y-auto px-2.5 py-2.5 space-y-2">
                 {orphans.map((lead) => (
                   <LeadCard
                     key={lead.id}
@@ -251,7 +260,7 @@ function PipelinePageInner() {
 }
 
 // -----------------------------------------------------------------------------
-// Lead card
+// Lead card — name + visa pill + last-touched time. No money on the board.
 // -----------------------------------------------------------------------------
 function LeadCard({ lead, dragging, onDragStart, onDragEnd, onClick }: {
   lead: LeadP; dragging: boolean; onDragStart: () => void; onDragEnd: () => void; onClick: () => void;
@@ -263,7 +272,7 @@ function LeadCard({ lead, dragging, onDragStart, onDragEnd, onClick }: {
       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', lead.id); onDragStart(); }}
       onDragEnd={onDragEnd}
       onClick={onClick}
-      className={`group bg-surface border border-border rounded-[10px] px-3 py-2.5 cursor-grab active:cursor-grabbing select-none transition-all hover:border-border-strong hover:shadow-sm ${dragging ? 'opacity-40 rotate-[1.5deg] scale-[0.98]' : ''}`}
+      className={`group bg-surface border border-border rounded-[10px] px-3 py-2.5 cursor-grab active:cursor-grabbing select-none transition-all hover:border-border-strong hover:shadow-md ${dragging ? 'opacity-40 rotate-[1.5deg] scale-[0.98]' : ''}`}
     >
       <div className="flex items-center gap-2">
         <GripVertical className="w-3.5 h-3.5 text-faint opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 -ml-1" />
@@ -275,10 +284,8 @@ function LeadCard({ lead, dragging, onDragStart, onDragEnd, onClick }: {
         )}
       </div>
       <div className="flex items-center gap-2 mt-1.5 pl-1.5 text-[11.5px] text-muted">
-        <span className="font-medium" style={{ color: lead.amount_total > 0 ? '#0F1115' : undefined }}>
-          {lead.amount_total > 0 ? formatMoneyShort(lead.amount_total, lead.currency) : 'No value'}
-        </span>
-        <span className="ml-auto">{relTime(lead.updated_at)}</span>
+        <span className="truncate">{lead.phone || lead.email || '—'}</span>
+        <span className="ml-auto flex-shrink-0">{relTime(lead.updated_at)}</span>
       </div>
     </div>
   );
