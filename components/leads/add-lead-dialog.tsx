@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Modal } from '@/components/shared/modal';
 import { useApp } from '@/components/shared/app-provider';
+import { usePipelines, getStageColor } from '@/lib/pipelines';
 import { STAGE_META, VISA_META } from '@/lib/types';
 import type { LeadStage, Industry } from '@/lib/types';
 import { normalizePhone, normalizeEmail } from '@/lib/utils';
@@ -14,19 +15,29 @@ interface Props {
 }
 
 export function AddLeadDialog({ open, onClose }: Props) {
-  const { createLead } = useApp();
+  const { createLead, updateLead, workspace } = useApp();
+  const pl = usePipelines(workspace.id);
+  const [pipelineId, setPipelineId] = useState<string>('');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [visaType, setVisaType] = useState('');
   const [industry, setIndustry] = useState<Industry | null>(null);
-  const [stage, setStage] = useState<LeadStage>('cold');
+  const [stage, setStage] = useState<string>('cold');
   const [nextFollowUp, setNextFollowUp] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const defaultPipeline = useMemo(() => pl.pipelines.find((p) => p.is_default) || pl.pipelines[0] || null, [pl.pipelines]);
+  const effectivePipelineId = pipelineId || defaultPipeline?.id || '';
+  const pipelineStages = useMemo(() => (effectivePipelineId ? pl.stagesFor(effectivePipelineId) : []), [pl, effectivePipelineId]);
+  // Keep the chosen stage valid for the chosen pipeline.
+  const effectiveStage = pipelineStages.length
+    ? (pipelineStages.some((s) => s.stage_key === stage) ? stage : pipelineStages[0].stage_key)
+    : stage;
+
   const reset = () => {
-    setFullName(''); setPhone(''); setEmail(''); setVisaType(''); setIndustry(null); setStage('cold'); setNextFollowUp(''); setNote('');
+    setFullName(''); setPhone(''); setEmail(''); setVisaType(''); setIndustry(null); setStage('cold'); setPipelineId(''); setNextFollowUp(''); setNote('');
   };
 
   const submit = async () => {
@@ -38,10 +49,15 @@ export function AddLeadDialog({ open, onClose }: Props) {
       email: normalizeEmail(email),
       visa_type: visaType.trim() || null,
       industry: industry || null,
-      stage,
+      stage: effectiveStage as LeadStage,
       next_follow_up: nextFollowUp ? new Date(nextFollowUp).toISOString() : null,
       last_note: note.trim() || null,
     });
+    // Attach the lead to the chosen pipeline (createLead's payload is fixed, so
+    // pipeline_id is stamped immediately after creation).
+    if (created && effectivePipelineId) {
+      await updateLead(created.id, { pipeline_id: effectivePipelineId } as Partial<import('@/lib/types').Lead>);
+    }
     setBusy(false);
     if (created) { reset(); onClose(); }
   };
@@ -98,10 +114,23 @@ export function AddLeadDialog({ open, onClose }: Props) {
             </div>
           </div>
           <div>
-            <label className="input-label">Stage</label>
-            <select className="input" value={stage} onChange={(e) => setStage(e.target.value as LeadStage)}>
-              {(Object.keys(STAGE_META) as LeadStage[]).map((k) => <option key={k} value={k}>{STAGE_META[k].label}</option>)}
-            </select>
+            <label className="input-label">Pipeline &amp; stage</label>
+            <div className="space-y-2">
+              {pl.pipelines.length > 1 && (
+                <select className="input" value={effectivePipelineId} onChange={(e) => { setPipelineId(e.target.value); const first = pl.stagesFor(e.target.value)[0]; if (first) setStage(first.stage_key); }}>
+                  {pl.pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}{p.is_default ? ' (default)' : ''}</option>)}
+                </select>
+              )}
+              {pipelineStages.length > 0 ? (
+                <select className="input" value={effectiveStage} onChange={(e) => setStage(e.target.value)}>
+                  {pipelineStages.map((s) => <option key={s.id} value={s.stage_key}>{s.name}</option>)}
+                </select>
+              ) : (
+                <select className="input" value={stage} onChange={(e) => setStage(e.target.value)}>
+                  {(Object.keys(STAGE_META) as LeadStage[]).map((k) => <option key={k} value={k}>{STAGE_META[k].label}</option>)}
+                </select>
+              )}
+            </div>
           </div>
         </div>
         <div>
