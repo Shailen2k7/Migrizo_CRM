@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, Activity } from 'lucide-react';
+import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban } from 'lucide-react';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
@@ -16,8 +16,9 @@ type NavItem = { href: string; label: string; icon: React.ComponentType<{ classN
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/leads', label: 'Leads', icon: Users },
+  { href: '/pipeline', label: 'Pipeline', icon: SquareKanban, new: true },
   { href: '/cases', label: 'Cases', icon: Briefcase },
-  { href: '/daily-tracker', label: 'Daily tracker', icon: Activity, new: true },
+  { href: '/daily-tracker', label: 'Daily tracker', icon: Activity },
   { href: '/payments', label: 'Payments', icon: IndianRupee },
   { href: '/ai', label: 'AI COO', icon: Sparkles },
   { href: '/settings', label: 'Settings', icon: Settings },
