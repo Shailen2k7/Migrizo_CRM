@@ -369,6 +369,19 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     return (data || []) as Note[];
   }, [supabase]);
 
+  // Fire-and-forget onboarding email when a kickstart payment is marked paid.
+  // The API route has a server-side "sent once" guard, so this can never double-send.
+  const triggerOnboardingEmail = useCallback((leadId: string) => {
+    fetch('/api/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'onboarding', leadId }),
+    }).then(async (r) => {
+      const j = await r.json().catch(() => null);
+      if (j?.ok && !j.already_sent) toast.success('Onboarding email sent to client');
+    }).catch(() => { /* silent — never block payment flow */ });
+  }, []);
+
   const recordPayment = useCallback(async (input: Partial<Payment> & { lead_id: string; milestone: Payment['milestone']; amount: number }) => {
     const payload = {
       lead_id: input.lead_id,
@@ -392,7 +405,13 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
 
     logActivity('recorded_payment', input.lead_id, { milestone: input.milestone, amount: input.amount });
     toast.success(`Payment recorded`);
-  }, [supabase, workspace.id, user.id, refreshLead, logActivity]);
+
+    // Kickstart paid → onboarding email (guarded server-side against repeats).
+    const effStatus = input.status || 'paid';
+    if (input.milestone === 'kickstart' && effStatus === 'paid') {
+      triggerOnboardingEmail(input.lead_id);
+    }
+  }, [supabase, workspace.id, user.id, refreshLead, logActivity, triggerOnboardingEmail]);
 
   const updatePayment = useCallback(async (id: string, patch: Partial<Payment>) => {
     const before = payments.find((p) => p.id === id);
@@ -407,7 +426,13 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     // DB trigger recomputes lead.amount_paid — refresh just that lead
     if (before?.lead_id) await refreshLead(before.lead_id);
     toast.success('Payment updated');
-  }, [supabase, payments, refreshLead]);
+
+    // Kickstart transitioned to paid → onboarding email (server-side guard).
+    const effMilestone = patch.milestone ?? before?.milestone;
+    if (before?.lead_id && effMilestone === 'kickstart' && patch.status === 'paid' && before?.status !== 'paid') {
+      triggerOnboardingEmail(before.lead_id);
+    }
+  }, [supabase, payments, refreshLead, triggerOnboardingEmail]);
 
   const deletePayment = useCallback(async (id: string) => {
     const before = payments;
