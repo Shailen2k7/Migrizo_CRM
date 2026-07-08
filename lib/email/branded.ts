@@ -188,10 +188,18 @@ export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, dis
   const name = esc(lead.full_name);
   const email = esc(lead.email || '—');
   const phone = esc(lead.phone || '—');
-  const BASE_FEE = 3000;
-  const netFee = Math.max(0, BASE_FEE - (discount > 0 ? discount : 0));
-  const feeIntro = discount > 0
-    ? `The standard professional fee for the end-to-end Global Talent Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as milestone-based payments below. As a special arrangement, a discount of \u00A3${discount.toLocaleString('en-GB')} has been applied, bringing your net professional fee to <b>\u00A3${netFee.toLocaleString('en-GB')}</b>. The discount is adjusted against your final milestone payment(s). Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`
+  // Discount (max £1,500) cascades across Profile Building (M2) and Final Balance
+  // (M4); Kickstart (M1) and Submission (M3) stay fixed at £500 each.
+  const d = Math.max(0, Math.min(discount || 0, 1500));
+  let r2 = 0, r4 = 0;
+  if (d <= 500) { r2 = d; }
+  else if (d <= 1000) { r2 = 500; r4 = d - 500; }
+  else { r2 = 500 + (d - 1000) / 2; r4 = 500 + (d - 1000) / 2; }
+  const M1 = 500, M2 = 1250 - r2, M3 = 500, M4 = 750 - r4;
+  const netFee = M1 + M2 + M3 + M4; // === 3000 - d
+  const gbp = (n: number) => `\u00A3${n.toLocaleString('en-GB')}`;
+  const feeIntro = d > 0
+    ? `The standard professional fee for the end-to-end Global Talent Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as milestone-based payments below. As a special arrangement, a discount of ${gbp(d)} has been applied — adjusted across the Profile Building and Final Balance milestones as shown below — bringing your net professional fee to <b>${gbp(netFee)}</b>. Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`
     : `The total professional fee payable to Migrizo for the end-to-end Global Talent Visa service is <b>\u00A33,000</b> (Three Thousand Pounds Sterling). This is structured as milestone-based payments as detailed below. Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`;
 
   const kv = (k: string, v: string) => `
@@ -288,32 +296,32 @@ export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, dis
         <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;" align="right">Amount</td>
         <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;">Paid By</td>
       </tr>
-      ${feeRow('1', 'Kickstart Fee — Engagement commencement, roadmap initiation', '£500', 'Client → Migrizo')}
-      ${feeRow('2', 'Profile Building Commencement — Following roadmap delivery, profile development begins (50% of remaining professional fee)', '£1,250', 'Client → Migrizo')}
-      ${feeRow('3', 'Endorsement Application Submission Fee — Due at the time of submission to UK Home Office', '£500', 'Client → Migrizo')}
-      ${feeRow('4', 'Final Professional Fee Balance — Payable upon receipt of endorsement approval from UK Home Office', '£750', 'Client → Migrizo')}
-      ${discount > 0 ? `
+      ${feeRow('1', 'Kickstart Fee — Engagement commencement, roadmap initiation', gbp(M1), 'Client → Migrizo')}
+      ${feeRow('2', 'Profile Building Commencement — Following roadmap delivery, profile development begins' + (r2 > 0 ? ' (discount applied)' : ''), gbp(M2), 'Client → Migrizo')}
+      ${feeRow('3', 'Endorsement Application Submission Fee — Due at the time of submission to UK Home Office', gbp(M3), 'Client → Migrizo')}
+      ${M4 > 0 ? feeRow('4', 'Final Professional Fee Balance — Payable upon receipt of endorsement approval from UK Home Office' + (r4 > 0 ? ' (discount applied)' : ''), gbp(M4), 'Client → Migrizo') : ''}
+      ${d > 0 ? `
       <tr style="background:#E6F7EE;">
         <td style="padding:8px 10px;"></td>
         <td style="padding:8px 10px;font-size:12px;font-weight:700;color:#047857;">Special Discount Applied</td>
-        <td style="padding:8px 10px;font-size:12.5px;font-weight:800;color:#047857;" align="right">\u2212 \u00A3${discount.toLocaleString('en-GB')}</td>
-        <td style="padding:8px 10px;font-size:11px;color:#047857;">Adjusted at final milestone</td>
+        <td style="padding:8px 10px;font-size:12.5px;font-weight:800;color:#047857;" align="right">\u2212 ${gbp(d)}</td>
+        <td style="padding:8px 10px;font-size:11px;color:#047857;">Adjusted in milestones above</td>
       </tr>` : ''}
       <tr style="background:#FBF7DE;">
         <td style="padding:8px 10px;"></td>
-        <td style="padding:8px 10px;font-size:12.5px;font-weight:800;color:${NAVY};">${discount > 0 ? 'NET PROFESSIONAL FEE PAYABLE (Migrizo)' : 'TOTAL PROFESSIONAL FEE (Migrizo)'}</td>
-        <td style="padding:8px 10px;font-size:13px;font-weight:800;color:${NAVY};" align="right">\u00A3${netFee.toLocaleString('en-GB')}</td>
+        <td style="padding:8px 10px;font-size:12.5px;font-weight:800;color:${NAVY};">${d > 0 ? 'NET PROFESSIONAL FEE PAYABLE (Migrizo)' : 'TOTAL PROFESSIONAL FEE (Migrizo)'}</td>
+        <td style="padding:8px 10px;font-size:13px;font-weight:800;color:${NAVY};" align="right">${gbp(netFee)}</td>
         <td style="padding:8px 10px;"></td>
       </tr>
-      ${feeRow('5', 'Profile Building / PR Agency Costs — Paid directly to third-party PR agencies; varies by candidate profile (approx. £1,000–£1,500). Migrizo manages content and coordination.', '£1,000–£1,500', 'Client → PR Agency (Direct)')}
-      ${feeRow('6', 'UK Government: Endorsement Application Fee', '£600', 'Client → UKVI')}
-      ${feeRow('7', 'UK Government: Visa Application Fee', '£300', 'Client → UKVI')}
+      ${feeRow('5', 'Profile Building / PR Agency Costs — Applicable on a case-by-case basis only. Whether this is required for your profile will be confirmed in your roadmap after you kickstart the process. Paid directly to third-party PR agencies; Migrizo manages content and coordination.', '£500', 'Client → PR Agency (Direct)')}
+      ${feeRow('6', 'UK Government: Endorsement Application Fee', '£561', 'Client → UKVI')}
+      ${feeRow('7', 'UK Government: Visa Application Fee', '£205', 'Client → UKVI')}
       ${feeRow('8', 'UK Government: Immigration Health Surcharge (IHS) — £1,035 per person per year (e.g., 3-year visa ≈ £3,105)', '£1,035/yr/person', 'Client → UKVI')}
     </table>
     ${p(`It is suggested to release the payment on time in phases for the smooth operations and process flow. Delay in payments might cause the nullify the agreement and company will not be liable to any responsibility in lieu of the successful application.`)}
     <div style="font-size:13px;font-weight:700;color:${NAVY};margin:12px 0 4px;">Important Notes on Fees</div>
     <ul style="margin:0 0 10px;padding-left:20px;">
-      ${li(`All payments to Migrizo (India) OR M4 Investment Ltd. (UK) must be made via bank transfer to the account details provided in the invoice issued at each milestone. Receipts will be issued for every payment received.`)}
+      ${li(`All payments to Migrizo (India) OR M4 Investment Ltd. (UK) must be made via bank transfer — or, for clients in India, via UPI (grownmind@icici) — to the account details provided in the invoice issued at each milestone. Receipts will be issued for every payment received.`)}
       ${li(`PR Agency / Profile Building costs (Item 5 above) are variable and will be confirmed once the Client's profile has been assessed and a publishing plan is finalised. The £500 is indicative; candidates with existing publications, media coverage, or research papers may incur lower costs.`)}
       ${li(`Government fees (Items 6, 7 &amp; 8) are subject to change by the UK Home Office without notice. The Client is responsible for verifying the current fee schedule at www.gov.uk/global-talent prior to payment.`)}
       ${li(`IHS charges are calculated per person, per year, for the visa duration applied for. Dependants are charged separately.`)}

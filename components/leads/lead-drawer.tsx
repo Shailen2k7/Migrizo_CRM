@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star, Pencil, Send } from 'lucide-react';
+import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star, Pencil, Send, Inbox } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 import type { Lead, Note, Payment, LeadStage } from '@/lib/types';
 import { STAGE_META, MILESTONE_META, VISA_META, getVisaMeta } from '@/lib/types';
 import { useApp } from '@/components/shared/app-provider';
@@ -25,7 +26,8 @@ interface Props {
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, role, memberNameById, canViewPayments, canSendEmails, workspace } = useApp();
   const pl = usePipelines(workspace.id);
-  const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups'>('overview');
+  const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups' | 'emails'>('overview');
+  const [emailLog, setEmailLog] = useState<EmailLogEntry[] | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
   const [pendingLead, setPendingLead] = useState<Partial<Lead> & { pipeline_id?: string | null }>({});
@@ -78,6 +80,21 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
     setTab('overview'); setNewNote('');
     getNotes(leadId).then(setNotes);
   }, [leadId, getNotes]);
+
+  // Load this lead's email history (from the activity log) when the drawer opens.
+  useEffect(() => {
+    if (!leadId) { setEmailLog(null); return; }
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .from('activity')
+      .select('id, user_id, action, meta, created_at')
+      .eq('lead_id', leadId)
+      .eq('action', 'email_sent')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { if (!cancelled) setEmailLog((data as EmailLogEntry[]) || []); });
+    return () => { cancelled = true; };
+  }, [leadId]);
 
   const submitNote = async () => {
     if (!leadId || !newNote.trim()) return;
@@ -162,12 +179,13 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
               </div>
 
               <div className="flex items-center gap-1 mx-6 mt-5 p-1 rounded-md bg-surface-2 w-fit">
-                {(['overview', 'notes', 'followups', ...(canViewPayments ? ['payments'] as const : [])] as const).map((t) => (
+                {(['overview', 'notes', 'followups', ...(canViewPayments ? ['payments'] as const : []), ...(canSendEmails ? ['emails'] as const : [])] as const).map((t) => (
                   <button key={t} onClick={() => setTab(t)} className={cn('px-3 py-1.5 rounded-md text-[12.5px] font-medium', tab === t ? 'bg-surface shadow-sm' : 'text-muted hover:bg-surface')}>
-                    {t === 'followups' ? 'Follow-ups' : t.charAt(0).toUpperCase() + t.slice(1)}
+                    {t === 'followups' ? 'Follow-ups' : t === 'emails' ? 'Emails' : t.charAt(0).toUpperCase() + t.slice(1)}
                     {t === 'notes' && notes.length > 0 ? ` · ${notes.length}` : ''}
                     {t === 'followups' && pendingFollowUps > 0 ? ` · ${pendingFollowUps}` : ''}
                     {t === 'payments' && leadPayments.length > 0 ? ` · ${leadPayments.length}` : ''}
+                    {t === 'emails' && emailLog && emailLog.length > 0 ? ` · ${emailLog.length}` : ''}
                   </button>
                 ))}
               </div>
@@ -224,13 +242,13 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                             <div className="inline-flex items-center gap-1">
                               <span className="text-[12.5px] text-muted">£</span>
                               <input
-                                autoFocus type="number" min="0" max="3000" step="50" value={slaDiscount}
+                                autoFocus type="number" min="0" max="1500" step="50" value={slaDiscount}
                                 onChange={(e) => setSlaDiscount(e.target.value)}
                                 placeholder="0"
                                 className="w-[84px] px-2 py-1 rounded-md border border-border bg-surface text-[12.5px] outline-none focus:border-[#4F46E5]"
                               />
                             </div>
-                            <span className="text-[11.5px] text-faint">Net fee payable: <b className="text-ink-2">£{(3000 - Math.min(Math.max(Number(slaDiscount) || 0, 0), 3000)).toLocaleString('en-GB')}</b></span>
+                            <span className="text-[11.5px] text-faint">Net fee payable: <b className="text-ink-2">£{(3000 - Math.min(Math.max(Number(slaDiscount) || 0, 0), 1500)).toLocaleString('en-GB')}</b></span>
                             <div className="ml-auto flex items-center gap-2">
                               <button
                                 onClick={() => { setSlaEditMode(false); setSlaDiscount(''); }}
@@ -240,7 +258,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                                 Cancel
                               </button>
                               <button
-                                onClick={() => sendEmail('sla', Math.min(Math.max(Number(slaDiscount) || 0, 0), 3000))}
+                                onClick={() => sendEmail('sla', Math.min(Math.max(Number(slaDiscount) || 0, 0), 1500))}
                                 disabled={sendingEmail !== null}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
                               >
@@ -514,6 +532,10 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                   </>
                 )}
 
+                {tab === 'emails' && (
+                  <EmailHistory log={emailLog} memberNameById={memberNameById} />
+                )}
+
                 {isDirty && <div className="h-20" />}
               </div>
 
@@ -620,4 +642,89 @@ function InlineNumber({ value, onChange, placeholder, currency = 'INR' }: { valu
   };
   if (editing) return <input type="number" min="0" className="input py-1.5 px-2.5 text-[12px] w-[140px] num" autoFocus value={v} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setV((value ?? 0).toString()); setEditing(false); } }} placeholder={placeholder} />;
   return <button onClick={() => setEditing(true)} className="num font-semibold text-[13px] hover:text-ink hover:bg-surface-2 px-2 py-1 -mx-2 -my-1 rounded text-left">{formatMoney(value || 0, currency)}</button>;
+}
+
+// ===========================================================================
+// EMAIL HISTORY — read-only log of every branded email sent to this client.
+// Data comes from the `activity` table (action = 'email_sent').
+// ===========================================================================
+interface EmailLogEntry {
+  id: string;
+  user_id: string | null;
+  action: string;
+  meta: {
+    email_type?: 'onboarding' | 'sla' | 'invoice';
+    invoice_no?: string;
+    milestone?: string;
+    discount?: number;
+    payment_id?: string;
+  } | null;
+  created_at: string;
+}
+
+const EMAIL_KINDS: Record<string, { label: string; sub: string; bg: string; fg: string; icon: 'file' | 'send' | 'rupee' }> = {
+  onboarding: { label: 'Onboarding Email', sub: 'Welcome & document checklist', bg: '#E6F7EE', fg: '#047857', icon: 'send' },
+  sla:        { label: 'Service Agreement (SLA)', sub: 'Sent for acceptance', bg: '#EEF2FF', fg: '#4338CA', icon: 'file' },
+  invoice:    { label: 'Invoice / Receipt', sub: 'Payment document', bg: '#FEF3C7', fg: '#B45309', icon: 'rupee' },
+};
+
+function EmailHistory({ log, memberNameById }: { log: EmailLogEntry[] | null; memberNameById: (id: string | null) => string }) {
+  if (log === null) {
+    return <div className="py-10 text-center text-[12.5px] text-muted">Loading email history…</div>;
+  }
+  if (log.length === 0) {
+    return (
+      <div className="text-center py-10 rounded-md border border-dashed border-border">
+        <Inbox className="w-6 h-6 text-faint mx-auto mb-2" />
+        <div className="text-[12.5px] text-muted mb-1">No emails sent yet</div>
+        <div className="text-[11px] text-faint max-w-[280px] mx-auto">Onboarding, SLA, and invoice emails you send to this client will appear here with the date and sender.</div>
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="text-[11.5px] text-muted mb-3">
+        {log.length} email{log.length === 1 ? '' : 's'} sent to this client · most recent first
+      </div>
+      <div className="relative pl-1">
+        {log.map((e, i) => {
+          const kind = EMAIL_KINDS[e.meta?.email_type || ''] || { label: 'Email', sub: '', bg: '#F4F4F6', fg: '#6B7280', icon: 'send' as const };
+          const isPaidReceipt = e.meta?.email_type === 'invoice';
+          const disc = e.meta?.discount;
+          return (
+            <div key={e.id} className="flex gap-3 pb-3 last:pb-0">
+              {/* timeline rail */}
+              <div className="flex flex-col items-center flex-shrink-0">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: kind.bg }}>
+                  {kind.icon === 'file' && <FileText className="w-4 h-4" style={{ color: kind.fg }} />}
+                  {kind.icon === 'send' && <Send className="w-4 h-4" style={{ color: kind.fg }} />}
+                  {kind.icon === 'rupee' && <IndianRupee className="w-4 h-4" style={{ color: kind.fg }} />}
+                </div>
+                {i < log.length - 1 && <div className="w-px flex-1 bg-border mt-1" style={{ minHeight: 14 }} />}
+              </div>
+              {/* card */}
+              <div className="flex-1 min-w-0 bg-surface border border-border rounded-[10px] px-3.5 py-2.5 -mt-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[13px] font-semibold text-ink">{kind.label}</span>
+                  <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: kind.bg, color: kind.fg }}>SENT</span>
+                  {typeof disc === 'number' && disc > 0 && (
+                    <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: '#E6F7EE', color: '#047857' }}>−£{disc.toLocaleString('en-GB')} discount</span>
+                  )}
+                </div>
+                <div className="text-[11.5px] text-muted mt-0.5">
+                  {kind.sub}
+                  {e.meta?.invoice_no ? ` · ${e.meta.invoice_no}` : ''}
+                  {e.meta?.milestone ? ` · ${e.meta.milestone}` : ''}
+                </div>
+                <div className="text-[11px] text-faint mt-1.5 flex items-center gap-1.5">
+                  <span>{new Date(e.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} · {new Date(e.created_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</span>
+                  {e.user_id && <><span>·</span><span>by {memberNameById(e.user_id)}</span></>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
 }

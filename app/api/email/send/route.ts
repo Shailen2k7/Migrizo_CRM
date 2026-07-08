@@ -111,7 +111,7 @@ export async function POST(req: Request) {
     email = renderInvoice(lead as Lead, payment as Payment, invNo);
     meta = { ...meta, payment_id: body.paymentId, invoice_no: invNo, milestone: (payment as Payment).milestone };
   } else if (type === 'sla') {
-    const discount = typeof body.discount === 'number' && body.discount > 0 ? Math.min(body.discount, 3000) : 0;
+    const discount = typeof body.discount === "number" && body.discount > 0 ? Math.min(body.discount, 1500) : 0;
     email = renderSLA(lead as Lead, discount);
     if (discount) meta = { ...meta, discount };
   } else {
