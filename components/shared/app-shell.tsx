@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback } from 'react';
+import { PwaSetup } from '@/components/shared/pwa';
 import { Menu, Plus } from 'lucide-react';
 import { AppProvider } from '@/components/shared/app-provider';
 import { Sidebar } from '@/components/sidebar';
@@ -54,6 +55,7 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
 
   return (
     <AppProvider user={user} workspace={workspace} role={role} initialCanViewPayments={canViewPayments} initialLeads={initialLeads} initialPayments={initialPayments} initialActivity={initialActivity}>
+      <PwaSetup />
       <UIContext.Provider value={ui}>
         {/* Mobile top bar */}
         <header className="md:hidden fixed top-0 left-0 right-0 h-14 bg-surface/90 backdrop-blur-md border-b border-border z-30 flex items-center gap-3 px-4">

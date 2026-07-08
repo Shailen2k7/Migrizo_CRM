@@ -153,7 +153,7 @@ function PipelinePageInner() {
 
       {/* Board */}
       <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden -mx-1 px-1">
-        <div className="flex gap-3.5 h-full pb-2 pr-8" style={{ minHeight: 420 }}>
+        <div className="flex gap-3 h-full pb-2 pr-8 snap-x snap-mandatory sm:snap-none" style={{ minHeight: 420 }}>
           {stages.map((stage) => {
             const col = getStageColor(stage.color);
             const items = leadsByStage.get(stage.stage_key) || [];
@@ -164,7 +164,7 @@ function PipelinePageInner() {
             return (
               <div
                 key={stage.id}
-                className="flex flex-col w-[236px] flex-shrink-0 rounded-[14px] transition-all"
+                className="flex flex-col w-[82vw] sm:w-[220px] flex-shrink-0 rounded-[14px] transition-all snap-start"
                 style={{
                   background: col.bg,
                   border: `1.5px solid ${isOver ? col.dot : `${col.dot}55`}`,
@@ -218,7 +218,7 @@ function PipelinePageInner() {
 
           {/* Orphans column (only when needed) */}
           {orphans.length > 0 && (
-            <div className="flex flex-col w-[236px] flex-shrink-0 rounded-[14px]" style={{ background: '#F4F4F6', border: '1.5px dashed #9CA3AF' }}>
+            <div className="flex flex-col w-[82vw] sm:w-[220px] flex-shrink-0 rounded-[14px]" style={{ background: '#F4F4F6', border: '1.5px dashed #9CA3AF' }}>
               <div className="px-3.5 pt-3 pb-2.5 border-b" style={{ borderColor: '#9CA3AF44' }}>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-gray-400 flex-shrink-0" />

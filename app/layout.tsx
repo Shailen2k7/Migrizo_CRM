@@ -5,6 +5,16 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Migrizo · Operations CRM',
   description: 'Visa consultancy CRM for lead and payment management',
+  manifest: '/manifest.json',
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Migrizo' },
+  icons: { apple: '/icons/apple-touch-icon.png' },
+};
+
+export const viewport = {
+  themeColor: '#16294E',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover' as const,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

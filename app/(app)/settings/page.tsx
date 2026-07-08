@@ -388,6 +388,62 @@ function MemberRow({ m, isOwner, isSelf, children }: { m: Member; isOwner: boole
 // =========================================
 // NOTIFICATIONS
 // =========================================
+function PushDeviceCard() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    import('@/lib/push-client').then(({ isPushEnabledHere }) => isPushEnabledHere().then(setEnabled));
+  }, []);
+
+  const enable = async () => {
+    setBusy(true);
+    const { enablePushOnThisDevice } = await import('@/lib/push-client');
+    const res = await enablePushOnThisDevice();
+    setBusy(false);
+    if (res.ok) { setEnabled(true); toast.success('This device will now receive follow-up notifications'); }
+    else if (res.reason === 'denied') toast.error('Notifications blocked — allow them in your browser/site settings');
+    else if (res.reason === 'unsupported') toast.error('This browser does not support push. On iPhone: add the app to your Home Screen first, then enable here.');
+    else if (res.reason === 'no_vapid_key') toast.error('Push keys not configured — add NEXT_PUBLIC_VAPID_PUBLIC_KEY in Netlify');
+    else toast.error(`Could not enable: ${res.reason || 'unknown'}`);
+  };
+
+  const sendTest = async () => {
+    setBusy(true);
+    const r = await fetch('/api/push/dispatch?test=1', { method: 'POST' });
+    const j = await r.json().catch(() => null);
+    setBusy(false);
+    if (j?.ok) toast.success(`Test sent to ${j.sent} device${j.sent === 1 ? '' : 's'} — check your notifications`);
+    else if (j?.reason === 'no_subscriptions') toast.error('No devices enabled yet — click "Enable on this device" first');
+    else toast.error('Test failed — check VAPID env vars in Netlify');
+  };
+
+  return (
+    <Card title="Phone & device push notifications" subtitle="Follow-up reminders delivered to this device at the exact scheduled time — even when the CRM is closed">
+      <div className="flex items-center gap-3 flex-wrap">
+        {enabled === null ? <span className="text-[12.5px] text-muted">Checking this device…</span>
+          : enabled ? <span className="chip" style={{ background: 'hsl(var(--green-soft))', color: '#047857', border: 'none' }}><Check className="w-3 h-3 mr-1 inline" />Enabled on this device</span>
+          : <span className="text-[12.5px] text-muted">Not enabled on this device yet</span>}
+        <div className="ml-auto flex items-center gap-2">
+          {!enabled && (
+            <button onClick={enable} disabled={busy} className="btn btn-primary btn-sm disabled:opacity-50">
+              {busy ? 'Enabling…' : 'Enable on this device'}
+            </button>
+          )}
+          {enabled && (
+            <button onClick={sendTest} disabled={busy} className="btn btn-outline btn-sm disabled:opacity-50">
+              {busy ? 'Sending…' : 'Send test notification'}
+            </button>
+          )}
+        </div>
+      </div>
+      <p className="text-[11.5px] text-faint mt-3">
+        Enable this on every device where you want alerts (laptop + phone). On iPhone, first add Migrizo to your Home Screen (Share → Add to Home Screen), open it from there, then enable. Scheduled follow-ups fire a notification at the exact minute they're due.
+      </p>
+    </Card>
+  );
+}
+
 function NotificationsSection() {
   const [prefs, setLocalPrefs] = useState<NotifPref>(getPrefs());
   const [browserPerm, setBrowserPerm] = useState<NotificationPermission | 'unsupported'>('default');
@@ -422,6 +478,7 @@ function NotificationsSection() {
 
   return (
     <div className="space-y-3">
+      <PushDeviceCard />
       <Card title="Browser notifications" subtitle="Pop-up alerts even when this tab isn't focused">
         <Row label="Permission">
           {browserPerm === 'unsupported' ? <span className="text-[12.5px] text-muted">Not supported by this browser</span>

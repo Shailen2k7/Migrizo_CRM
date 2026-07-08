@@ -24,7 +24,7 @@ interface Props {
 }
 
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
-  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, role, memberNameById, canViewPayments, canSendEmails, workspace } = useApp();
+  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, createFollowUp, role, memberNameById, canViewPayments, canSendEmails, workspace } = useApp();
   const pl = usePipelines(workspace.id);
   const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups' | 'emails'>('overview');
   const [emailLog, setEmailLog] = useState<EmailLogEntry[] | null>(null);
@@ -480,6 +480,24 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
 
                 {tab === 'followups' && (
                   <>
+                    {/* Quick schedule — one tap sets a reminder; name autofilled. */}
+                    <div className="mb-3 rounded-[10px] border border-border bg-surface-2 px-3 py-2.5">
+                      <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-1.5">Quick schedule a call</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {quickSlots().map((s) => (
+                          <button
+                            key={s.label}
+                            onClick={async () => {
+                              const created = await createFollowUp({ lead_id: lead.id, title: `Call ${effectiveLead.full_name.split(' ')[0]}`, scheduled_at: s.iso, channel: 'call' });
+                              if (created) toast.success(`Reminder set: ${s.label} — you'll get a notification`);
+                            }}
+                            className="px-2.5 py-1.5 rounded-full text-[12px] font-medium bg-surface border border-border hover:border-[#4F46E5] hover:text-[#4F46E5] transition-all"
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <div className="mb-3 flex items-center justify-between">
                       <div className="text-[12.5px] text-muted">
                         {pendingFollowUps > 0
@@ -727,4 +745,30 @@ function EmailHistory({ log, memberNameById }: { log: EmailLogEntry[] | null; me
       </div>
     </>
   );
+}
+
+
+// One-tap follow-up slots for the quick scheduler.
+function quickSlots(): { label: string; iso: string }[] {
+  const now = new Date();
+  const slots: { label: string; iso: string }[] = [];
+  // In 1 hour (rounded to next half hour)
+  const inHour = new Date(now.getTime() + 60 * 60 * 1000);
+  inHour.setMinutes(inHour.getMinutes() < 30 ? 30 : 60, 0, 0);
+  slots.push({ label: `In 1 hour (${fmtSlot(inHour)})`, iso: inHour.toISOString() });
+  // Today 6 PM (only if still ahead)
+  const today6 = new Date(now); today6.setHours(18, 0, 0, 0);
+  if (today6.getTime() > now.getTime() + 10 * 60 * 1000) {
+    slots.push({ label: 'Today 6 PM', iso: today6.toISOString() });
+  }
+  // Tomorrow 10 AM
+  const tom10 = new Date(now); tom10.setDate(tom10.getDate() + 1); tom10.setHours(10, 0, 0, 0);
+  slots.push({ label: 'Tomorrow 10 AM', iso: tom10.toISOString() });
+  // In 3 days 10 AM
+  const d3 = new Date(now); d3.setDate(d3.getDate() + 3); d3.setHours(10, 0, 0, 0);
+  slots.push({ label: `${d3.toLocaleDateString('en-IN', { weekday: 'short' })} 10 AM`, iso: d3.toISOString() });
+  return slots;
+}
+function fmtSlot(d: Date): string {
+  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
 }
