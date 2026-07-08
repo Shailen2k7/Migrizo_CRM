@@ -33,7 +33,13 @@ export async function updateSession(request: NextRequest) {
   // If env vars are placeholder, skip auth checks (build phase or misconfigured)
   if (url === PLACEHOLDER_URL) return response;
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // PERF: getSession() reads the JWT from the cookie locally (no network hop)
+  // and only contacts Supabase when the token actually needs refreshing
+  // (~once an hour). getUser() was a network round-trip on EVERY request —
+  // pages, prefetches, API calls — which stacked with Netlify cold starts.
+  // Real verification still happens server-side in the (app) layout's getUser().
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
 

@@ -104,8 +104,8 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     setLoading(true);
     try {
       const [{ data: l }, { data: p }, { data: a }] = await Promise.all([
-        supabase.from('leads').select('*').order('updated_at', { ascending: false }),
-        supabase.from('payments').select('*').order('created_at', { ascending: false }),
+        supabase.from('leads').select('*').order('updated_at', { ascending: false }).range(0, 9999),
+        supabase.from('payments').select('*').order('created_at', { ascending: false }).range(0, 9999),
         supabase.from('activity').select('*').order('created_at', { ascending: false }).limit(50),
       ]);
       if (l) setLeads(l as Lead[]);

@@ -61,6 +61,8 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLead?.id]);
 
+  const savedCurrency: Currency = (selectedLead?.currency as Currency) || 'INR';
+
   const submit = async () => {
     const n = parseFloat(amount);
     if (!leadId || !n || n <= 0) return;
@@ -117,16 +119,16 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
           <div className="rounded-md p-3 grid grid-cols-3 gap-2 text-center" style={{ background: '#F7F8FA', border: '0.5px solid #E5E7EB' }}>
             <div>
               <div className="text-[10px] text-faint uppercase tracking-wider font-semibold">Total fee</div>
-              <div className="text-[14px] font-semibold mt-0.5 num">{currentTotal > 0 ? formatMoney(currentTotal, currency) : <span className="text-faint">Not set</span>}</div>
+              <div className="text-[14px] font-semibold mt-0.5 num">{currentTotal > 0 ? formatMoney(currentTotal, savedCurrency) : <span className="text-faint">Not set</span>}</div>
             </div>
             <div>
               <div className="text-[10px] text-faint uppercase tracking-wider font-semibold">Already paid</div>
-              <div className="text-[14px] font-semibold mt-0.5 num" style={{ color: '#0F6E56' }}>{formatMoney(currentPaid, currency)}</div>
+              <div className="text-[14px] font-semibold mt-0.5 num" style={{ color: '#0F6E56' }}>{formatMoney(currentPaid, savedCurrency)}</div>
             </div>
             <div>
               <div className="text-[10px] text-faint uppercase tracking-wider font-semibold">Pending</div>
               <div className="text-[14px] font-semibold mt-0.5 num" style={{ color: effectiveTotal > 0 ? '#A32D2D' : '#9CA3AF' }}>
-                {effectiveTotal > 0 ? formatMoney(Math.max(0, effectiveTotal - currentPaid), currency) : '—'}
+                {effectiveTotal > 0 ? formatMoney(Math.max(0, effectiveTotal - currentPaid), savedCurrency) : '—'}
               </div>
             </div>
           </div>
@@ -174,6 +176,12 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
               </button>
             ))}
           </div>
+          <p className="text-[11px] text-muted mt-1.5">This is the lead&rsquo;s currency — every amount for this lead (fee, paid, pending, invoices) uses it.</p>
+          {currency !== savedCurrency && currentPaid > 0 && (
+            <p className="text-[11px] mt-1 px-2.5 py-1.5 rounded-md" style={{ background: '#FEF3C7', color: '#92400E' }}>
+              ⚠ This lead already has {formatMoney(currentPaid, savedCurrency)} recorded. Switching to {currency} relabels all existing amounts — it does not convert them. Only change this if earlier entries were in the wrong currency.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">

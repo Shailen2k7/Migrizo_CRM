@@ -164,8 +164,8 @@ export async function POST(req: Request) {
   const workspace = member.workspaces as unknown as { id: string; name: string };
 
   const [{ data: leads }, { data: payments }, { data: activity }] = await Promise.all([
-    supabase.from('leads').select('*').order('updated_at', { ascending: false }),
-    supabase.from('payments').select('*').order('created_at', { ascending: false }),
+    supabase.from('leads').select('*').order('updated_at', { ascending: false }).range(0, 9999),
+    supabase.from('payments').select('*').order('created_at', { ascending: false }).range(0, 9999),
     supabase.from('activity').select('*').order('created_at', { ascending: false }).limit(50),
   ]);
 

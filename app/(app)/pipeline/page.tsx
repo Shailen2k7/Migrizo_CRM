@@ -153,7 +153,7 @@ function PipelinePageInner() {
 
       {/* Board */}
       <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden -mx-1 px-1">
-        <div className="flex gap-3.5 h-full pb-2" style={{ minHeight: 420 }}>
+        <div className="flex gap-3.5 h-full pb-2 pr-8" style={{ minHeight: 420 }}>
           {stages.map((stage) => {
             const col = getStageColor(stage.color);
             const items = leadsByStage.get(stage.stage_key) || [];
