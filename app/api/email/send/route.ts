@@ -11,13 +11,13 @@
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { renderOnboarding, renderSLA, renderInvoice } from '@/lib/email/branded';
+import { renderOnboarding, renderSLA, renderInvoice, renderProcess } from '@/lib/email/branded';
 import type { Lead, Payment } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
-type EmailType = 'onboarding' | 'sla' | 'invoice';
-const VALID: EmailType[] = ['onboarding', 'sla', 'invoice'];
+type EmailType = 'onboarding' | 'sla' | 'invoice' | 'process';
+const VALID: EmailType[] = ['onboarding', 'sla', 'invoice', 'process'];
 
 // Deterministic invoice number from the payment row: MGZ-YYYYMM-XXXXXX
 function invoiceNumber(payment: { id: string; created_at: string | null }): string {
@@ -110,6 +110,8 @@ export async function POST(req: Request) {
     const invNo = invoiceNumber(payment as Payment);
     email = renderInvoice(lead as Lead, payment as Payment, invNo);
     meta = { ...meta, payment_id: body.paymentId, invoice_no: invNo, milestone: (payment as Payment).milestone };
+  } else if (type === 'process') {
+    email = renderProcess(lead as Lead);
   } else if (type === 'sla') {
     const discount = typeof body.discount === "number" && body.discount > 0 ? Math.min(body.discount, 1500) : 0;
     email = renderSLA(lead as Lead, discount);

@@ -1,7 +1,11 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/auth/callback'];
+// Public paths: the login/auth pages, plus API endpoints that authenticate
+// themselves with a shared secret instead of a user session (Meta lead ingest
+// and the push-dispatch cron). Without these here, middleware redirects the
+// unauthenticated POST to /login, which returns 405 Method Not Allowed.
+const PUBLIC_PATHS = ['/login', '/auth/callback', '/api/ingest', '/api/push/dispatch'];
 const PLACEHOLDER_URL = 'https://placeholder.supabase.co';
 const PLACEHOLDER_KEY = 'placeholder-anon-key';
 

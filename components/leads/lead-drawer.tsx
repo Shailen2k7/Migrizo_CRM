@@ -35,14 +35,14 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const [confirmClose, setConfirmClose] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addFollowUpOpen, setAddFollowUpOpen] = useState(false);
-  const [sendingEmail, setSendingEmail] = useState<null | 'sla' | 'onboarding'>(null);
+  const [sendingEmail, setSendingEmail] = useState<null | 'sla' | 'onboarding' | 'process'>(null);
 
   // One-click branded emails (SLA / onboarding). Server logs to the activity feed.
   const [slaConfigOpen, setSlaConfigOpen] = useState(false);
   const [slaEditMode, setSlaEditMode] = useState(false);
   const [slaDiscount, setSlaDiscount] = useState('');
 
-  const sendEmail = async (type: 'sla' | 'onboarding', discount?: number) => {
+  const sendEmail = async (type: 'sla' | 'onboarding' | 'process', discount?: number) => {
     if (!lead) return;
     if (!lead.email) { toast.error('This lead has no email address'); return; }
     setSendingEmail(type);
@@ -61,7 +61,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
         });
         j = await res.json().catch(() => null);
       }
-      if (j?.ok) { toast.success(type === 'sla' ? `SLA sent to ${lead.email}` : `Onboarding email sent to ${lead.email}`); if (type === 'sla') { setSlaConfigOpen(false); setSlaEditMode(false); setSlaDiscount(''); } }
+      if (j?.ok) { toast.success(type === 'sla' ? `SLA sent to ${lead.email}` : type === 'process' ? `"How it works" email sent to ${lead.email}` : `Onboarding email sent to ${lead.email}`); if (type === 'sla') { setSlaConfigOpen(false); setSlaEditMode(false); setSlaDiscount(''); } }
       else toast.error(`Send failed${j?.reason ? `: ${j.reason}` : ''}`);
     } catch {
       toast.error('Send failed — check your connection');
@@ -211,6 +211,14 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                         title={effectiveLead.email ? 'Send the welcome/onboarding email (auto-sends on kickstart payment)' : 'Add an email address first'}
                       >
                         <Send className="w-3.5 h-3.5 transition-transform group-hover/onb:translate-x-[1px] group-hover/onb:-translate-y-[1px]" /> {sendingEmail === 'onboarding' ? 'Sending…' : 'Send onboarding'}
+                      </button>
+                      <button
+                        onClick={() => sendEmail('process')}
+                        disabled={sendingEmail !== null || !effectiveLead.email}
+                        className="group/prc inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#B45309] bg-[#FEF3C7] hover:bg-[#B45309] hover:text-white transition-all disabled:opacity-50"
+                        title={effectiveLead.email ? 'Send the visual "How it works" process email' : 'Add an email address first'}
+                      >
+                        <FileText className="w-3.5 h-3.5" /> {sendingEmail === 'process' ? 'Sending…' : 'How it works'}
                       </button>
                     </div>
                     )}
