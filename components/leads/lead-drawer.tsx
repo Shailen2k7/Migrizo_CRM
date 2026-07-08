@@ -92,6 +92,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
       .eq('lead_id', leadId)
       .eq('action', 'email_sent')
       .order('created_at', { ascending: false })
+      .limit(50)
       .then(({ data }) => { if (!cancelled) setEmailLog((data as EmailLogEntry[]) || []); });
     return () => { cancelled = true; };
   }, [leadId]);

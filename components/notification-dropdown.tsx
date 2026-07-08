@@ -161,7 +161,7 @@ export function NotificationDropdown({ leads, payments, onOpenLead }: Props) {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute top-full right-0 mt-2 w-[400px] max-w-[calc(100vw-32px)] panel shadow-lg z-50 max-h-[600px] flex flex-col animate-fadeIn">
+          <div className="fixed left-3 right-3 top-[64px] w-auto sm:absolute sm:top-full sm:right-0 sm:left-auto sm:mt-2 sm:w-[400px] sm:max-w-[calc(100vw-32px)] panel shadow-lg z-50 max-h-[70vh] sm:max-h-[600px] flex flex-col animate-fadeIn">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">
               <div>
                 <h3 className="text-[14px] font-semibold">Notifications</h3>

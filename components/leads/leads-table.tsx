@@ -6,6 +6,7 @@ import {
   flexRender, type ColumnDef, type SortingState
 } from '@tanstack/react-table';
 import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Search, Star, Copy, Check } from 'lucide-react';
+import { DealTag } from '@/components/shared/deal-tag';
 import { useApp } from '@/components/shared/app-provider';
 import type { Lead, LeadStage } from '@/lib/types';
 import { STAGE_META, STAGE_ORDER, PAYMENT_META, getStageMeta, getVisaMeta } from '@/lib/types';
@@ -84,9 +85,10 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
             <div className="av" style={{ background: avatarColor(l.id) }}>{initials(l.full_name)}</div>
             <div className="min-w-0">
               <div className="font-semibold text-ink leading-tight text-[13.5px]">{l.full_name}</div>
-              <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                 <VisaTag visa={l.visa_type} />
                 {l.industry && <IndustryChip industry={l.industry} size="xs" />}
+                <DealTag lead={l} />
               </div>
             </div>
             {(l.phone || l.email) && (
@@ -198,7 +200,9 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
 
   return (
     <>
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
+      <div className="mb-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:flex-wrap">
+        {/* chips — horizontal scroll on mobile, wrap on desktop */}
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 sm:pb-0 sm:flex-wrap sm:contents">
         <button
           onClick={() => setSegment('spotlight')}
           className={cn('filter-chip', segment === 'spotlight' && 'active')}
@@ -219,11 +223,12 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
             </button>
           );
         })}
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
+        </div>
+        <div className="sm:ml-auto flex items-center gap-2 w-full sm:w-auto">
+          <div className="relative w-full sm:w-auto">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name, phone, email…"
-              className="pl-8 pr-3 py-2 text-[12.5px] w-[280px] rounded-md border border-border bg-surface focus:outline-none focus:border-indigo focus:ring-4 focus:ring-indigo-soft text-ink" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, phone, email…"
+              className="pl-8 pr-3 py-2 text-[12.5px] w-full sm:w-[280px] rounded-md border border-border bg-surface focus:outline-none focus:border-indigo focus:ring-4 focus:ring-indigo-soft text-ink" />
           </div>
         </div>
       </div>

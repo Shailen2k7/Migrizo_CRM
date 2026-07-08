@@ -12,6 +12,7 @@
 // =============================================================================
 
 import { Suspense, useMemo, useRef, useState } from 'react';
+import { DealTag } from '@/components/shared/deal-tag';
 import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
 import { usePipelines, getStageColor, STAGE_COLOR_LIST, type Pipeline, type Stage, type StageColor } from '@/lib/pipelines';
@@ -105,7 +106,7 @@ function PipelinePageInner() {
   }
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-6 animate-pageIn h-full flex flex-col">
+    <div className="px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-4 animate-pageIn flex flex-col h-[calc(100dvh-56px)] md:h-screen">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
         <div>
@@ -152,7 +153,7 @@ function PipelinePageInner() {
       )}
 
       {/* Board */}
-      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden -mx-1 px-1">
+      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden -mx-1 px-1" style={{ overscrollBehavior: 'contain' }}>
         <div className="flex gap-3 h-full pb-2 pr-8 snap-x snap-mandatory sm:snap-none" style={{ minHeight: 420 }}>
           {stages.map((stage) => {
             const col = getStageColor(stage.color);
@@ -164,7 +165,7 @@ function PipelinePageInner() {
             return (
               <div
                 key={stage.id}
-                className="flex flex-col w-[82vw] sm:w-[220px] flex-shrink-0 rounded-[14px] transition-all snap-start"
+                className="flex flex-col w-[31vw] sm:w-[220px] flex-shrink-0 rounded-[14px] transition-all snap-start"
                 style={{
                   background: col.bg,
                   border: `1.5px solid ${isOver ? col.dot : `${col.dot}55`}`,
@@ -186,7 +187,7 @@ function PipelinePageInner() {
                   </div>
                 </div>
                 {/* Cards */}
-                <div className="flex-1 min-h-0 overflow-y-auto px-2.5 py-2.5 space-y-2">
+                <div className="flex-1 min-h-0 overflow-y-auto px-2.5 py-2.5 space-y-2" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
                   {paged.map((lead) => (
                     <LeadCard
                       key={lead.id}
@@ -218,7 +219,7 @@ function PipelinePageInner() {
 
           {/* Orphans column (only when needed) */}
           {orphans.length > 0 && (
-            <div className="flex flex-col w-[82vw] sm:w-[220px] flex-shrink-0 rounded-[14px]" style={{ background: '#F4F4F6', border: '1.5px dashed #9CA3AF' }}>
+            <div className="flex flex-col w-[31vw] sm:w-[220px] flex-shrink-0 rounded-[14px]" style={{ background: '#F4F4F6', border: '1.5px dashed #9CA3AF' }}>
               <div className="px-3.5 pt-3 pb-2.5 border-b" style={{ borderColor: '#9CA3AF44' }}>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-gray-400 flex-shrink-0" />
@@ -226,7 +227,7 @@ function PipelinePageInner() {
                   <span className="ml-auto text-[11.5px] font-bold px-2 py-0.5 rounded-full bg-white/75 text-ink-2">{orphans.length}</span>
                 </div>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto px-2.5 py-2.5 space-y-2">
+              <div className="flex-1 min-h-0 overflow-y-auto px-2.5 py-2.5 space-y-2" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
                 {orphans.map((lead) => (
                   <LeadCard
                     key={lead.id}
@@ -285,6 +286,7 @@ function LeadCard({ lead, dragging, onDragStart, onDragEnd, onClick }: {
       </div>
       <div className="flex items-center gap-2 mt-1.5 pl-1.5 text-[11.5px] text-muted">
         <span className="truncate">{lead.phone || lead.email || '—'}</span>
+        <DealTag lead={lead} />
         <span className="ml-auto flex-shrink-0">{relTime(lead.updated_at)}</span>
       </div>
     </div>

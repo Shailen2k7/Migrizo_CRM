@@ -64,6 +64,7 @@ export interface Lead {
   is_sample: boolean;
   hidden_from_payments: boolean;
   currency: Currency;
+  discount?: number;
 }
 
 export interface Note {

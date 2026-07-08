@@ -112,3 +112,10 @@
 @keyframes cooPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.09); } }
 .coo-ring { position: absolute; inset: -5px; border-radius: 9999px; border: 2px solid rgba(255, 255, 255, 0.55); animation: cooRing 1.5s ease-out infinite; pointer-events: none; }
 @keyframes cooRing { 0% { transform: scale(0.85); opacity: 0.85; } 100% { transform: scale(1.6); opacity: 0; } }
+
+/* Deal tag hover tooltip */
+.dealtag-wrap:hover .dealtag-pop { opacity: 1 !important; visibility: visible !important; }
+
+/* Hide scrollbar for horizontal chip rows (mobile) */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
