@@ -653,6 +653,10 @@ function CooToggle({ label, desc, on, onClick, disabled }: { label: string; desc
 function PermissionsSection() {
   const { workspace } = useApp();
   const [on, setOn] = useState(!!workspace.allow_member_task_edit);
+  const [emailOn, setEmailOn] = useState(!!workspace.allow_member_email);
+  const [cmName, setCmName] = useState(workspace.case_manager_name || '');
+  const [cmPhone, setCmPhone] = useState(workspace.case_manager_phone || '');
+  const [cmBusy, setCmBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const supabase = createClient();
 
@@ -663,6 +667,25 @@ function PermissionsSection() {
     setBusy(false);
     if (error) { setOn(!next); toast.error(`Couldn't save: ${error.message}`); }
     else toast.success(next ? 'Employees can now edit case tasks' : 'Task editing is now admin-only');
+  };
+
+  const saveCaseManager = async () => {
+    setCmBusy(true);
+    const { error } = await supabase.from('workspaces')
+      .update({ case_manager_name: cmName.trim() || null, case_manager_phone: cmPhone.trim() || null })
+      .eq('id', workspace.id);
+    setCmBusy(false);
+    if (error) toast.error(`Couldn't save: ${error.message}`);
+    else toast.success('Case manager updated');
+  };
+
+  const toggleEmail = async () => {
+    const next = !emailOn;
+    setEmailOn(next); setBusy(true);
+    const { error } = await supabase.from('workspaces').update({ allow_member_email: next }).eq('id', workspace.id);
+    setBusy(false);
+    if (error) { setEmailOn(!next); toast.error(`Couldn't save: ${error.message}`); }
+    else toast.success(next ? 'Employees can now send client emails' : 'Client emails are now admin-only');
   };
 
   return (
@@ -679,8 +702,37 @@ function PermissionsSection() {
           disabled={busy}
           onClick={toggle}
         />
+        <CooToggle
+          label="Let employees send client emails"
+          desc="Allow non-admin members (e.g. sales) to send onboarding, SLA and invoice emails to clients. Off by default — the email module is owner/admin-only, enforced on the server as well."
+          on={emailOn}
+          disabled={busy}
+          onClick={toggleEmail}
+        />
       </div>
       <p className="text-[12px] text-muted">Editing changes tasks for that one client only; it never affects other cases or the default journey.</p>
+
+      <div className="pt-2">
+        <h2 className="text-[15px] font-semibold flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-indigo-600" /> Case Manager</h2>
+        <p className="text-[13px] text-muted mt-1 mb-3">The case manager named here appears in every client onboarding email. Update it whenever ownership changes.</p>
+        <div className="panel p-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[12px] font-medium text-ink-2">Name</label>
+              <input value={cmName} onChange={(e) => setCmName(e.target.value)} placeholder="e.g. Mansi Behl"
+                className="w-full mt-1 px-3 py-2 rounded-[10px] text-[13.5px] border border-border bg-surface outline-none focus:border-[#4F46E5]" />
+            </div>
+            <div>
+              <label className="text-[12px] font-medium text-ink-2">Business phone</label>
+              <input value={cmPhone} onChange={(e) => setCmPhone(e.target.value)} placeholder="e.g. +91 92174 28262"
+                className="w-full mt-1 px-3 py-2 rounded-[10px] text-[13.5px] border border-border bg-surface outline-none focus:border-[#4F46E5]" />
+            </div>
+          </div>
+          <button onClick={saveCaseManager} disabled={cmBusy} className="btn btn-primary btn-sm disabled:opacity-50">
+            {cmBusy ? 'Saving…' : 'Save case manager'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -17,7 +17,7 @@ interface Props {
 }
 
 export function PaymentRow({ payment, currency = 'INR' }: Props) {
-  const { updatePayment, deletePayment } = useApp();
+  const { updatePayment, deletePayment, canSendEmails } = useApp();
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -29,17 +29,27 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
   const [sendingInvoice, setSendingInvoice] = useState(false);
 
   // One-click branded invoice email for this specific milestone payment.
-  const sendInvoice = async () => {
+  const isPaid = payment.status === 'paid';
+  const docWord = isPaid ? 'Receipt' : 'Invoice';
+
+  const sendInvoice = async (force = false) => {
     setSendingInvoice(true);
     try {
       const res = await fetch('/api/email/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'invoice', leadId: payment.lead_id, paymentId: payment.id }),
+        body: JSON.stringify({ type: 'invoice', leadId: payment.lead_id, paymentId: payment.id, force }),
       });
       const j = await res.json().catch(() => null);
-      if (j?.ok) toast.success('Invoice emailed to client');
-      else if (j?.reason === 'no_email') toast.error('This lead has no email address');
-      else toast.error(`Send failed${j?.reason ? `: ${j.reason}` : ''}`);
+      if (j?.already_sent) {
+        const again = window.confirm(`A ${docWord.toLowerCase()} for this payment was already sent. Send it again?`);
+        if (again) { await sendInvoice(true); return; }
+      } else if (j?.ok) {
+        toast.success(`${docWord} emailed to client`);
+      } else if (j?.reason === 'no_email') {
+        toast.error('This lead has no email address');
+      } else {
+        toast.error(`Send failed${j?.reason ? `: ${j.reason}` : ''}`);
+      }
     } catch {
       toast.error('Send failed — check your connection');
     } finally {
@@ -90,9 +100,18 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
               <span className="chip" style={{ background: statusMeta[payment.status].bg, color: statusMeta[payment.status].fg, border: 'none' }}>{statusMeta[payment.status].label}</span>
             </div>
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button onClick={sendInvoice} disabled={sendingInvoice} className="p-1.5 rounded hover:bg-surface-2 text-muted hover:text-ink disabled:opacity-40" title="Email branded invoice to client">
-                <Send className="w-3.5 h-3.5" />
+              {canSendEmails && (
+              <button
+                onClick={() => sendInvoice(false)}
+                disabled={sendingInvoice}
+                className="group/send relative w-7 h-7 rounded-full flex items-center justify-center text-[#506BD8] bg-[#EEF2FF] hover:bg-[#506BD8] hover:text-white hover:shadow-sm transition-all disabled:opacity-50"
+                title={`Email branded ${docWord.toLowerCase()} to client`}
+              >
+                {sendingInvoice
+                  ? <span className="w-3 h-3 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
+                  : <Send className="w-3.5 h-3.5 transition-transform group-hover/send:translate-x-[1px] group-hover/send:-translate-y-[1px]" />}
               </button>
+              )}
               <button onClick={openEditor} className="p-1.5 rounded hover:bg-surface-2 text-muted hover:text-ink" title="Edit payment">
                 <Pencil className="w-3.5 h-3.5" />
               </button>

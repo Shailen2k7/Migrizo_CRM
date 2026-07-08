@@ -23,7 +23,7 @@ interface Props {
 }
 
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
-  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, role, memberNameById, canViewPayments, workspace } = useApp();
+  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, role, memberNameById, canViewPayments, canSendEmails, workspace } = useApp();
   const pl = usePipelines(workspace.id);
   const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups'>('overview');
   const [notes, setNotes] = useState<Note[]>([]);
@@ -36,14 +36,18 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const [sendingEmail, setSendingEmail] = useState<null | 'sla' | 'onboarding'>(null);
 
   // One-click branded emails (SLA / onboarding). Server logs to the activity feed.
-  const sendEmail = async (type: 'sla' | 'onboarding') => {
+  const [slaConfigOpen, setSlaConfigOpen] = useState(false);
+  const [slaEditMode, setSlaEditMode] = useState(false);
+  const [slaDiscount, setSlaDiscount] = useState('');
+
+  const sendEmail = async (type: 'sla' | 'onboarding', discount?: number) => {
     if (!lead) return;
     if (!lead.email) { toast.error('This lead has no email address'); return; }
     setSendingEmail(type);
     try {
       let res = await fetch('/api/email/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, leadId: lead.id }),
+        body: JSON.stringify({ type, leadId: lead.id, ...(discount ? { discount } : {}) }),
       });
       let j = await res.json().catch(() => null);
       if (j?.already_sent) {
@@ -51,11 +55,11 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
         if (!again) return;
         res = await fetch('/api/email/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type, leadId: lead.id, force: true }),
+          body: JSON.stringify({ type, leadId: lead.id, force: true, ...(discount ? { discount } : {}) }),
         });
         j = await res.json().catch(() => null);
       }
-      if (j?.ok) toast.success(type === 'sla' ? `SLA sent to ${lead.email}` : `Onboarding email sent to ${lead.email}`);
+      if (j?.ok) { toast.success(type === 'sla' ? `SLA sent to ${lead.email}` : `Onboarding email sent to ${lead.email}`); if (type === 'sla') { setSlaConfigOpen(false); setSlaEditMode(false); setSlaDiscount(''); } }
       else toast.error(`Send failed${j?.reason ? `: ${j.reason}` : ''}`);
     } catch {
       toast.error('Send failed — check your connection');
@@ -171,25 +175,82 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
               <div className="flex-1 overflow-y-auto px-6 py-5">
                 {tab === 'overview' && (
                   <div className="space-y-1 mb-6">
+                    {canSendEmails && (
                     <div className="flex items-center gap-2 pb-3 mb-1 border-b border-border">
                       <span className="text-[11px] font-semibold text-muted uppercase tracking-wide mr-1">Client emails</span>
                       <button
-                        onClick={() => sendEmail('sla')}
+                        onClick={() => { setSlaConfigOpen((o) => !o); setSlaEditMode(false); setSlaDiscount(''); }}
                         disabled={sendingEmail !== null || !effectiveLead.email}
-                        className="btn btn-outline btn-sm disabled:opacity-50"
-                        title={effectiveLead.email ? 'Email the branded service agreement, autofilled with this client\u2019s details' : 'Add an email address first'}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#506BD8] bg-[#EEF2FF] hover:bg-[#506BD8] hover:text-white transition-all disabled:opacity-50"
+                        title={effectiveLead.email ? 'Prepare and send the branded Service Agreement (optionally apply a discount)' : 'Add an email address first'}
                       >
                         <FileText className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : 'Send SLA'}
                       </button>
                       <button
                         onClick={() => sendEmail('onboarding')}
                         disabled={sendingEmail !== null || !effectiveLead.email}
-                        className="btn btn-outline btn-sm disabled:opacity-50"
+                        className="group/onb inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#047857] bg-[#E6F7EE] hover:bg-[#047857] hover:text-white transition-all disabled:opacity-50"
                         title={effectiveLead.email ? 'Send the welcome/onboarding email (auto-sends on kickstart payment)' : 'Add an email address first'}
                       >
-                        <Send className="w-3.5 h-3.5" /> {sendingEmail === 'onboarding' ? 'Sending…' : 'Send onboarding'}
+                        <Send className="w-3.5 h-3.5 transition-transform group-hover/onb:translate-x-[1px] group-hover/onb:-translate-y-[1px]" /> {sendingEmail === 'onboarding' ? 'Sending…' : 'Send onboarding'}
                       </button>
                     </div>
+                    )}
+                    {canSendEmails && slaConfigOpen && (
+                      <div className="pb-3 mb-1 -mt-1 bg-[#F7F8FC] border border-border rounded-lg px-3 py-2.5">
+                        {!slaEditMode ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[12.5px] text-ink-2">Send the Service Agreement — standard fee <b>£3,000</b>. Any changes?</span>
+                            <div className="ml-auto flex items-center gap-2">
+                              <button
+                                onClick={() => setSlaEditMode(true)}
+                                disabled={sendingEmail !== null}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#506BD8] bg-white border border-[#C7D0F0] hover:bg-[#EEF2FF] transition-all disabled:opacity-50"
+                              >
+                                <Pencil className="w-3.5 h-3.5" /> Edit amount
+                              </button>
+                              <button
+                                onClick={() => sendEmail('sla')}
+                                disabled={sendingEmail !== null}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
+                              >
+                                <Send className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : 'No changes — Send'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[12px] font-medium text-ink-2">Discount</span>
+                            <div className="inline-flex items-center gap-1">
+                              <span className="text-[12.5px] text-muted">£</span>
+                              <input
+                                autoFocus type="number" min="0" max="3000" step="50" value={slaDiscount}
+                                onChange={(e) => setSlaDiscount(e.target.value)}
+                                placeholder="0"
+                                className="w-[84px] px-2 py-1 rounded-md border border-border bg-surface text-[12.5px] outline-none focus:border-[#4F46E5]"
+                              />
+                            </div>
+                            <span className="text-[11.5px] text-faint">Net fee payable: <b className="text-ink-2">£{(3000 - Math.min(Math.max(Number(slaDiscount) || 0, 0), 3000)).toLocaleString('en-GB')}</b></span>
+                            <div className="ml-auto flex items-center gap-2">
+                              <button
+                                onClick={() => { setSlaEditMode(false); setSlaDiscount(''); }}
+                                disabled={sendingEmail !== null}
+                                className="px-2.5 py-1.5 rounded-lg text-[12.5px] text-muted hover:bg-surface-2 transition-all disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => sendEmail('sla', Math.min(Math.max(Number(slaDiscount) || 0, 0), 3000))}
+                                disabled={sendingEmail !== null}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
+                              >
+                                <Send className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : 'Send with discount'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <Row label="Pipeline">
                       <div style={{ maxWidth: 260 }}>
                         {(() => {

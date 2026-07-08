@@ -21,6 +21,7 @@ const INK = '#1A1E27';
 const MUTED = '#6B7280';
 const BG = '#F2F4F8';
 const LOGO_URL = 'https://crm.migrizo.com/migrizo-email-logo.png';
+const SIGNATURE_URL = 'https://crm.migrizo.com/migrizo-signature.png';
 
 const CURRENCY_SYMBOL: Record<string, string> = { INR: '₹', GBP: '£', USD: '$' };
 const CURRENCY_LOCALE: Record<string, string> = { INR: 'en-IN', GBP: 'en-GB', USD: 'en-US' };
@@ -64,7 +65,7 @@ function shell(title: string, bodyHtml: string, preheader = ''): string {
           <div style="font-size:13px;font-weight:700;color:#ffffff;letter-spacing:0.3px;">Migrizo</div>
           <div style="font-size:11.5px;color:#C7D0E4;margin-top:4px;line-height:1.6;">
             Smart. Fast. Reliable Visas · <a href="https://www.migrizo.com" style="color:${GOLD};text-decoration:none;">www.migrizo.com</a><br/>
-            WhatsApp: <a href="https://wa.me/919999311087" style="color:${GOLD};text-decoration:none;">+91 99993 11087</a>
+            Email: <a href="mailto:info@migrizo.com" style="color:${GOLD};text-decoration:none;">info@migrizo.com</a> · Tel/WhatsApp: <a href="https://wa.me/447887348822" style="color:${GOLD};text-decoration:none;">+44 7887 348822</a>
           </div>
           <div style="font-size:10px;color:#8FA0C4;margin-top:10px;">This email was sent by Migrizo regarding your visa engagement. Please do not share confidential documents over email unless requested through official channels.</div>
         </td></tr>
@@ -83,7 +84,34 @@ function small(t: string) { return `<p style="margin:0 0 10px;font-size:11.5px;l
 // ---------------------------------------------------------------------------
 // 1) ONBOARDING — auto-sent when the kickstart payment is marked paid.
 // ---------------------------------------------------------------------------
-export function renderOnboarding(lead: Pick<Lead, 'full_name' | 'visa_type'>): { subject: string; html: string; text: string } {
+const DOCS_IDENTITY = [
+  'Passport (photo page)',
+  'Updated CV / Resume',
+  'LinkedIn profile URL',
+  'Current job title &amp; employer',
+  'Total years of professional experience',
+  'Educational qualifications (degree certificates or transcript)',
+  'Latest employment letter or offer letter <i>(if available)</i>',
+  "Last 3 months' payslips <i>(if available)</i>",
+];
+const DOCS_EVIDENCE = [
+  'Any professional certifications',
+  'Personal portfolio / website / GitHub / Behance <i>(if applicable)</i>',
+  'List of major projects you have worked on',
+  'Details of any awards, recognitions or achievements',
+  'Links to any publications, articles, blogs or media coverage <i>(if any)</i>',
+];
+function checkRows(items: string[]): string {
+  return items.map((t) => `
+    <tr>
+      <td width="24" valign="top" style="padding:4px 0;">
+        <div style="width:15px;height:15px;border:1.8px solid ${BLUE};border-radius:4px;"></div>
+      </td>
+      <td valign="top" style="padding:4px 0;font-size:12.5px;color:${INK};line-height:1.55;">${t}</td>
+    </tr>`).join('');
+}
+
+export function renderOnboarding(lead: Pick<Lead, 'full_name' | 'visa_type'>, caseManager?: { name: string; phone: string }): { subject: string; html: string; text: string } {
   const first = (lead.full_name || 'there').split(' ')[0];
   const visa = (lead.visa_type || '').toLowerCase().includes('ifv') || (lead.visa_type || '').toLowerCase().includes('innovator')
     ? 'Innovator Founder Visa' : 'Global Talent Visa';
@@ -107,18 +135,46 @@ export function renderOnboarding(lead: Pick<Lead, 'full_name' | 'visa_type'>): {
   const body = `
     ${h1(`Welcome aboard, ${esc(first)} 🎉`)}
     ${p(`Your <b>${visa}</b> journey with Migrizo has officially begun. We've received your kickstart payment and your case is now active — thank you for trusting us with something this important.`)}
-    <div style="background:${BG};border-radius:12px;padding:6px 18px;margin:18px 0;">
+
+    ${h2('Next step — share these with us')}
+    ${p(`To start your case without any delay, please send an email to <a href="mailto:info@migrizo.com" style="color:${BLUE};">info@migrizo.com</a> with the following documents and details.`)}
+    <div style="background:#FFFBEB;border:1.5px solid ${GOLD};border-radius:10px;padding:12px 16px;margin:0 0 14px;">
+      <div style="font-size:12.5px;color:#7A5B00;line-height:1.65;font-weight:600;">
+        💡 These are the documents we typically use — <b>nothing here is mandatory</b>. Please don't worry if you don't have something; just send whatever you have, and we'll take it from there.
+      </div>
+    </div>
+    <div style="border:1.5px solid #D9DEE9;background:#FBFCFE;border-radius:12px;padding:16px 18px;margin:0 0 20px;">
+      <div style="font-size:11px;font-weight:800;color:${NAVY};letter-spacing:0.6px;margin-bottom:8px;">📋 IDENTITY &amp; CAREER</div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${checkRows(DOCS_IDENTITY)}</table>
+      <div style="font-size:11px;font-weight:800;color:${NAVY};letter-spacing:0.6px;margin:14px 0 8px;">🏆 EVIDENCE &amp; ACHIEVEMENTS</div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${checkRows(DOCS_EVIDENCE)}</table>
+    </div>
+
+    ${caseManager ? `
+    <div style="background:${NAVY};border-radius:12px;padding:16px 18px;margin:4px 0 18px;">
+      <div style="font-size:11px;font-weight:800;color:#C7D0E4;letter-spacing:0.6px;margin-bottom:6px;">YOUR DEDICATED CASE MANAGER</div>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
+        <td valign="middle">
+          <div style="font-size:16px;font-weight:800;color:#ffffff;">${esc(caseManager.name)}</div>
+          <div style="font-size:12.5px;color:#C7D0E4;margin-top:3px;">Your single point of contact throughout your journey</div>
+        </td>
+        <td valign="middle" align="right">
+          <a href="tel:${esc(caseManager.phone).replace(/\\s/g, '')}" style="display:inline-block;background:${GOLD};color:${NAVY};font-size:13px;font-weight:800;text-decoration:none;padding:9px 16px;border-radius:8px;">${esc(caseManager.phone)}</a>
+        </td>
+      </tr></table>
+    </div>` : ''}
+    ${h2('Your journey from here')}
+    <div style="background:${BG};border-radius:12px;padding:6px 18px;margin:14px 0;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${steps}</table>
     </div>
-    ${h2('What we need from you now')}
-    ${p(`Nothing yet — your case manager will reach out within <b>1 working day</b> with your kickoff call slot and document checklist. If anything is urgent in the meantime, just reply to this email or message us on WhatsApp.`)}
+    ${p(`Your case manager will reach out within <b>1 working day</b> with your kickoff call slot. If anything is urgent in the meantime, please write to us at <a href="mailto:info@migrizo.com" style="color:${BLUE};">info@migrizo.com</a>.`)}
     ${p(`We're glad you're here. Let's build a winning case.`)}
     ${p(`— Team Migrizo`)}
   `;
   return {
     subject: `Welcome to Migrizo — your ${visa} journey starts now`,
     html: shell('Welcome to Migrizo', body, 'Your case is active. Here is what happens next.'),
-    text: `Welcome aboard, ${first}! Your ${visa} journey with Migrizo has begun. Your case manager will reach out within 1 working day with your kickoff call and document checklist. — Team Migrizo`,
+    text: `Welcome aboard, ${first}! Your ${visa} journey with Migrizo has begun.${caseManager ? ` Your case manager is ${caseManager.name} (${caseManager.phone}).` : ''} Please send your documents to info@migrizo.com — nothing is mandatory, send whatever you have. — Team Migrizo`,
   };
 }
 
@@ -128,10 +184,15 @@ export function renderOnboarding(lead: Pick<Lead, 'full_name' | 'visa_type'>): {
 //    branding (logo, layout) is Migrizo. M4 references are part of the
 //    contract's legal content and are intentionally preserved.
 // ---------------------------------------------------------------------------
-export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>): { subject: string; html: string; text: string } {
+export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discount = 0): { subject: string; html: string; text: string } {
   const name = esc(lead.full_name);
   const email = esc(lead.email || '—');
   const phone = esc(lead.phone || '—');
+  const BASE_FEE = 3000;
+  const netFee = Math.max(0, BASE_FEE - (discount > 0 ? discount : 0));
+  const feeIntro = discount > 0
+    ? `The standard professional fee for the end-to-end Global Talent Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as milestone-based payments below. As a special arrangement, a discount of \u00A3${discount.toLocaleString('en-GB')} has been applied, bringing your net professional fee to <b>\u00A3${netFee.toLocaleString('en-GB')}</b>. The discount is adjusted against your final milestone payment(s). Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`
+    : `The total professional fee payable to Migrizo for the end-to-end Global Talent Visa service is <b>\u00A33,000</b> (Three Thousand Pounds Sterling). This is structured as milestone-based payments as detailed below. Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`;
 
   const kv = (k: string, v: string) => `
     <tr>
@@ -151,7 +212,8 @@ export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>): { 
 
   const body = `
     ${h1('Global Talent Visa (UK) — Professional Services Agreement')}
-    ${small(`Issued ${today()} · Please read carefully. Replying "I Agree" to this email, signing, or making the kickstart payment constitutes acceptance of this Agreement.`)}
+    ${small(`Issued ${today()} · Prepared for ${name}. Please read this Agreement carefully before accepting.`)}
+
 
     ${h2('1. Parties to this Agreement')}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
@@ -218,7 +280,7 @@ export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>): { 
     </ul>
 
     ${h2('4. Fee Schedule &amp; Payment Terms')}
-    ${p(`The total professional fee payable to Migrizo for the end-to-end Global Talent Visa service is <b>£3,000</b> (Three Thousand Pounds Sterling). This is structured as milestone-based payments as detailed below. Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`)}
+    ${p(feeIntro)}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 12px;border:1px solid #E7EAF1;border-radius:10px;overflow:hidden;">
       <tr style="background:${NAVY};">
         <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;">#</td>
@@ -230,10 +292,17 @@ export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>): { 
       ${feeRow('2', 'Profile Building Commencement — Following roadmap delivery, profile development begins (50% of remaining professional fee)', '£1,250', 'Client → Migrizo')}
       ${feeRow('3', 'Endorsement Application Submission Fee — Due at the time of submission to UK Home Office', '£500', 'Client → Migrizo')}
       ${feeRow('4', 'Final Professional Fee Balance — Payable upon receipt of endorsement approval from UK Home Office', '£750', 'Client → Migrizo')}
+      ${discount > 0 ? `
+      <tr style="background:#E6F7EE;">
+        <td style="padding:8px 10px;"></td>
+        <td style="padding:8px 10px;font-size:12px;font-weight:700;color:#047857;">Special Discount Applied</td>
+        <td style="padding:8px 10px;font-size:12.5px;font-weight:800;color:#047857;" align="right">\u2212 \u00A3${discount.toLocaleString('en-GB')}</td>
+        <td style="padding:8px 10px;font-size:11px;color:#047857;">Adjusted at final milestone</td>
+      </tr>` : ''}
       <tr style="background:#FBF7DE;">
         <td style="padding:8px 10px;"></td>
-        <td style="padding:8px 10px;font-size:12.5px;font-weight:800;color:${NAVY};">TOTAL PROFESSIONAL FEE (Migrizo)</td>
-        <td style="padding:8px 10px;font-size:13px;font-weight:800;color:${NAVY};" align="right">£3,000</td>
+        <td style="padding:8px 10px;font-size:12.5px;font-weight:800;color:${NAVY};">${discount > 0 ? 'NET PROFESSIONAL FEE PAYABLE (Migrizo)' : 'TOTAL PROFESSIONAL FEE (Migrizo)'}</td>
+        <td style="padding:8px 10px;font-size:13px;font-weight:800;color:${NAVY};" align="right">\u00A3${netFee.toLocaleString('en-GB')}</td>
         <td style="padding:8px 10px;"></td>
       </tr>
       ${feeRow('5', 'Profile Building / PR Agency Costs — Paid directly to third-party PR agencies; varies by candidate profile (approx. £1,000–£1,500). Migrizo manages content and coordination.', '£1,000–£1,500', 'Client → PR Agency (Direct)')}
@@ -323,34 +392,21 @@ export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>): { 
       ${li(`<b>Notices:</b> All formal notices under this Agreement shall be sent by email to the addresses recorded at the head of this Agreement and shall be deemed received within 24 hours of sending.`)}
     </ul>
 
-    ${h2('13. Declaration &amp; Acceptance')}
-    ${p(`By signing below, both parties confirm that they have read, understood, and agree to be bound by all the terms and conditions of this Agreement.`)}
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;">
-      <tr>
-        <td width="48%" valign="top" style="background:${BG};border-radius:10px;padding:16px;">
-          <div style="font-size:11px;font-weight:700;color:${MUTED};letter-spacing:0.4px;">FOR AND ON BEHALF OF</div>
-          <div style="font-size:12.5px;font-weight:800;color:${NAVY};margin-top:2px;">M4 INVESTMENTS LTD (Migrizo)</div>
-          <div style="font-size:12px;color:${MUTED};margin-top:22px;border-top:1px solid #D9DEE9;padding-top:8px;">Signature</div>
-          <div style="font-size:13px;font-weight:700;color:${INK};">Shailendra Pathak</div>
-          <div style="font-size:11.5px;color:${MUTED};">AVP, M4 Investments Ltd, Migrizo</div>
-          <div style="font-size:11.5px;color:${MUTED};margin-top:6px;">Date: ${today()}</div>
-        </td>
-        <td width="4%"></td>
-        <td width="48%" valign="top" style="background:${BG};border-radius:10px;padding:16px;">
-          <div style="font-size:11px;font-weight:700;color:${MUTED};letter-spacing:0.4px;">CLIENT ACKNOWLEDGEMENT</div>
-          <div style="font-size:12.5px;font-weight:800;color:${NAVY};margin-top:2px;">${name}</div>
-          <div style="font-size:12px;color:${MUTED};margin-top:22px;border-top:1px solid #D9DEE9;padding-top:8px;">Signature</div>
-          <div style="font-size:13px;font-weight:700;color:${INK};">${name}</div>
-          <div style="font-size:11.5px;color:${MUTED};margin-top:6px;">Date: ____________</div>
-        </td>
-      </tr>
-    </table>
-    ${small(`To accept this Agreement, simply reply to this email with "I Agree", or sign and return a copy. M4 Investments Ltd | www.migrizo.com | +44 7887 348822 | Suite 39, Podium, 85 Ealing Cross, Ealing, London W5 5BW, United Kingdom`)}
+    ${h2('13. Declaration & Acceptance')}
+    ${p(`Both parties confirm that they have read, understood, and agree to be bound by all the terms and conditions of this Agreement.`)}
+    <div style="border:1.5px solid ${BLUE};background:#F4F6FE;border-radius:12px;padding:16px 18px;margin:18px 0 8px;">
+      <div style="font-size:11px;font-weight:800;color:${NAVY};letter-spacing:0.6px;margin-bottom:6px;">ACCEPTANCE OF THIS AGREEMENT</div>
+      <div style="font-size:12.5px;color:${INK};line-height:1.75;">
+        The Service Level Agreement (SLA) is set out above for your review. By <b>replying to this email with "I Accept"</b> — or any other written confirmation of acceptance — you acknowledge that you have read, understood, and voluntarily accepted all terms and conditions contained herein. Such acceptance shall constitute a legally binding agreement between the parties, subject to applicable laws.
+      </div>
+    </div>
+    ${small(`M4 Investments Ltd | www.migrizo.com | info@migrizo.com | +44 7887 348822 | Suite 39, Podium, 85 Ealing Cross, Ealing, London W5 5BW, United Kingdom`)}
   `;
+
   return {
     subject: `Migrizo — Your Global Talent Visa Service Agreement`,
     html: shell('Migrizo Service Agreement', body, 'Your professional services agreement — please review and accept.'),
-    text: `Dear ${lead.full_name}, please find your Global Talent Visa Professional Services Agreement with Migrizo. Review the full terms in this email and reply "I Agree" to accept. — Team Migrizo`,
+    text: `Dear ${lead.full_name}, please find your Global Talent Visa Professional Services Agreement with Migrizo. Review the full terms in this email and reply to this email with "I Accept" to accept. — Team Migrizo`,
   };
 }
 
@@ -374,8 +430,8 @@ export function renderInvoice(
     .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
   const badge = isPaid
-    ? `<span style="display:inline-block;background:#E6F7EE;color:#047857;font-size:11px;font-weight:800;letter-spacing:1px;padding:5px 14px;border-radius:999px;">PAID</span>`
-    : `<span style="display:inline-block;background:#FEF3C7;color:#B45309;font-size:11px;font-weight:800;letter-spacing:1px;padding:5px 14px;border-radius:999px;">DUE ON RECEIPT</span>`;
+    ? `<span style="display:inline-block;background:#E6F7EE;color:#047857;font-size:22px;font-weight:900;letter-spacing:3px;padding:10px 24px;border:2.5px solid #10B981;border-radius:10px;transform:rotate(-2deg);">PAID</span>`
+    : `<span style="display:inline-block;background:#FEF3C7;color:#B45309;font-size:12px;font-weight:800;letter-spacing:1.5px;padding:7px 16px;border:1.5px solid #F59E0B;border-radius:8px;">DUE ON RECEIPT</span>`;
 
   const trow = (k: string, v: string, strong = false) => `
     <tr>
@@ -396,18 +452,18 @@ export function renderInvoice(
 
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
       <tr>
-        <td width="48%" valign="top" style="background:${BG};border-radius:10px;padding:14px 16px;">
-          <div style="font-size:10.5px;font-weight:800;color:${MUTED};letter-spacing:0.6px;">FROM</div>
-          <div style="font-size:13px;font-weight:800;color:${NAVY};margin-top:3px;">Grownmind Educational Services Pvt Ltd</div>
-          <div style="font-size:11.5px;color:${MUTED};margin-top:2px;">GSTIN: 09AAECG9536E1ZF · India</div>
-          <div style="font-size:11.5px;color:${MUTED};">Brand: Migrizo · www.migrizo.com</div>
+        <td width="48%" valign="top" style="background:${BG};border-radius:10px;padding:16px 18px;">
+          <div style="font-size:11px;font-weight:800;color:${MUTED};letter-spacing:0.8px;">FROM</div>
+          <div style="font-size:15px;font-weight:800;color:${NAVY};margin-top:6px;line-height:1.35;">Grownmind Educational Services Pvt Ltd</div>
+          <div style="font-size:13px;color:#4A5162;margin-top:6px;line-height:1.6;">GSTIN: 09AAECG9536E1ZF · India</div>
+          <div style="font-size:13px;color:#4A5162;line-height:1.6;">Brand: Migrizo · www.migrizo.com</div>
         </td>
         <td width="4%"></td>
-        <td width="48%" valign="top" style="background:${BG};border-radius:10px;padding:14px 16px;">
-          <div style="font-size:10.5px;font-weight:800;color:${MUTED};letter-spacing:0.6px;">BILL TO</div>
-          <div style="font-size:13px;font-weight:800;color:${NAVY};margin-top:3px;">${esc(lead.full_name)}</div>
-          <div style="font-size:11.5px;color:${MUTED};margin-top:2px;">${esc(lead.email || '')}</div>
-          <div style="font-size:11.5px;color:${MUTED};">${esc(lead.phone || '')}</div>
+        <td width="48%" valign="top" style="background:${BG};border-radius:10px;padding:16px 18px;">
+          <div style="font-size:11px;font-weight:800;color:${MUTED};letter-spacing:0.8px;">BILL TO</div>
+          <div style="font-size:16px;font-weight:800;color:${NAVY};margin-top:6px;line-height:1.35;">${esc(lead.full_name)}</div>
+          <div style="font-size:13px;color:#4A5162;margin-top:6px;line-height:1.6;">${esc(lead.email || '')}</div>
+          <div style="font-size:13px;color:#4A5162;line-height:1.6;">${esc(lead.phone || '')}</div>
         </td>
       </tr>
     </table>
@@ -452,28 +508,48 @@ export function renderInvoice(
     ${!isPaid ? `
     <!-- Bank details (only on unpaid invoices) -->
     <div style="border:1.5px solid ${GOLD};background:#FFFDF2;border-radius:12px;padding:14px 18px;margin-bottom:14px;">
-      <div style="font-size:11px;font-weight:800;color:${NAVY};letter-spacing:0.6px;margin-bottom:6px;">PAYMENT DETAILS — BANK TRANSFER</div>
-      <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:12.5px;color:${INK};line-height:1.9;">
-        <tr><td style="color:${MUTED};padding-right:18px;">Account Name</td><td><b>Grownmind Educational Services Pvt Ltd</b></td></tr>
-        <tr><td style="color:${MUTED};padding-right:18px;">Bank</td><td>ICICI Bank, Noida — Sector 63</td></tr>
-        <tr><td style="color:${MUTED};padding-right:18px;">Account No</td><td><b>081605010665</b></td></tr>
-        <tr><td style="color:${MUTED};padding-right:18px;">IFSC</td><td><b>ICIC0000816</b></td></tr>
-        <tr><td style="color:${MUTED};padding-right:18px;">Branch Code</td><td>000816</td></tr>
-        <tr><td style="color:${MUTED};padding-right:18px;">SWIFT</td><td>ICICINBBNRI</td></tr>
+      <div style="font-size:11px;font-weight:800;color:${NAVY};letter-spacing:0.6px;margin-bottom:8px;">PAYMENT DETAILS</div>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+          <td valign="top" width="60%" style="padding-right:14px;border-right:1px solid #EFE6BE;">
+            <div style="font-size:10px;font-weight:800;color:${MUTED};letter-spacing:0.5px;margin-bottom:5px;">BANK TRANSFER</div>
+            <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:12px;color:${INK};line-height:1.85;">
+              <tr><td style="color:${MUTED};padding-right:14px;">Account Name</td><td><b>Grownmind Educational Services Pvt Ltd</b></td></tr>
+              <tr><td style="color:${MUTED};padding-right:14px;">Bank</td><td>ICICI Bank, Noida — Sector 63</td></tr>
+              <tr><td style="color:${MUTED};padding-right:14px;">Account No</td><td><b>081605010665</b></td></tr>
+              <tr><td style="color:${MUTED};padding-right:14px;">IFSC</td><td><b>ICIC0000816</b></td></tr>
+              <tr><td style="color:${MUTED};padding-right:14px;">Branch Code</td><td>000816</td></tr>
+              <tr><td style="color:${MUTED};padding-right:14px;">SWIFT</td><td>ICICINBBNRI</td></tr>
+            </table>
+          </td>
+          <td valign="top" width="40%" style="padding-left:16px;">
+            <div style="font-size:10px;font-weight:800;color:${MUTED};letter-spacing:0.5px;margin-bottom:5px;">UPI (INDIA)</div>
+            <div style="background:#ffffff;border:1.5px solid ${NAVY};border-radius:10px;padding:10px 12px;text-align:center;">
+              <div style="font-size:9.5px;font-weight:700;color:${MUTED};letter-spacing:0.8px;">SCAN OR PAY TO UPI ID</div>
+              <div style="font-size:16px;font-weight:800;color:${NAVY};margin-top:4px;letter-spacing:0.3px;">grownmind@icici</div>
+              <div style="font-size:10px;color:${MUTED};margin-top:4px;">GPay · PhonePe · Paytm · any UPI app</div>
+            </div>
+          </td>
+        </tr>
       </table>
-      <div style="font-size:11px;color:${MUTED};margin-top:8px;">Please share the transfer confirmation on WhatsApp or by replying to this email.</div>
+      <div style="font-size:11px;color:${MUTED};margin-top:10px;">Please confirm your payment by emailing <a href="mailto:info@migrizo.com" style="color:${BLUE};">info@migrizo.com</a>.</div>
     </div>` : `
     <div style="background:#E6F7EE;border-radius:12px;padding:14px 18px;margin-bottom:14px;">
       <div style="font-size:12.5px;color:#047857;font-weight:700;">✓ Payment received — this invoice serves as your official receipt.</div>
     </div>`}
 
-    <div style="font-size:11.5px;color:${MUTED};line-height:1.6;">
-      Authorized Signatory: <b style="color:${INK};">Shailendra Pathak</b> · Grownmind Educational Services Pvt Ltd (Migrizo)
-    </div>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:6px;">
+      <tr><td>
+        <img src="${SIGNATURE_URL}" alt="Authorized signature" width="150" style="display:block;height:auto;margin-bottom:2px;"/>
+        <div style="border-top:1px solid #D9DEE9;padding-top:5px;font-size:11.5px;color:${MUTED};line-height:1.6;width:230px;">
+          Authorized Signatory: <b style="color:${INK};">Shailendra Pathak</b><br/>Grownmind Educational Services Pvt Ltd (Migrizo)
+        </div>
+      </td></tr>
+    </table>
   `;
   return {
     subject: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} — ${milestone} · Migrizo`,
     html: shell(`Invoice ${invoiceNo}`, body, `${milestone} — ${money(amount, currency)} · ${isPaid ? 'Paid' : 'Due on receipt'}`),
-    text: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} from Migrizo (Grownmind Educational Services Pvt Ltd). ${milestone} Fee — ${visa}: ${money(amount, currency)}. ${isPaid ? 'Payment received, thank you.' : 'Bank: ICICI, A/C 081605010665, IFSC ICIC0000816.'}`,
+    text: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} from Migrizo (Grownmind Educational Services Pvt Ltd). ${milestone} Fee — ${visa}: ${money(amount, currency)}. ${isPaid ? 'Payment received, thank you.' : 'Pay via bank transfer (ICICI A/C 081605010665, IFSC ICIC0000816) or UPI: grownmind@icici.'}`,
   };
 }

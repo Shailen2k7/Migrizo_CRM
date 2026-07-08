@@ -29,6 +29,7 @@ interface AppData {
   members: Member[];
   loading: boolean;
   canViewPayments: boolean;
+  canSendEmails: boolean;
   setMemberPaymentAccess: (userId: string, canView: boolean) => Promise<void>;
   refresh: () => Promise<void>;
   refreshMembers: () => Promise<void>;
@@ -97,6 +98,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
   const [loading, setLoading] = useState(false);
   // Current user's effective payment visibility. Admins always see payments.
   const [canViewPayments, setCanViewPayments] = useState<boolean>(role === 'admin' ? true : initialCanViewPayments);
+  const canSendEmails = role === 'admin' || !!workspace.allow_member_email;
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -382,6 +384,19 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     }).catch(() => { /* silent — never block payment flow */ });
   }, []);
 
+  // Auto-send a branded receipt for a PAID payment (any milestone). The API
+  // renders the paid invoice as a receipt and guards per-payment against repeats.
+  const triggerReceiptEmail = useCallback((leadId: string, paymentId: string) => {
+    fetch('/api/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'invoice', leadId, paymentId }),
+    }).then(async (r) => {
+      const j = await r.json().catch(() => null);
+      if (j?.ok && !j.already_sent) toast.success('Payment receipt emailed to client');
+    }).catch(() => { /* silent — never block payment flow */ });
+  }, []);
+
   const recordPayment = useCallback(async (input: Partial<Payment> & { lead_id: string; milestone: Payment['milestone']; amount: number }) => {
     const payload = {
       lead_id: input.lead_id,
@@ -406,12 +421,14 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     logActivity('recorded_payment', input.lead_id, { milestone: input.milestone, amount: input.amount });
     toast.success(`Payment recorded`);
 
-    // Kickstart paid → onboarding email (guarded server-side against repeats).
+    // On a PAID payment: auto-send the receipt for this payment. If it's the
+    // kickstart, ALSO send the onboarding email (two separate emails).
     const effStatus = input.status || 'paid';
-    if (input.milestone === 'kickstart' && effStatus === 'paid') {
-      triggerOnboardingEmail(input.lead_id);
+    if (effStatus === 'paid') {
+      triggerReceiptEmail(input.lead_id, (data as Payment).id);
+      if (input.milestone === 'kickstart') triggerOnboardingEmail(input.lead_id);
     }
-  }, [supabase, workspace.id, user.id, refreshLead, logActivity, triggerOnboardingEmail]);
+  }, [supabase, workspace.id, user.id, refreshLead, logActivity, triggerOnboardingEmail, triggerReceiptEmail]);
 
   const updatePayment = useCallback(async (id: string, patch: Partial<Payment>) => {
     const before = payments.find((p) => p.id === id);
@@ -429,10 +446,11 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
 
     // Kickstart transitioned to paid → onboarding email (server-side guard).
     const effMilestone = patch.milestone ?? before?.milestone;
-    if (before?.lead_id && effMilestone === 'kickstart' && patch.status === 'paid' && before?.status !== 'paid') {
-      triggerOnboardingEmail(before.lead_id);
+    if (before?.lead_id && patch.status === 'paid' && before?.status !== 'paid') {
+      triggerReceiptEmail(before.lead_id, id);
+      if (effMilestone === 'kickstart') triggerOnboardingEmail(before.lead_id);
     }
-  }, [supabase, payments, refreshLead, triggerOnboardingEmail]);
+  }, [supabase, payments, refreshLead, triggerOnboardingEmail, triggerReceiptEmail]);
 
   const deletePayment = useCallback(async (id: string) => {
     const before = payments;
@@ -763,7 +781,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
 
   const value: AppData = {
     user, workspace, role, leads, payments, activity, cases, followUps, members, loading,
-    canViewPayments, setMemberPaymentAccess,
+    canViewPayments, canSendEmails, setMemberPaymentAccess,
     refresh, refreshMembers, refreshCases, refreshFollowUps, memberNameById,
     createLead, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
     createCase, updateCase, updateCaseJourney, sendClientUpdate, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,

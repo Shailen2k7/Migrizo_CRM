@@ -24,6 +24,9 @@ export interface Workspace {
   owner_id: string;
   created_at: string;
   allow_member_task_edit?: boolean;
+  allow_member_email?: boolean;
+  case_manager_name?: string | null;
+  case_manager_phone?: string | null;
 }
 
 export interface WorkspaceMember {
