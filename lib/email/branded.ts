@@ -11,6 +11,7 @@
 // =============================================================================
 
 import type { Lead, Payment } from '@/lib/types';
+import { GTV_PROCESS_HTML } from '@/lib/email/gtv-process-html';
 import { MILESTONE_META } from '@/lib/types';
 
 // Brand palette (matches the Migrizo brochure system)
@@ -423,114 +424,12 @@ export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, dis
 //     what the client needs to provide. One-click from the lead drawer.
 // ---------------------------------------------------------------------------
 export function renderProcess(lead: Pick<Lead, 'full_name' | 'visa_type'>): { subject: string; html: string; text: string } {
-  const first = (lead.full_name || 'there').split(' ')[0];
-
-  const step = (n: string, icon: string, title: string) => `
-    <td width="50%" valign="top" style="padding:6px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F8FC;border:1px solid #E7EAF1;border-radius:12px;">
-        <tr>
-          <td width="52" valign="middle" style="padding:12px 0 12px 12px;">
-            <div style="width:40px;height:40px;border-radius:10px;background:#EEF2FF;text-align:center;line-height:40px;font-size:19px;">${icon}</div>
-          </td>
-          <td valign="middle" style="padding:12px 12px 12px 10px;">
-            <div style="font-size:10px;font-weight:800;color:${BLUE};letter-spacing:0.5px;">STEP ${n}</div>
-            <div style="font-size:12.5px;font-weight:700;color:${NAVY};line-height:1.3;margin-top:2px;">${title}</div>
-          </td>
-        </tr>
-      </table>
-    </td>`;
-
-  const youCard = (icon: string, title: string, desc: string) => `
-    <tr>
-      <td width="40" valign="top" style="padding:7px 0;">
-        <div style="width:30px;height:30px;border-radius:8px;background:#FFFBEB;text-align:center;line-height:30px;font-size:15px;">${icon}</div>
-      </td>
-      <td valign="top" style="padding:7px 0 7px 4px;">
-        <div style="font-size:12.5px;font-weight:700;color:${NAVY};">${title}</div>
-        <div style="font-size:11.5px;color:${MUTED};line-height:1.5;margin-top:1px;">${desc}</div>
-      </td>
-    </tr>`;
-
-  const milestone = (amt: string, label: string) => `
-    <td width="25%" align="center" style="padding:4px;">
-      <div style="background:#EEF2FF;border-radius:10px;padding:10px 4px;">
-        <div style="font-size:15px;font-weight:800;color:${NAVY};">${amt}</div>
-        <div style="font-size:9.5px;color:${MUTED};margin-top:1px;">${label}</div>
-      </div>
-    </td>`;
-
-  const perk = (icon: string, text: string) => `
-    <td width="50%" valign="middle" style="padding:5px;">
-      <div style="background:#ffffff;border:1px solid #E7EAF1;border-radius:10px;padding:9px 12px;font-size:11.5px;color:${INK};">
-        <span style="font-size:14px;">${icon}</span>&nbsp; ${text}
-      </div>
-    </td>`;
-
-  const body = `
-    ${h1(`Here's exactly how it works, ${esc(first)} 👋`)}
-    ${p(`Your <b>UK Global Talent Visa</b> is handled end-to-end by Migrizo — from eligibility to landing. Here's the full journey at a glance, and the small part we'll need from you.`)}
-
-    <!-- Trust strip -->
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;">
-      <tr>
-        ${perk('🛡️', '<b>All 7 stages</b> included')}
-        ${perk('⭐', '<b>£3,000</b> fixed fee')}
-      </tr>
-      <tr>
-        ${perk('🧭', '<b>Fully managed</b> for you')}
-        ${perk('🎯', '<b>Success-focused</b> approach')}
-      </tr>
-    </table>
-
-    ${h2('Your journey — 7 managed steps')}
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr>${step('1', '🎯', 'Profile Evaluation & Eligibility')}${step('2', '🗺️', 'Personalised Roadmap')}</tr>
-      <tr>${step('3', '🏗️', 'Profile Building Support')}${step('4', '📄', 'Supporting Documents')}</tr>
-      <tr>${step('5', '🏛️', 'Endorsement Submission')}${step('6', '🛂', 'Visa Application Support')}</tr>
-      <tr>${step('7', '🛬', 'Post-Landing & Job Network')}<td width="50%"></td></tr>
-    </table>
-
-    ${h2('What we need from you')}
-    ${p(`We do the heavy lifting — you just partner with us on these. Nothing here is hard; timely input keeps your case moving fast.`)}
-    <div style="background:#FFFBEB;border:1.5px solid ${GOLD};border-radius:12px;padding:8px 18px;margin:6px 0 4px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-        ${youCard('📋', 'Your documents & details', 'Passport, CV, qualifications, work history — we send a simple checklist.')}
-        ${youCard('✍️', 'Quick feedback on drafts', 'Review your CV, statement and letters when we share them.')}
-        ${youCard('🤝', 'Your referees', 'Introduce us to genuine professional contacts for recommendation letters.')}
-        ${youCard('⏱️', 'Timely replies', 'A response within 48–72 hours keeps everything on schedule.')}
-        ${youCard('💳', 'Milestone payments', 'Simple staged payments as we progress (below).')}
-      </table>
-    </div>
-
-    ${h2('Simple payment schedule')}
-    ${p(`One fixed professional fee of <b>£3,000</b>, paid across four easy milestones:`)}
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0;">
-      <tr>
-        ${milestone('£500', 'Kickstart')}
-        ${milestone('£1,250', 'Profile Building')}
-        ${milestone('£500', 'Endorsement')}
-        ${milestone('£750', 'Final Balance')}
-      </tr>
-    </table>
-    ${small(`Government fees (endorsement, visa, IHS) and optional PR costs are paid by you directly to the relevant authority and are not part of Migrizo's fee. We'll always tell you what's needed in advance — no surprises.`)}
-
-    ${h2('Why this route is worth it')}
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr>${perk('💼', 'Work, freelance or build')}${perk('👨‍👩‍👧', 'Family included from day one')}</tr>
-      <tr>${perk('🏆', 'No job offer required')}${perk('🇬🇧', 'ILR pathway in 3 years')}</tr>
-    </table>
-
-    <div style="background:${NAVY};border-radius:12px;padding:16px 18px;margin:18px 0 4px;text-align:center;">
-      <div style="font-size:14px;font-weight:700;color:#ffffff;">Ready to begin, or have questions?</div>
-      <div style="font-size:12.5px;color:#C7D0E4;margin-top:4px;">Just reply to this email or write to <a href="mailto:info@migrizo.com" style="color:${GOLD};text-decoration:none;">info@migrizo.com</a> — we're happy to walk you through anything.</div>
-    </div>
-    ${p(`We're excited to build a winning case with you.`)}
-    ${p(`— Team Migrizo`)}
-  `;
+  // The approved GTV marketing/process email — sent as-is (self-contained,
+  // email-safe HTML with its own header, hero banner and footer).
   return {
-    subject: `How your UK Global Talent Visa journey works — Migrizo`,
-    html: shell('How it works — Migrizo', body, 'Your full GTV journey at a glance, and the simple part we need from you.'),
-    text: `Hi ${lead.full_name}, here's how your UK Global Talent Visa works with Migrizo: a fully-managed 7-step journey (profile evaluation, roadmap, profile building, documents, endorsement, visa, post-landing) for a fixed £3,000 fee across 4 milestones. From you we need: your documents, quick feedback on drafts, referee introductions, timely replies, and milestone payments. Questions? Reply or email info@migrizo.com. — Team Migrizo`,
+    subject: `UK Global Talent Visa — how it works, what we need, and what it costs`,
+    html: GTV_PROCESS_HTML,
+    text: `Hi ${lead.full_name}, here is how the UK Global Talent Visa works with Migrizo: a fully-managed 7-step process (profile evaluation, personalised roadmap, profile building, supporting documents, endorsement submission, visa application, post-landing support) for a fixed GBP 3,000 professional fee across 4 milestones. Government and third-party costs (endorsement GBP 561, visa GBP 210, IHS, optional PR) are paid directly by you. Total estimated all-inclusive cost: about GBP 7,500 (3-year visa) or GBP 9,500 (5-year visa). Book a free profile assessment on WhatsApp: https://wa.me/447887348822 - Team Migrizo`,
   };
 }
 
