@@ -178,6 +178,7 @@ export interface Case {
   client_email: string | null;
   client_phone: string | null;
   visa_type: string;
+  delivery_stage?: string | null;
   current_stage: CaseStage;
   status: CaseStatus;
   endorsement_status: EndorsementStatus;

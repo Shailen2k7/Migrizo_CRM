@@ -4,7 +4,9 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/components/shared/app-provider';
 import type { Case } from '@/lib/types';
 import { cn, initials, avatarColor, timeAgo } from '@/lib/utils';
-import { Briefcase, Plus, Search, Moon, CheckCircle2, Trash2, Lock } from 'lucide-react';
+import { Briefcase, Plus, Search, Moon, CheckCircle2, Trash2, Lock, LayoutGrid, List as ListIcon } from 'lucide-react';
+import { DELIVERY_STAGES, DELIVERY_BY_KEY, deliveryStageOf, type DeliveryStageKey } from '@/lib/delivery-stages';
+import { CasesBoard } from '@/components/cases/cases-board';
 import { CaseDrawer } from '@/components/cases/case-drawer';
 import { AddCaseDialog } from '@/components/cases/add-case-dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -47,11 +49,13 @@ export default function CasesPage() {
 }
 
 function CasesInner() {
-  const { cases, leads, deleteCase } = useApp();
+  const { cases, leads, deleteCase, updateCase } = useApp();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [segment, setSegment] = useState<Segment>('all');
   const [search, setSearch] = useState('');
+  const [view, setView] = useState<'list' | 'board'>('board');
+  const [deliveryFilter, setDeliveryFilter] = useState<'all' | DeliveryStageKey>('all');
   const [confirmRemove, setConfirmRemove] = useState<Case | null>(null);
 
   const snapshots: Snap[] = useMemo(() => cases.map((c) => {
@@ -91,6 +95,20 @@ function CasesInner() {
     { id: 'closed', label: 'Closed', count: closedCount },
   ];
 
+  const deliveryCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const c of cases) { const k = deliveryStageOf(c); m[k] = (m[k] || 0) + 1; }
+    return m;
+  }, [cases]);
+
+  const deliveryFiltered = useMemo(() => {
+    let list = cases;
+    if (deliveryFilter !== 'all') list = list.filter((c) => deliveryStageOf(c) === deliveryFilter);
+    const q = search.trim().toLowerCase();
+    if (q) list = list.filter((c) => (c.client_name || '').toLowerCase().includes(q));
+    return list;
+  }, [cases, deliveryFilter, search]);
+
   const filtered = useMemo(() => {
     let list: Snap[];
     if (segment === 'closed') list = snapshots.filter((s) => s.archived);
@@ -103,7 +121,7 @@ function CasesInner() {
   }, [snapshots, active, segment, search]);
 
   return (
-    <div className="max-w-[1240px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-10 animate-pageIn">
+    <div className={cn("max-w-[1240px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 animate-pageIn", view === "board" ? "flex flex-col h-[calc(100dvh-56px)] md:h-screen pb-2" : "pb-10")}>
       {/* Header */}
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
@@ -115,70 +133,80 @@ function CasesInner() {
         <button onClick={() => setAddOpen(true)} className="btn btn-primary"><Plus className="w-4 h-4" /> New case</button>
       </div>
 
-      {/* Phase funnel strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 mb-3">
-        {JOURNEY.map((p) => {
-          const count = phaseCounts[p.key] || 0;
-          const on = segment === p.key;
-          return (
-            <button key={p.key} onClick={() => setSegment(on ? 'all' : p.key)}
-              className="rounded-2xl border p-3.5 text-left transition-all hover:-translate-y-0.5 hover:shadow-md"
-              style={{
-                background: count > 0 ? p.tint : 'hsl(var(--surface))',
-                borderColor: on ? p.accent : 'hsl(var(--border))',
-                boxShadow: on ? `0 0 0 1px ${p.accent}` : undefined,
-              }}>
-              <div className="flex items-center gap-1.5 mb-2">
-                <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: p.accent }}>{p.index}</span>
-                <span className="text-[10px] font-bold tracking-wide" style={{ color: p.accent }}>{p.code}</span>
-              </div>
-              <div className="text-[24px] font-bold num leading-none" style={{ color: count > 0 ? p.accent : 'hsl(var(--faint))' }}>{count}</div>
-              <div className="text-[11px] text-ink-2 font-medium mt-1 leading-tight">{p.name}</div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Dormant banner */}
-      {dormantCount > 0 && segment !== 'dormant' && (
-        <button onClick={() => setSegment('dormant')}
-          className="w-full mb-4 flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-left hover:bg-amber-100/70 transition-colors">
-          <Moon className="w-4 h-4 text-amber-600 flex-shrink-0" />
-          <span className="text-[12.5px] text-amber-900 font-medium">
-            {dormantCount} {dormantCount === 1 ? 'client has' : 'clients have'} gone quiet for {DORMANT_DAYS}+ days
-          </span>
-          <span className="ml-auto text-[12px] font-semibold text-amber-700">View dormant →</span>
-        </button>
-      )}
-
-      {/* Filter chips + search */}
+      {/* View toggle + delivery-stage status */}
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {segments.map((s) => (
-            <button key={s.id} onClick={() => setSegment(s.id)} className={cn('filter-chip', segment === s.id && 'active')}>
-              {s.label}<span className="count">{s.count}</span>
-            </button>
-          ))}
+        <div className="inline-flex items-center gap-1 bg-surface-2 rounded-lg p-1">
+          <button onClick={() => setView('board')} className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] font-medium transition', view === 'board' ? 'bg-surface shadow-sm text-ink' : 'text-muted hover:text-ink')}>
+            <LayoutGrid className="w-3.5 h-3.5" /> Board
+          </button>
+          <button onClick={() => setView('list')} className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] font-medium transition', view === 'list' ? 'bg-surface shadow-sm text-ink' : 'text-muted hover:text-ink')}>
+            <ListIcon className="w-3.5 h-3.5" /> List
+          </button>
         </div>
         <div className="relative">
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search client…"
-            className="pl-8 pr-3 py-2 border border-border rounded-md bg-surface text-[13px] outline-none focus:border-indigo-400 w-[200px]" />
+            className="pl-8 pr-3 py-2 border border-border rounded-md bg-surface text-[13px] outline-none focus:border-indigo-400 w-full sm:w-[200px]" />
         </div>
       </div>
 
-      {/* Case list */}
-      {filtered.length === 0 ? (
-        <div className="panel panel-pad text-center py-16">
-          <div className="w-12 h-12 rounded-full bg-surface-2 flex items-center justify-center mx-auto mb-3"><Briefcase className="w-5 h-5 text-faint" /></div>
-          <div className="text-[14px] font-medium mb-1">No cases here</div>
-          <div className="text-[12.5px] text-muted mb-4">{cases.length === 0 ? 'Open your first case to start tracking the journey.' : 'Try a different filter.'}</div>
-          {cases.length === 0 && <button onClick={() => setAddOpen(true)} className="btn btn-primary btn-sm mx-auto"><Plus className="w-3.5 h-3.5" /> New case</button>}
-        </div>
+      {view === 'board' ? (
+        <CasesBoard
+          cases={cases}
+          onOpen={(id) => setSelectedCaseId(id)}
+          onMove={(id, stage) => updateCase(id, { delivery_stage: stage })}
+          search={search}
+        />
       ) : (
-        <div className="space-y-3">
-          {filtered.map((s) => <CaseCard key={s.case.id} snap={s} onOpen={() => setSelectedCaseId(s.case.id)} onRemove={() => setConfirmRemove(s.case)} />)}
-        </div>
+        <>
+          {/* Delivery-stage filter chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-4">
+            <button onClick={() => setDeliveryFilter('all')} className={cn('filter-chip flex-shrink-0', deliveryFilter === 'all' && 'active')}>
+              All<span className="count">{cases.length}</span>
+            </button>
+            {DELIVERY_STAGES.map((st) => (
+              <button key={st.key} onClick={() => setDeliveryFilter(st.key)}
+                className={cn('filter-chip flex-shrink-0', deliveryFilter === st.key && 'active')}>
+                <span className="chip-dot" style={{ background: st.accent, marginRight: 4 }} />{st.label}
+                <span className="count">{deliveryCounts[st.key] || 0}</span>
+              </button>
+            ))}
+          </div>
+
+          {deliveryFiltered.length === 0 ? (
+            <div className="panel panel-pad text-center py-16">
+              <div className="w-12 h-12 rounded-full bg-surface-2 flex items-center justify-center mx-auto mb-3"><Briefcase className="w-5 h-5 text-faint" /></div>
+              <div className="text-[14px] font-medium mb-1">No cases here</div>
+              <div className="text-[12.5px] text-muted mb-4">{cases.length === 0 ? 'Open your first case to start tracking.' : 'Try a different status.'}</div>
+              {cases.length === 0 && <button onClick={() => setAddOpen(true)} className="btn btn-primary btn-sm mx-auto"><Plus className="w-3.5 h-3.5" /> New case</button>}
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {deliveryFiltered.map((c) => {
+                const st = DELIVERY_BY_KEY[deliveryStageOf(c)];
+                return (
+                  <div key={c.id} className="panel px-4 py-3 flex items-center gap-3 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setSelectedCaseId(c.id)}>
+                    <div className="av flex-shrink-0" style={{ background: avatarColor(c.id) }}>{initials(c.client_name)}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-ink text-[13.5px] truncate">{c.client_name}</div>
+                      <div className="text-[11.5px] text-muted truncate">{(c.visa_type || 'gtv').toUpperCase()}{c.client_phone ? ` · ${c.client_phone}` : ''}</div>
+                    </div>
+                    {/* stage selector (stops row click) */}
+                    <select
+                      value={deliveryStageOf(c)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => { e.stopPropagation(); updateCase(c.id, { delivery_stage: e.target.value }); }}
+                      className="text-[12px] font-semibold rounded-full px-2.5 py-1 border-0 outline-none cursor-pointer flex-shrink-0"
+                      style={{ background: st.tint, color: st.accent }}
+                    >
+                      {DELIVERY_STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       <CaseDrawer caseId={selectedCaseId} onClose={() => setSelectedCaseId(null)} />
