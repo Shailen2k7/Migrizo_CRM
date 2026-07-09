@@ -1,18 +1,4 @@
-// =============================================================================
-// GTV "HOW IT WORKS" EMAIL — the approved premium process email.
-// Sent from the lead drawer's "How it works" button.
-//
-//  - Hero served from crm.migrizo.com/gtv-hero.jpg (Gmail strips base64 URIs).
-//  - Icon cards are icon-LEFT / content-RIGHT and stay TWO per row on mobile;
-//    the icon tile and type shrink via media query so nothing looks lost.
-//  - "Jump to a section" uses true in-page anchors (#id) with <a name> targets.
-//    Apple Mail / most desktop clients jump; Gmail's app ignores anchors (a
-//    platform limitation). A "View in browser" link opens gtv-info.html, an
-//    identical hosted copy where the anchors always work.
-//  - Email-safe: inline CSS, table layout, no JavaScript. ~76KB (<102KB clip).
-// =============================================================================
-
-export const GTV_PROCESS_HTML = `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
   <meta charset="utf-8" />
@@ -930,4 +916,3 @@ export const GTV_PROCESS_HTML = `<!DOCTYPE html>
   </table>
 </body>
 </html>
-`;
