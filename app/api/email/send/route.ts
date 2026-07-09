@@ -65,8 +65,15 @@ export async function POST(req: Request) {
   if (!lead.email) return NextResponse.json({ ok: false, reason: 'no_email' });
 
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.NOTIFY_FROM; // e.g. "Migrizo <updates@migrizo.com>"
+  const from = process.env.NOTIFY_FROM; // e.g. "Migrizo <notify@updates.migrizo.com>"
   if (!apiKey || !from) return NextResponse.json({ ok: false, reason: 'not_configured' });
+
+  // Replies must land in a real, monitored inbox. NOTIFY_FROM is a send-only
+  // subdomain (no MX records), so replying to it bounces with "Address not
+  // found". Setting reply_to means the client's mail app addresses their reply
+  // to info@migrizo.com instead — critical for the SLA, which is accepted by
+  // replying "I Accept". Override with REPLY_TO env var if the inbox changes.
+  const replyTo = process.env.REPLY_TO || 'info@migrizo.com';
 
   // Invoice/receipt guard: don't auto-resend the same payment's receipt.
   if (type === 'invoice' && body.paymentId && !body.force) {
@@ -133,7 +140,7 @@ export async function POST(req: Request) {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [lead.email], subject: email.subject, html: email.html, text: email.text }),
+      body: JSON.stringify({ from, reply_to: replyTo, to: [lead.email], subject: email.subject, html: email.html, text: email.text }),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');

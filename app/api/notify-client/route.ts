@@ -45,6 +45,8 @@ export async function POST(req: Request) {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from,
+        // Replies go to a monitored inbox — NOTIFY_FROM is send-only (no MX).
+        reply_to: process.env.REPLY_TO || 'info@migrizo.com',
         to: [c.client_email],
         subject: email.subject,
         html: email.html,
