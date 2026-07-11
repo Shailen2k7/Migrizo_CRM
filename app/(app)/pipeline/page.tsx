@@ -18,7 +18,7 @@ import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
 import { usePipelines, getStageColor, STAGE_COLOR_LIST, type Pipeline, type Stage, type StageColor } from '@/lib/pipelines';
 import { getVisaMeta, type Lead } from '@/lib/types';
-import { Plus, Settings2, X, ChevronUp, ChevronDown, Trash2, GripVertical, Check, Send, CheckSquare, Square } from 'lucide-react';
+import { Plus, Settings2, X, ChevronUp, ChevronDown, Trash2, GripVertical, Check, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Lead may carry pipeline_id after migration 003; the base type doesn't know it yet.
@@ -79,9 +79,8 @@ function PipelinePageInner() {
   // ---- lead selection for bulk email (does not alter card look/drag) ----
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const emailableIds = useMemo(() => boardLeads.filter((l) => l.email && l.email.includes('@')).map((l) => l.id), [boardLeads]);
-  const allSelected = emailableIds.length > 0 && picked.size === emailableIds.length;
   const togglePick = (id: string) => setPicked((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleAll = () => setPicked(allSelected ? new Set() : new Set(emailableIds));
+  const selectEveryone = () => setPicked(new Set(emailableIds));
   const emailSelected = () => {
     const ids = Array.from(picked);
     if (ids.length === 0) return;
@@ -130,10 +129,6 @@ function PipelinePageInner() {
           </p>
         </div>
         <div className="flex items-center gap-2.5">
-          <button onClick={toggleAll} className="btn btn-outline" title="Select or deselect all leads with an email">
-            {allSelected ? <CheckSquare className="w-4 h-4 text-indigo" /> : <Square className="w-4 h-4" />}
-            {allSelected ? 'Deselect all' : 'Select all'}
-          </button>
           <button onClick={() => setManageOpen(true)} className="btn btn-outline">
             <Settings2 className="w-4 h-4" /> Manage
           </button>
@@ -212,15 +207,15 @@ function PipelinePageInner() {
                             return n;
                           })}
                           title={colSel ? `Deselect all in ${stage.name}` : `Select all in ${stage.name}`}
-                          className="flex-shrink-0"
+                          className="ml-auto flex-shrink-0"
                         >
-                          <SelectBox checked={colSel} size={17} accent={col.dot} />
+                          <SelectBox checked={colSel} size={18} accent={col.dot} />
                         </button>
                       );
                     })()}
-                    <span className="ml-auto text-[11.5px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.75)', color: col.fg }}>
-                      {items.length}
-                    </span>
+                  </div>
+                  <div className="text-[11px] font-semibold mt-1 pl-[18px]" style={{ color: col.fg, opacity: 0.75 }}>
+                    {items.length} lead{items.length === 1 ? '' : 's'}
                   </div>
                 </div>
                 {/* Cards */}
@@ -290,6 +285,7 @@ function PipelinePageInner() {
         <div className="fixed left-1/2 -translate-x-1/2 bottom-5 z-40 animate-fadeIn">
           <div className="bg-ink text-white rounded-2xl shadow-2xl px-3 py-2.5 flex items-center gap-2 whitespace-nowrap">
             <span className="text-[13px] font-semibold px-2">{picked.size} selected</span>
+            <button onClick={selectEveryone} className="text-[12.5px] font-medium px-2.5 py-1.5 rounded-lg hover:bg-white/10">All ({emailableIds.length})</button>
             <button onClick={() => setPicked(new Set())} className="text-[12.5px] font-medium px-2.5 py-1.5 rounded-lg hover:bg-white/10">Clear</button>
             <button onClick={emailSelected} className="inline-flex items-center gap-1.5 text-[13px] font-bold px-4 py-1.5 rounded-lg bg-indigo hover:bg-indigo-600 ml-1">
               <Send className="w-4 h-4" /> Choose template &amp; send
