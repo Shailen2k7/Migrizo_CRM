@@ -680,7 +680,8 @@ interface EmailLogEntry {
   user_id: string | null;
   action: string;
   meta: {
-    email_type?: 'onboarding' | 'sla' | 'invoice';
+    email_type?: 'onboarding' | 'sla' | 'invoice' | 'process' | 'campaign';
+    subject?: string;
     invoice_no?: string;
     milestone?: string;
     discount?: number;
@@ -693,6 +694,8 @@ const EMAIL_KINDS: Record<string, { label: string; sub: string; bg: string; fg: 
   onboarding: { label: 'Onboarding Email', sub: 'Welcome & document checklist', bg: '#E6F7EE', fg: '#047857', icon: 'send' },
   sla:        { label: 'Service Agreement (SLA)', sub: 'Sent for acceptance', bg: '#EEF2FF', fg: '#4338CA', icon: 'file' },
   invoice:    { label: 'Invoice / Receipt', sub: 'Payment document', bg: '#FEF3C7', fg: '#B45309', icon: 'rupee' },
+  process:    { label: 'How It Works (GTV)', sub: 'Process & pricing explainer', bg: '#FEF6E7', fg: '#B45309', icon: 'send' },
+  campaign:   { label: 'Campaign Email', sub: 'Marketing / nurture', bg: '#F3EEFF', fg: '#7C3AED', icon: 'send' },
 };
 
 function EmailHistory({ log, memberNameById }: { log: EmailLogEntry[] | null; memberNameById: (id: string | null) => string }) {
@@ -739,7 +742,7 @@ function EmailHistory({ log, memberNameById }: { log: EmailLogEntry[] | null; me
                   )}
                 </div>
                 <div className="text-[11.5px] text-muted mt-0.5">
-                  {kind.sub}
+                  {e.meta?.email_type === 'campaign' && e.meta?.subject ? e.meta.subject : kind.sub}
                   {e.meta?.invoice_no ? ` · ${e.meta.invoice_no}` : ''}
                   {e.meta?.milestone ? ` · ${e.meta.milestone}` : ''}
                 </div>
