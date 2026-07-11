@@ -174,11 +174,11 @@ export interface Case {
   id: string;
   workspace_id: string;
   lead_id: string | null;
+  delivery_stage?: string | null;
   client_name: string;
   client_email: string | null;
   client_phone: string | null;
   visa_type: string;
-  delivery_stage?: string | null;
   current_stage: CaseStage;
   status: CaseStatus;
   endorsement_status: EndorsementStatus;

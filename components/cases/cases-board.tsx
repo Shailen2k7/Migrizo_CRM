@@ -34,16 +34,22 @@ export function CasesBoard({
             <div
               key={st.key}
               className="flex flex-col w-[31vw] sm:w-[230px] flex-shrink-0 rounded-[14px] transition-all"
-              style={{ background: isOver ? st.tint : '#F7F8FA', border: `1.5px solid ${isOver ? st.accent : 'transparent'}` }}
+              style={{
+                background: st.tint,
+                border: `1.5px solid ${isOver ? st.accent : `${st.accent}55`}`,
+                boxShadow: isOver ? `0 0 0 3px ${st.accent}2E` : '0 1px 2px rgba(15,17,21,0.04)',
+              }}
               onDragOver={(e) => { e.preventDefault(); setOverKey(st.key); }}
               onDragLeave={() => setOverKey((k) => (k === st.key ? null : k))}
               onDrop={() => { if (dragId) onMove(dragId, st.key); setDragId(null); setOverKey(null); }}
             >
               {/* Column header */}
-              <div className="px-3 pt-3 pb-2 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: st.accent }} />
-                <span className="text-[12.5px] font-bold truncate" style={{ color: st.accent }}>{st.label}</span>
-                <span className="ml-auto text-[11px] font-semibold text-muted bg-surface rounded-full px-1.5 py-0.5">{items.length}</span>
+              <div className="px-3.5 pt-3 pb-2.5 border-b" style={{ borderColor: `${st.accent}33` }}>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: st.accent }} />
+                  <span className="text-[13px] font-bold truncate" style={{ color: st.accent }}>{st.label}</span>
+                  <span className="ml-auto text-[11.5px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.75)', color: st.accent }}>{items.length}</span>
+                </div>
               </div>
               {/* Cards */}
               <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2 space-y-2" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
@@ -65,7 +71,7 @@ export function CasesBoard({
                   </div>
                 ))}
                 {items.length === 0 && (
-                  <div className="text-[11px] text-faint text-center py-6 border border-dashed border-border rounded-[10px]">Drop here</div>
+                  <div className="border border-dashed rounded-[10px] py-7 text-center text-[11.5px]" style={{ borderColor: `${st.accent}55`, color: st.accent, opacity: 0.7 }}>Drop here</div>
                 )}
               </div>
             </div>

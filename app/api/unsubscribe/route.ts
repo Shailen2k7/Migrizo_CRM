@@ -41,3 +41,10 @@ export async function GET(req: Request) {
   }
   return page('You\'ve been unsubscribed');
 }
+
+
+// RFC 8058 One-Click unsubscribe: mail clients POST to the List-Unsubscribe
+// URL directly (no page shown). Same suppression effect as GET.
+export async function POST(req: Request) {
+  return GET(req);
+}

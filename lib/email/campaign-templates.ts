@@ -27,8 +27,6 @@ function shell(bodyHtml: string, preheader: string): string {
 <html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
 <style>
   @media only screen and (max-width:600px){
-    .cta-btn{display:block !important;width:100% !important;margin:0 0 10px !important;}
-    .cta-cell{display:block !important;width:100% !important;}
     .px{padding-left:24px !important;padding-right:24px !important;}
     .h1{font-size:23px !important;}
   }
@@ -61,17 +59,21 @@ const h1 = (t: string) => `<h1 class="h1" style="margin:0 0 16px;font-size:26px;
 const para = (t: string) => `<p style="margin:0 0 16px;font-size:14.5px;line-height:1.8;color:${INK};">${t}</p>`;
 const greet = (name: string) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:${INK};">Dear ${esc(name)},</p>`;
 
-// dual CTA — primary "Check Your Eligibility" (website) + WhatsApp
+// dual CTA — primary "Check Your Eligibility" (website) + WhatsApp.
+// Stacked, centered, bulletproof buttons: no inline-table tricks, so they
+// align perfectly in every client (Gmail iOS/Android, Apple Mail, Outlook).
 function cta(primaryLabel = 'Check Your Eligibility') {
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 8px;"><tr>
-    <td class="cta-cell" align="left" style="padding:0;">
-      <table role="presentation" cellpadding="0" cellspacing="0" style="display:inline-table;"><tr><td align="center" bgcolor="${GOLD}" style="border-radius:10px;">
-        <a href="${ELIGIBILITY}" target="_blank" class="cta-btn" style="display:inline-block;padding:15px 26px;font-size:14.5px;font-weight:800;color:${NAVY};border-radius:10px;text-decoration:none;">${primaryLabel} &rarr;</a>
-      </td></tr></table>
-      <span style="display:inline-block;width:10px;"></span>
-      <table role="presentation" cellpadding="0" cellspacing="0" style="display:inline-table;"><tr><td align="center" style="border-radius:10px;border:2px solid #25D366;">
-        <a href="${WA}" target="_blank" class="cta-btn" style="display:inline-block;padding:13px 24px;font-size:14.5px;font-weight:800;color:#128C7E;border-radius:10px;text-decoration:none;">&#128172;&nbsp; Chat on WhatsApp</a>
-      </td></tr></table>
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:26px 0 6px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:340px;">
+        <tr><td align="center" bgcolor="${GOLD}" style="border-radius:12px;">
+          <a href="${ELIGIBILITY}" target="_blank" style="display:block;padding:16px 20px;font-size:15px;font-weight:800;color:${NAVY};border-radius:12px;text-decoration:none;">${primaryLabel} &rarr;</a>
+        </td></tr>
+        <tr><td style="height:12px;line-height:12px;font-size:0;">&nbsp;</td></tr>
+        <tr><td align="center" style="border-radius:12px;border:2px solid #25D366;">
+          <a href="${WA}" target="_blank" style="display:block;padding:14px 20px;font-size:15px;font-weight:800;color:#128C7E;border-radius:10px;text-decoration:none;">&#128172;&nbsp; Chat on WhatsApp</a>
+        </td></tr>
+      </table>
     </td></tr></table>`;
 }
 

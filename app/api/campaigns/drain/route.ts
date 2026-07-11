@@ -12,6 +12,24 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const BATCH = 40;          // recipients per minute (~2,400/hr ceiling; safe + fast)
+
+// Rough HTML -> plain text for the multipart alternative. A real text part
+// materially improves inbox placement: HTML-only bulk mail is a classic
+// Promotions/spam signal.
+function htmlToText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<head[\s\S]*?<\/head>/gi, ' ')
+    .replace(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, '$2 ($1)')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|h1|h2|h3|li|table)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&rarr;/g, '->')
+    .replace(/&middot;/g, '·').replace(/&mdash;/g, '—')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 const SITE = 'https://crm.migrizo.com';
 
 export async function POST(req: Request) {
@@ -58,7 +76,16 @@ export async function POST(req: Request) {
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from, reply_to: replyTo, to: [r.email], subject, html }),
+        body: JSON.stringify({
+          from, reply_to: replyTo, to: [r.email], subject, html,
+          text: htmlToText(html),
+          headers: {
+            // One-click unsubscribe headers: Gmail/Yahoo REQUIRE these for bulk
+            // senders and they materially improve reputation + placement.
+            'List-Unsubscribe': `<${unsub}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          },
+        }),
       });
       if (!res.ok) throw new Error(`resend ${res.status}`);
       await admin.from('campaign_recipients').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', r.id);
