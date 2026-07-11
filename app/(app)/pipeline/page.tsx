@@ -12,12 +12,13 @@
 // =============================================================================
 
 import { Suspense, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { DealTag } from '@/components/shared/deal-tag';
 import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
 import { usePipelines, getStageColor, STAGE_COLOR_LIST, type Pipeline, type Stage, type StageColor } from '@/lib/pipelines';
 import { getVisaMeta, type Lead } from '@/lib/types';
-import { Plus, Settings2, X, ChevronUp, ChevronDown, Trash2, GripVertical, Check } from 'lucide-react';
+import { Plus, Settings2, X, ChevronUp, ChevronDown, Trash2, GripVertical, Check, Send, CheckSquare, Square } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Lead may carry pipeline_id after migration 003; the base type doesn't know it yet.
@@ -32,6 +33,7 @@ function PipelinePageInner() {
   const { leads, updateLead, workspace } = useApp();
   const ui = useUI();
   const pl = usePipelines(workspace.id);
+  const router = useRouter();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
@@ -74,6 +76,18 @@ function PipelinePageInner() {
   // ---- Drag state ------------------------------------------------------------
   const [dragId, setDragId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<string | null>(null);
+  // ---- lead selection for bulk email (does not alter card look/drag) ----
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const emailableIds = useMemo(() => boardLeads.filter((l) => l.email && l.email.includes('@')).map((l) => l.id), [boardLeads]);
+  const allSelected = emailableIds.length > 0 && picked.size === emailableIds.length;
+  const togglePick = (id: string) => setPicked((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setPicked(allSelected ? new Set() : new Set(emailableIds));
+  const emailSelected = () => {
+    const ids = Array.from(picked);
+    if (ids.length === 0) return;
+    sessionStorage.setItem('campaign_preselect', JSON.stringify(ids));
+    router.push('/campaigns');
+  };
   const dragCounter = useRef<Record<string, number>>({});
 
   const onDropToStage = async (stage: Stage) => {
@@ -116,6 +130,10 @@ function PipelinePageInner() {
           </p>
         </div>
         <div className="flex items-center gap-2.5">
+          <button onClick={toggleAll} className="btn btn-outline" title="Select or deselect all leads with an email">
+            {allSelected ? <CheckSquare className="w-4 h-4 text-indigo" /> : <Square className="w-4 h-4" />}
+            {allSelected ? 'Deselect all' : 'Select all'}
+          </button>
           <button onClick={() => setManageOpen(true)} className="btn btn-outline">
             <Settings2 className="w-4 h-4" /> Manage
           </button>
@@ -181,6 +199,25 @@ function PipelinePageInner() {
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: col.dot }} />
                     <span className="text-[13px] font-bold truncate" style={{ color: col.fg }}>{stage.name}</span>
+                    {(() => {
+                      const colIds = items.filter((l) => l.email && l.email.includes('@')).map((l) => l.id);
+                      const colSel = colIds.length > 0 && colIds.every((id) => picked.has(id));
+                      if (colIds.length === 0) return null;
+                      return (
+                        <button
+                          onClick={() => setPicked((prev) => {
+                            const n = new Set(prev);
+                            if (colSel) colIds.forEach((id) => n.delete(id));
+                            else colIds.forEach((id) => n.add(id));
+                            return n;
+                          })}
+                          title={colSel ? `Deselect all in ${stage.name}` : `Select all in ${stage.name}`}
+                          className="flex-shrink-0"
+                        >
+                          <SelectBox checked={colSel} size={17} accent={col.dot} />
+                        </button>
+                      );
+                    })()}
                     <span className="ml-auto text-[11.5px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.75)', color: col.fg }}>
                       {items.length}
                     </span>
@@ -196,6 +233,8 @@ function PipelinePageInner() {
                       onDragStart={() => setDragId(lead.id)}
                       onDragEnd={() => { setDragId(null); setOverStage(null); dragCounter.current = {}; }}
                       onClick={() => ui.openLeadDrawer(lead.id)}
+                      selected={picked.has(lead.id)}
+                      onToggleSelect={() => togglePick(lead.id)}
                     />
                   ))}
                   {remaining > 0 && (
@@ -236,6 +275,8 @@ function PipelinePageInner() {
                     onDragStart={() => setDragId(lead.id)}
                     onDragEnd={() => { setDragId(null); setOverStage(null); dragCounter.current = {}; }}
                     onClick={() => ui.openLeadDrawer(lead.id)}
+                    selected={picked.has(lead.id)}
+                    onToggleSelect={() => togglePick(lead.id)}
                   />
                 ))}
               </div>
@@ -243,6 +284,19 @@ function PipelinePageInner() {
           )}
         </div>
       </div>
+
+      {/* Floating bar — appears only when leads are selected */}
+      {picked.size > 0 && (
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-5 z-40 animate-fadeIn">
+          <div className="bg-ink text-white rounded-2xl shadow-2xl px-3 py-2.5 flex items-center gap-2 whitespace-nowrap">
+            <span className="text-[13px] font-semibold px-2">{picked.size} selected</span>
+            <button onClick={() => setPicked(new Set())} className="text-[12.5px] font-medium px-2.5 py-1.5 rounded-lg hover:bg-white/10">Clear</button>
+            <button onClick={emailSelected} className="inline-flex items-center gap-1.5 text-[13px] font-bold px-4 py-1.5 rounded-lg bg-indigo hover:bg-indigo-600 ml-1">
+              <Send className="w-4 h-4" /> Choose template &amp; send
+            </button>
+          </div>
+        </div>
+      )}
 
       {manageOpen && selected && (
         <ManageModal
@@ -263,18 +317,54 @@ function PipelinePageInner() {
 // -----------------------------------------------------------------------------
 // Lead card — name + visa pill + last-touched time. No money on the board.
 // -----------------------------------------------------------------------------
-function LeadCard({ lead, dragging, onDragStart, onDragEnd, onClick }: {
+// Premium custom checkbox — rounded, brand-filled when checked, crisp check.
+function SelectBox({ checked, accent = '#4F46E5', size = 18 }: { checked: boolean; accent?: string; size?: number }) {
+  return (
+    <span
+      style={{
+        width: size, height: size, borderRadius: 6, display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        transition: 'all .15s ease',
+        background: checked ? accent : '#FFFFFF',
+        border: `1.5px solid ${checked ? accent : '#CBD3E1'}`,
+        boxShadow: checked ? `0 1px 3px ${accent}55` : 'inset 0 1px 2px rgba(16,24,40,0.05)',
+      }}
+    >
+      {checked && (
+        <svg width={size * 0.62} height={size * 0.62} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
+function LeadCard({ lead, dragging, onDragStart, onDragEnd, onClick, selected = false, onToggleSelect }: {
   lead: LeadP; dragging: boolean; onDragStart: () => void; onDragEnd: () => void; onClick: () => void;
+  selected?: boolean; onToggleSelect?: () => void;
 }) {
   const visa = getVisaMeta(lead.visa_type);
+  const hasEmail = !!lead.email && lead.email.includes('@');
   return (
     <div
       draggable
       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', lead.id); onDragStart(); }}
       onDragEnd={onDragEnd}
       onClick={onClick}
-      className={`group bg-surface border border-border rounded-[10px] px-3 py-2.5 cursor-grab active:cursor-grabbing select-none transition-all hover:border-border-strong hover:shadow-md ${dragging ? 'opacity-40 rotate-[1.5deg] scale-[0.98]' : ''}`}
+      className={`group relative bg-surface border rounded-[10px] px-3 py-2.5 cursor-grab active:cursor-grabbing select-none transition-all hover:shadow-md ${selected ? 'border-indigo' : 'border-border hover:border-border-strong'} ${dragging ? 'opacity-40 rotate-[1.5deg] scale-[0.98]' : ''}`}
     >
+      {/* Selection checkbox — corner overlay, only shown for leads with an email.
+          Absolutely positioned so the card layout stays identical. */}
+      {hasEmail && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleSelect?.(); }}
+          onMouseDown={(e) => e.stopPropagation()}
+          className={`absolute top-1.5 right-1.5 z-10 transition-opacity ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          title={selected ? 'Deselect' : 'Select for email'}
+        >
+          <SelectBox checked={selected} />
+        </button>
+      )}
       <div className="flex items-center gap-2">
         <GripVertical className="w-3.5 h-3.5 text-faint opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 -ml-1" />
         <span className="text-[13px] font-medium truncate flex-1 -ml-1">{lead.full_name}</span>
