@@ -281,6 +281,15 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     }
     logActivity('created_lead', data.id, { name: data.full_name });
     toast.success(`Added ${data.full_name}`);
+    // Auto-send the "How it works" email to brand-new leads that have an email —
+    // mirrors the Meta-ingest auto-welcome so manually added leads behave the
+    // same. Fire-and-forget; the email route renders + logs it to the Emails tab.
+    if (data.email && String(data.email).includes('@')) {
+      fetch('/api/email/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'process', leadId: data.id }),
+      }).then((r) => r.ok && toast.success('Sent "How it works" intro email')).catch(() => {});
+    }
     return data as Lead;
   }, [supabase, workspace.id, user.id, logActivity]);
 
