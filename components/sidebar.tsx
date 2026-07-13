@@ -61,6 +61,13 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead, mobileOpen
     return true;
   });
 
+  // Show the Blog item only for users granted access (blog_access), just above Settings.
+  if (blogAccess) {
+    const settingsIdx = nav.findIndex((i) => i.href === '/settings');
+    if (settingsIdx === -1) nav.push(BLOG_ITEM);
+    else nav.splice(settingsIdx, 0, BLOG_ITEM);
+  }
+
   const signOut = async () => {
     await supabase.auth.signOut();
     toast.success('Signed out');
