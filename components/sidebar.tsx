@@ -2,8 +2,8 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, PenLine } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays } from 'lucide-react';
+import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -13,7 +13,6 @@ import { isFollowUpOverdue, isFollowUpToday } from '@/lib/types';
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; badge?: string; new?: boolean };
 
-const BLOG_ITEM: NavItem = { href: '/blog-admin', label: 'Blog', icon: PenLine, new: true };
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/leads', label: 'Leads', icon: Users },
@@ -36,16 +35,7 @@ interface Props {
 }
 
 export function Sidebar({ user, workspaceName, leadsCount, onAddLead, mobileOpen = false, onClose }: Props) {
-  const { cases, followUps, canViewPayments, role, workspace, user: appUser } = useApp() as ReturnType<typeof useApp> & { workspace: { id: string }; user: { id: string } };
-  // Blog module is hidden unless this user has been granted access (blog_access).
-  const [blogAccess, setBlogAccess] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    const supabase = createClient();
-    supabase.from('blog_access').select('user_id').eq('workspace_id', workspace.id).eq('user_id', appUser.id).maybeSingle()
-      .then(({ data }) => { if (alive) setBlogAccess(!!data); });
-    return () => { alive = false; };
-  }, [workspace.id, appUser.id]);
+  const { cases, followUps, canViewPayments, role } = useApp();
   const casesCount = cases.filter((c) => c.status === 'active' && !c.archived_at).length;
   const urgentFollowUps = followUps.filter((f) => isFollowUpOverdue(f) || isFollowUpToday(f)).length;
   const path = usePathname();
@@ -60,13 +50,6 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead, mobileOpen
     if (item.href === '/cases' && role !== 'admin') return false;
     return true;
   });
-
-  // Show the Blog item only for users granted access (blog_access), just above Settings.
-  if (blogAccess) {
-    const settingsIdx = nav.findIndex((i) => i.href === '/settings');
-    if (settingsIdx === -1) nav.push(BLOG_ITEM);
-    else nav.splice(settingsIdx, 0, BLOG_ITEM);
-  }
 
   const signOut = async () => {
     await supabase.auth.signOut();
