@@ -1,343 +1,295 @@
 'use client';
 
+// =============================================================================
+// AI COO v2 — persistent, full-system-aware chat.
+// Left rail: conversation history (stored in DB). Main: streaming chat over a
+// live snapshot of the ENTIRE CRM — pipeline, revenue, meetings, campaigns,
+// cases, activity — with deep dossiers for any client you mention.
+// =============================================================================
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useApp } from '@/components/shared/app-provider';
-import { useUI } from '@/components/shared/app-shell';
-import { Sparkles, Send, RotateCcw, AlertTriangle, Zap, Target, TrendingUp, Clock, MessageSquare, Bot, User as UserIcon } from 'lucide-react';
-import { formatINR, toINR } from '@/lib/utils';
-import { toast } from 'sonner';
+import { Sparkles, Plus, Send, Square, Trash2, MessageSquare, PanelLeftClose, PanelLeft, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-interface Msg {
-  role: 'user' | 'assistant';
-  content: string;
-}
+interface Msg { role: 'user' | 'assistant'; content: string; }
+interface Conv { id: string; title: string; updated_at: string; }
 
-const STARTER_PROMPTS = [
-  { icon: Clock,       text: 'Who should I call today and why?' },
-  { icon: Target,      text: 'Audit my pipeline — where am I losing deals?' },
-  { icon: MessageSquare, text: 'Draft a follow-up for my most overdue lead' },
-  { icon: TrendingUp,  text: 'What\u2019s my single biggest revenue risk this week?' },
-  { icon: Zap,         text: 'Which 3 hot leads should I prioritize? Give me a tactical plan.' },
-  { icon: AlertTriangle, text: 'Why is my proposal-to-won conversion not better? Be honest.' },
+const SUGGESTIONS = [
+  'Give me a full business briefing for today',
+  'Who are my hottest leads right now and what should I do with each?',
+  'How is revenue tracking this month vs pending payments?',
+  'Which leads have gone stale and need reviving?',
+  'What meetings do I have coming up, and any no-shows to chase?',
+  'How did my last email campaign perform?',
+  'Draft a WhatsApp follow-up for my most recent hot lead',
+  'Where are my delivery cases stuck?',
 ];
 
 export default function AIPage() {
-  const { leads, payments, user } = useApp();
-  const ui = useUI();
+  const { leads } = useApp();
+  const [convs, setConvs] = useState<Conv[]>([]);
+  const [activeConv, setActiveConv] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [loadingConv, setLoadingConv] = useState(false);
+  const [railOpen, setRailOpen] = useState(true);
+  const [setupError, setSetupError] = useState('');
   const abortRef = useRef<AbortController | null>(null);
-  const scrollerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll on new content
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages]);
+  const liveBadge = useMemo(() => `${leads.length.toLocaleString()} leads live`, [leads.length]);
 
-  // Quick insight cards (live computed)
-  const insights = useMemo(() => {
-    const now = Date.now();
-    const dayMs = 86400000;
-    const overdueFu = leads.filter((l) => l.next_follow_up && new Date(l.next_follow_up).getTime() < now && !['won', 'junk'].includes(l.stage));
-    // Match the pipeline board: hot = leads sitting in the Hot stage.
-    const hot = leads.filter((l) => l.stage === 'hot');
-    const proposals = leads.filter((l) => l.stage === 'invoice_sent');
-    const overduePay = payments.filter((p) => p.status === 'overdue' || (p.status === 'pending' && p.due_date && new Date(p.due_date).getTime() < now));
-    const overduePayAmt = overduePay.reduce((s, p) => s + toINR(p.amount, leads.find((l) => l.id === p.lead_id)?.currency || 'INR'), 0);
-    return [
-      { label: 'Overdue follow-ups', value: overdueFu.length, color: '#B91C1C', bg: 'hsl(var(--rose-soft))', icon: Clock },
-      { label: 'Hot in pipeline',   value: hot.length,       color: '#B45309', bg: 'hsl(var(--amber-soft))', icon: Zap },
-      { label: 'At proposal',       value: proposals.length, color: '#4338CA', bg: 'hsl(var(--indigo-soft))', icon: Target },
-      { label: 'Overdue ₹',         value: formatINR(overduePayAmt), color: '#B91C1C', bg: 'hsl(var(--rose-soft))', icon: AlertTriangle },
-    ];
-  }, [leads, payments]);
-
-  const autoResize = useCallback(() => {
-    const ta = taRef.current;
-    if (!ta) return;
-    ta.style.height = 'auto';
-    ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
+  const loadConvs = useCallback(async () => {
+    try {
+      const r = await fetch('/api/ai/conversations');
+      const d = await r.json();
+      if (d.ok) setConvs(d.conversations);
+    } catch { /* ignore */ }
   }, []);
+  useEffect(() => { void loadConvs(); }, [loadConvs]);
 
-  const send = useCallback(async (textOverride?: string) => {
-    const text = (textOverride ?? input).trim();
-    if (!text || streaming) return;
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages, streaming]);
 
-    const newMessages: Msg[] = [...messages, { role: 'user', content: text }, { role: 'assistant', content: '' }];
-    setMessages(newMessages);
+  async function openConv(id: string) {
+    if (streaming) stop();
+    setActiveConv(id); setLoadingConv(true); setMessages([]);
+    try {
+      const r = await fetch(`/api/ai/conversations?id=${id}`);
+      const d = await r.json();
+      if (d.ok) setMessages(d.messages.map((m: Msg) => ({ role: m.role, content: m.content })));
+    } catch { /* ignore */ }
+    setLoadingConv(false);
+  }
+
+  async function deleteConv(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!confirm('Delete this conversation?')) return;
+    await fetch(`/api/ai/conversations?id=${id}`, { method: 'DELETE' });
+    setConvs((prev) => prev.filter((c) => c.id !== id));
+    if (activeConv === id) { setActiveConv(null); setMessages([]); }
+  }
+
+  function newChat() {
+    if (streaming) stop();
+    setActiveConv(null); setMessages([]); setInput('');
+    taRef.current?.focus();
+  }
+
+  function stop() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStreaming(false);
+  }
+
+  async function send(text?: string) {
+    const q = (text ?? input).trim();
+    if (!q || streaming) return;
     setInput('');
-    setStreaming(true);
-
-    // Reset textarea height
     if (taRef.current) taRef.current.style.height = 'auto';
-
-    const ac = new AbortController();
-    abortRef.current = ac;
-
+    setSetupError('');
+    setMessages((prev) => [...prev, { role: 'user', content: q }, { role: 'assistant', content: '' }]);
+    setStreaming(true);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     try {
       const res = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // Only send the chat turns, not the empty placeholder
-          messages: newMessages.slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
-        }),
-        signal: ac.signal,
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: activeConv, message: q }),
+        signal: ctrl.signal,
       });
-
-      if (!res.ok || !res.body) {
-        const errText = await res.text().catch(() => '');
-        let parsed = errText;
-        try { parsed = JSON.parse(errText).error || errText; } catch {}
-        setMessages((prev) => {
-          const next = [...prev];
-          next[next.length - 1] = { role: 'assistant', content: `⚠ ${parsed || 'Request failed'}` };
-          return next;
-        });
-        toast.error(parsed.length < 120 ? parsed : 'AI request failed');
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({ error: `Request failed (${res.status})` }));
+        if (res.status === 501) setSetupError(d.error);
+        setMessages((prev) => prev.slice(0, -1).concat({ role: 'assistant', content: `⚠️ ${d.error || 'Something went wrong.'}` }));
+        setStreaming(false);
         return;
       }
+      const convId = res.headers.get('x-conversation-id');
+      if (convId && !activeConv) setActiveConv(convId);
 
-      const reader = res.body.getReader();
+      const reader = res.body!.getReader();
       const decoder = new TextDecoder();
-      let buf = '';
-
-      while (true) {
+      let buffer = '';
+      let acc = '';
+      for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        setMessages((prev) => {
-          const next = [...prev];
-          next[next.length - 1] = { role: 'assistant', content: buf };
-          return next;
-        });
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          try {
+            const evt = JSON.parse(line.slice(5).trim());
+            if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
+              acc += evt.delta.text;
+              setMessages((prev) => prev.slice(0, -1).concat({ role: 'assistant', content: acc }));
+            }
+          } catch { /* partial */ }
+        }
       }
     } catch (e) {
-      if ((e as Error).name === 'AbortError') {
-        // User cancelled — keep partial content
-      } else {
-        const errMsg = e instanceof Error ? e.message : 'Network error';
-        setMessages((prev) => {
-          const next = [...prev];
-          next[next.length - 1] = { role: 'assistant', content: `⚠ ${errMsg}` };
-          return next;
-        });
+      if ((e as Error).name !== 'AbortError') {
+        setMessages((prev) => prev.slice(0, -1).concat({ role: 'assistant', content: '⚠️ Network error — please try again.' }));
       }
-    } finally {
-      setStreaming(false);
-      abortRef.current = null;
     }
-  }, [input, messages, streaming]);
+    setStreaming(false);
+    abortRef.current = null;
+    void loadConvs();
+  }
 
-  const stop = () => abortRef.current?.abort();
-  const reset = () => { stop(); setMessages([]); };
+  const empty = messages.length === 0 && !loadingConv;
 
   return (
-    <div className="max-w-[1080px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-4 h-screen flex flex-col">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-[26px] md:text-[28px] font-bold tracking-tight leading-[1.1] flex items-center gap-2.5">
-            <span className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#6366F1,#7C3AED)', color: '#fff' }}>
-              <Sparkles className="w-[18px] h-[18px]" />
-            </span>
-            AI COO
-          </h1>
-          <p className="text-[13px] text-muted mt-1.5">Live access to your workspace · ground-truth advice, not generic tips</p>
+    <div className="flex h-[calc(100dvh-56px)] md:h-screen overflow-hidden animate-pageIn">
+      {/* Conversation rail */}
+      <div className={cn('flex-shrink-0 border-r border-border bg-surface-2/50 transition-all overflow-hidden flex flex-col', railOpen ? 'w-[240px]' : 'w-0')}>
+        <div className="p-3 flex-shrink-0">
+          <button onClick={newChat} className="btn btn-primary w-full justify-center"><Plus className="w-4 h-4" /> New chat</button>
         </div>
-        {messages.length > 0 && (
-          <button onClick={reset} className="btn btn-ghost btn-sm" title="Clear conversation">
-            <RotateCcw className="w-3.5 h-3.5" /> New chat
-          </button>
-        )}
-      </div>
-
-      {/* Compact KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-        {insights.map((i) => {
-          const Icon = i.icon;
-          return (
-            <div key={i.label} className="bg-surface border border-border rounded-xl p-3 flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: i.bg, color: i.color }}>
-                <Icon className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[10.5px] uppercase tracking-wider text-muted font-semibold truncate">{i.label}</div>
-                <div className="num text-[16px] font-bold leading-tight">{i.value}</div>
-              </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-4">
+          <div className="text-[10.5px] font-bold uppercase tracking-wide text-faint px-2 mb-1.5">History</div>
+          {convs.length === 0 && <div className="text-[12px] text-faint px-2 py-3">Your conversations will appear here.</div>}
+          {convs.map((c) => (
+            <div key={c.id} onClick={() => void openConv(c.id)}
+              className={cn('group flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer mb-0.5 transition', activeConv === c.id ? 'bg-indigo-soft text-indigo' : 'hover:bg-surface-2 text-ink')}>
+              <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+              <span className="text-[12.5px] font-medium truncate flex-1">{c.title}</span>
+              <button onClick={(e) => void deleteConv(c.id, e)} className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 text-muted hover:text-red-600 transition"><Trash2 className="w-3 h-3" /></button>
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
 
       {/* Chat area */}
-      <div ref={scrollerRef} className="flex-1 overflow-y-auto bg-surface border border-border rounded-2xl p-4 md:p-5 mb-3">
-        {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center px-4 py-6">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4" style={{ background: 'linear-gradient(135deg,#6366F1,#7C3AED)', color: '#fff' }}>
-              <Sparkles className="w-7 h-7" />
-            </div>
-            <h2 className="text-[18px] font-semibold mb-2">Ask anything about your pipeline</h2>
-            <p className="text-[13px] text-muted mb-6 max-w-md leading-relaxed">
-              I have live access to every lead, payment, and activity in your workspace. Try one of these, or type your own question:
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full max-w-2xl">
-              {STARTER_PROMPTS.map((p, i) => {
-                const Icon = p.icon;
-                return (
-                  <button key={i} onClick={() => send(p.text)} className="text-left flex items-start gap-3 p-3 rounded-xl border border-border bg-surface hover:border-indigo hover:bg-indigo-soft transition-all group">
-                    <div className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 transition-all" style={{ background: 'hsl(var(--indigo-soft))', color: '#4338CA' }}>
-                      <Icon className="w-3.5 h-3.5" />
-                    </div>
-                    <span className="text-[12.5px] text-ink-2 group-hover:text-ink leading-snug pt-0.5">{p.text}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-5 max-w-3xl mx-auto">
-            {messages.map((m, i) => <ChatMessage key={i} msg={m} streaming={streaming && i === messages.length - 1} />)}
-          </div>
-        )}
-      </div>
-
-      {/* Input */}
-      <div className="bg-surface border border-border rounded-2xl p-2.5 flex items-end gap-2 mb-2">
-        <textarea
-          ref={taRef}
-          value={input}
-          onChange={(e) => { setInput(e.target.value); autoResize(); }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          placeholder="Ask the AI COO… (Shift+Enter for new line)"
-          rows={1}
-          className="flex-1 resize-none bg-transparent border-0 outline-none px-3 py-2 text-[13.5px] text-ink placeholder:text-muted"
-          style={{ maxHeight: 200 }}
-          disabled={streaming}
-        />
-        {streaming ? (
-          <button onClick={stop} className="btn btn-outline btn-sm">Stop</button>
-        ) : (
-          <button onClick={() => send()} disabled={!input.trim()} className="btn btn-primary disabled:opacity-50">
-            <Send className="w-3.5 h-3.5" /> Send
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 sm:px-6 py-3 border-b border-border flex-shrink-0">
+          <button onClick={() => setRailOpen((v) => !v)} className="p-1.5 rounded-md hover:bg-surface-2 text-muted" title="Toggle history">
+            {railOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
           </button>
-        )}
+          <div className="w-8 h-8 rounded-[9px] bg-gradient-to-br from-indigo to-[#16294E] flex items-center justify-center flex-shrink-0"><Sparkles className="w-4 h-4 text-white" /></div>
+          <div className="min-w-0">
+            <div className="text-[15px] font-bold text-ink leading-tight">AI COO</div>
+            <div className="text-[11px] text-muted leading-tight">Knows your whole business · {liveBadge}</div>
+          </div>
+          <span className="ml-auto hidden sm:inline-flex items-center gap-1.5 text-[10.5px] font-bold text-emerald-700 bg-emerald-50 rounded-full px-2.5 py-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> LIVE DATA
+          </span>
+        </div>
+
+        {/* Messages */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
+          {setupError && (
+            <div className="max-w-[720px] mx-auto mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-[13px] text-amber-900">
+              <b>Setup needed:</b> {setupError}
+            </div>
+          )}
+          {loadingConv && <div className="max-w-[720px] mx-auto text-center text-muted text-[13px] py-10"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading conversation…</div>}
+          {empty ? (
+            <div className="max-w-[720px] mx-auto pt-8 sm:pt-14">
+              <div className="text-center mb-8">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo to-[#16294E] flex items-center justify-center mx-auto mb-4"><Sparkles className="w-7 h-7 text-white" /></div>
+                <h1 className="text-[22px] font-bold text-ink mb-1.5">Ask your COO anything</h1>
+                <p className="text-[13.5px] text-muted max-w-[440px] mx-auto">Every answer draws on your live pipeline, revenue, meetings, campaigns, cases and full activity history — mention any client by name for a deep dive.</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {SUGGESTIONS.map((s) => (
+                  <button key={s} onClick={() => void send(s)} className="text-left panel px-4 py-3 text-[13px] text-ink hover:border-indigo hover:text-indigo transition">{s}</button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="max-w-[720px] mx-auto space-y-5">
+              {messages.map((m, i) => (
+                <ChatMessage key={i} msg={m} streaming={streaming && i === messages.length - 1 && m.role === 'assistant'} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Composer */}
+        <div className="border-t border-border px-4 sm:px-6 py-3.5 flex-shrink-0">
+          <div className="max-w-[720px] mx-auto flex items-end gap-2.5">
+            <textarea
+              ref={taRef} value={input} rows={1} placeholder="Ask about your pipeline, a client, revenue, meetings, campaigns…"
+              onChange={(e) => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px'; }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
+              className="flex-1 px-4 py-3 border border-border rounded-2xl text-[13.5px] focus:border-indigo outline-none resize-none leading-relaxed"
+            />
+            {streaming ? (
+              <button onClick={stop} className="w-11 h-11 rounded-full bg-ink text-white flex items-center justify-center flex-shrink-0" title="Stop"><Square className="w-4 h-4" /></button>
+            ) : (
+              <button onClick={() => void send()} disabled={!input.trim()} className="w-11 h-11 rounded-full bg-indigo text-white flex items-center justify-center flex-shrink-0 disabled:opacity-35" title="Send"><Send className="w-[18px] h-[18px]" /></button>
+            )}
+          </div>
+          <div className="max-w-[720px] mx-auto text-[10.5px] text-faint mt-1.5 px-1">Enter to send · Shift+Enter for a new line · answers use live CRM data</div>
+        </div>
       </div>
-      <p className="text-[11px] text-muted text-center">AI responses can be wrong. Verify before acting on financial or legal advice.</p>
     </div>
   );
 }
 
+// ---------- message rendering (lightweight markdown) ----------
 function ChatMessage({ msg, streaming }: { msg: Msg; streaming: boolean }) {
-  const isUser = msg.role === 'user';
-  return (
-    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
-      <div className="flex-shrink-0">
-        <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{
-          background: isUser ? '#0F1115' : 'linear-gradient(135deg,#6366F1,#7C3AED)', color: '#fff'
-        }}>
-          {isUser ? <UserIcon className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
-        </div>
+  if (msg.role === 'user') {
+    return (
+      <div className="flex justify-end">
+        <div className="bg-indigo text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[85%] text-[13.5px] leading-relaxed whitespace-pre-wrap">{msg.content}</div>
       </div>
-      <div className={`flex-1 min-w-0 ${isUser ? 'flex justify-end' : ''}`}>
-        <div className={`inline-block max-w-full ${isUser ? 'bg-ink text-surface px-4 py-2.5 rounded-2xl rounded-tr-md text-[13.5px]' : 'text-[13.5px] text-ink-2 leading-relaxed'}`}>
-          {isUser ? msg.content : <MarkdownText text={msg.content} streaming={streaming} />}
-        </div>
+    );
+  }
+  return (
+    <div className="flex gap-3">
+      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo to-[#16294E] flex items-center justify-center flex-shrink-0 mt-0.5"><Sparkles className="w-3.5 h-3.5 text-white" /></div>
+      <div className="min-w-0 flex-1 text-[13.5px] leading-relaxed text-ink">
+        {msg.content ? <MarkdownText text={msg.content} /> : <span className="inline-flex gap-1 items-center text-muted"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Reading the business…</span>}
+        {streaming && msg.content && <span className="inline-block w-1.5 h-4 bg-indigo ml-0.5 animate-pulse align-text-bottom" />}
       </div>
     </div>
   );
 }
 
-// Lightweight markdown renderer — handles **bold**, *italic*, `code`, bullets, numbered lists, headers, paragraphs
-function MarkdownText({ text, streaming }: { text: string; streaming: boolean }) {
-  if (!text && streaming) {
-    return <span className="inline-flex items-center gap-1.5 text-muted">
-      <span className="w-1.5 h-1.5 rounded-full bg-muted animate-pulse" />
-      <span className="w-1.5 h-1.5 rounded-full bg-muted animate-pulse" style={{ animationDelay: '0.15s' }} />
-      <span className="w-1.5 h-1.5 rounded-full bg-muted animate-pulse" style={{ animationDelay: '0.3s' }} />
-    </span>;
-  }
-
-  // Split into blocks by blank lines
-  const blocks = text.split(/\n\n+/);
+function MarkdownText({ text }: { text: string }) {
+  const blocks = text.split(/\n{2,}/);
   return (
-    <>
+    <div className="space-y-2.5">
       {blocks.map((block, bi) => {
-        const trimmed = block.trim();
-        if (!trimmed) return null;
-
-        // Headers
-        if (/^###\s/.test(trimmed)) {
-          return <h4 key={bi} className="font-semibold text-[14px] mt-3 mb-1.5 text-ink">{inline(trimmed.replace(/^###\s/, ''))}</h4>;
-        }
-        if (/^##\s/.test(trimmed)) {
-          return <h3 key={bi} className="font-semibold text-[15px] mt-4 mb-2 text-ink">{inline(trimmed.replace(/^##\s/, ''))}</h3>;
-        }
-        if (/^#\s/.test(trimmed)) {
-          return <h2 key={bi} className="font-bold text-[16px] mt-4 mb-2 text-ink">{inline(trimmed.replace(/^#\s/, ''))}</h2>;
-        }
-
-        // Unordered list
-        if (trimmed.split('\n').every((l) => /^[-*•]\s/.test(l.trim()))) {
+        const lines = block.split('\n');
+        if (lines.every((l) => /^\s*([-*•]|\d+[.)])\s+/.test(l) || !l.trim())) {
           return (
-            <ul key={bi} className="space-y-1 my-2 pl-1">
-              {trimmed.split('\n').map((line, li) => (
-                <li key={li} className="flex gap-2"><span className="text-muted flex-shrink-0">•</span><span>{inline(line.replace(/^[-*•]\s/, ''))}</span></li>
+            <ul key={bi} className="space-y-1 pl-1">
+              {lines.filter((l) => l.trim()).map((l, li) => (
+                <li key={li} className="flex gap-2"><span className="text-indigo mt-[1px]">•</span><span>{inline(l.replace(/^\s*([-*•]|\d+[.)])\s+/, ''))}</span></li>
               ))}
             </ul>
           );
         }
-
-        // Ordered list
-        if (trimmed.split('\n').every((l) => /^\d+\.\s/.test(l.trim()))) {
+        if (/^#{1,4}\s/.test(lines[0])) {
+          const h = lines[0].replace(/^#{1,4}\s+/, '');
+          const rest = lines.slice(1).join('\n');
           return (
-            <ol key={bi} className="space-y-1 my-2 pl-1 list-decimal list-inside">
-              {trimmed.split('\n').map((line, li) => (
-                <li key={li}>{inline(line.replace(/^\d+\.\s/, ''))}</li>
-              ))}
-            </ol>
+            <div key={bi}>
+              <div className="font-bold text-ink text-[14px] mb-1">{inline(h)}</div>
+              {rest.trim() && <div className="whitespace-pre-wrap">{inline(rest)}</div>}
+            </div>
           );
         }
-
-        // Paragraph
-        return <p key={bi} className="my-2 first:mt-0 last:mb-0">{inline(trimmed)}</p>;
+        return <p key={bi} className="whitespace-pre-wrap">{inline(block)}</p>;
       })}
-      {streaming && <span className="inline-block w-1.5 h-3.5 bg-indigo-600 ml-0.5 align-middle animate-pulse" />}
-    </>
+    </div>
   );
 }
 
-// Inline markdown: bold, italic, code
 function inline(text: string): React.ReactNode {
-  const parts: React.ReactNode[] = [];
-  let remaining = text;
-  let key = 0;
-  const patterns: { re: RegExp; render: (m: RegExpMatchArray) => React.ReactNode }[] = [
-    { re: /\*\*([^*]+)\*\*/, render: (m) => <strong key={key} className="font-semibold text-ink">{m[1]}</strong> },
-    { re: /`([^`]+)`/,       render: (m) => <code key={key} className="px-1.5 py-0.5 rounded bg-surface-2 text-[12.5px] font-mono text-ink">{m[1]}</code> },
-    { re: /\*([^*]+)\*/,     render: (m) => <em key={key} className="italic">{m[1]}</em> },
-  ];
-
-  while (remaining.length > 0) {
-    let earliest: { idx: number; len: number; node: React.ReactNode } | null = null;
-    for (const p of patterns) {
-      const m = remaining.match(p.re);
-      if (m && m.index !== undefined && (earliest === null || m.index < earliest.idx)) {
-        earliest = { idx: m.index, len: m[0].length, node: p.render(m) };
-      }
-    }
-    if (!earliest) { parts.push(remaining); break; }
-    if (earliest.idx > 0) parts.push(remaining.slice(0, earliest.idx));
-    parts.push(earliest.node);
-    remaining = remaining.slice(earliest.idx + earliest.len);
-    key++;
-  }
-  return <>{parts}</>;
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return parts.map((p, i) => {
+    if (p.startsWith('**') && p.endsWith('**')) return <b key={i} className="font-bold text-ink">{p.slice(2, -2)}</b>;
+    if (p.startsWith('`') && p.endsWith('`')) return <code key={i} className="bg-surface-2 rounded px-1 py-0.5 text-[12px] font-mono">{p.slice(1, -1)}</code>;
+    return p;
+  });
 }
