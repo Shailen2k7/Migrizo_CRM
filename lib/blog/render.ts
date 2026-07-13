@@ -66,20 +66,27 @@ export function slugify(title: string): string {
     .replace(/^-|-$/g, '');
 }
 
-/** The article CSS used on public pages — images always settle:
+/** The article CSS used on public pages — Migrizo website skin (emerald/ink,
+    Plus Jakarta Sans inherited from the page shell). Images always settle:
     max-width 100% (big shrinks to column), width auto (small stays natural),
     centered, rounded, lazy-loaded. */
 export const ARTICLE_CSS = `
-  .mgz-article{font-size:17px;line-height:1.85;color:#2B3450;}
-  .mgz-article p{margin:0 0 20px;}
-  .mgz-article h2{font-size:26px;font-weight:800;color:#16294E;margin:36px 0 14px;line-height:1.3;}
-  .mgz-article h3{font-size:20px;font-weight:700;color:#16294E;margin:28px 0 10px;line-height:1.35;}
-  .mgz-article ul,.mgz-article ol{margin:0 0 20px;padding-left:26px;}
-  .mgz-article li{margin:0 0 8px;}
-  .mgz-article a{color:#3E56D4;text-decoration:underline;text-underline-offset:2px;}
-  .mgz-article blockquote{margin:24px 0;padding:16px 22px;border-left:4px solid #F4C430;background:#F8F9FC;border-radius:0 12px 12px 0;font-style:italic;color:#16294E;}
-  .mgz-article hr{border:0;height:1px;background:#E5E9F2;margin:32px 0;}
-  .mgz-article figure{margin:26px 0;text-align:center;}
-  .mgz-article img{max-width:100%;width:auto;height:auto;max-height:640px;display:inline-block;border-radius:14px;box-shadow:0 4px 18px rgba(22,41,78,0.08);}
-  .mgz-article figcaption{font-size:13px;color:#8A90A0;margin-top:10px;}
+  .mgz-article{font-size:16.5px;line-height:1.78;color:#1F2E29;}
+  .mgz-article p{margin:0 0 22px;}
+  .mgz-article h2{font-size:clamp(1.4rem,2.4vw,1.8rem);font-weight:800;letter-spacing:-.028em;color:#0E1F1A;margin:38px 0 14px;line-height:1.25;}
+  .mgz-article h3{font-size:1.15rem;font-weight:700;letter-spacing:-.015em;color:#0E1F1A;margin:28px 0 10px;line-height:1.35;}
+  .mgz-article ul,.mgz-article ol{margin:0 0 22px 4px;padding-left:0;list-style:none;}
+  .mgz-article ul li{position:relative;padding-left:26px;margin:0 0 10px;}
+  .mgz-article ul li::before{content:'';position:absolute;left:2px;top:9px;width:8px;height:8px;border-radius:50%;background:#00A96E;}
+  .mgz-article ol{list-style:decimal;padding-left:26px;}
+  .mgz-article ol li{margin:0 0 10px;padding-left:6px;}
+  .mgz-article ol li::marker{color:#008557;font-weight:800;}
+  .mgz-article a{color:#008557;font-weight:600;text-decoration:underline;text-underline-offset:3px;text-decoration-color:rgba(0,169,110,.35);}
+  .mgz-article a:hover{text-decoration-color:#008557;}
+  .mgz-article strong{color:#0E1F1A;font-weight:700;}
+  .mgz-article blockquote{margin:30px 0;padding:4px 0 4px 22px;border-left:3px solid #00A96E;font-size:19px;font-weight:600;letter-spacing:-.015em;color:#0E1F1A;line-height:1.5;font-style:normal;}
+  .mgz-article hr{border:0;height:1px;background:#E5EDE9;margin:36px 0;}
+  .mgz-article figure{margin:30px 0;text-align:center;}
+  .mgz-article img{max-width:100%;width:auto;height:auto;max-height:640px;display:inline-block;border-radius:14px;box-shadow:0 4px 16px rgba(14,31,26,.05),0 1px 3px rgba(14,31,26,.04);}
+  .mgz-article figcaption{font-size:13px;color:#6B7B76;margin-top:10px;}
 `;

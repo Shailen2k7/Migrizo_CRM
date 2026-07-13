@@ -20,7 +20,7 @@ interface Post {
 interface AccessRow { user_id: string; }
 interface Member { user_id: string; role: string; email?: string; name?: string; }
 
-const BLOG_BASE = 'https://crm.migrizo.com';
+const BLOG_BASE = process.env.NEXT_PUBLIC_BLOG_URL || 'https://blog.migrizo.com';
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 export default function BlogAdminPage() {
@@ -51,7 +51,7 @@ export default function BlogAdminPage() {
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2.5"><PenLine className="w-6 h-6 text-indigo" /><h1 className="text-[26px] font-bold text-ink">Blog</h1></div>
-          <p className="text-[13px] text-muted mt-1">Write once here — live on your website instantly · <a href={`${BLOG_BASE}/blog`} target="_blank" rel="noreferrer" className="text-indigo underline">view public blog</a></p>
+          <p className="text-[13px] text-muted mt-1">Write once here — live on your website instantly · <a href={`${BLOG_BASE}/`} target="_blank" rel="noreferrer" className="text-indigo underline">view public blog</a></p>
         </div>
         <div className="flex gap-2.5">
           <button onClick={() => setAccessOpen(true)} className="btn btn-outline"><Users className="w-4 h-4" /> Access</button>
@@ -62,7 +62,7 @@ export default function BlogAdminPage() {
       {posts.length === 0 && (
         <div className="panel panel-pad text-center py-14">
           <div className="text-[15px] font-semibold text-ink mb-1">No posts yet</div>
-          <div className="text-[13px] text-muted">Hit "New post" and publish your first article — it goes live at {BLOG_BASE}/blog.</div>
+          <div className="text-[13px] text-muted">Hit "New post" and publish your first article — it goes live at {BLOG_BASE}.</div>
         </div>
       )}
       <div className="space-y-2.5">
@@ -153,7 +153,7 @@ function Editor({ post, workspaceId, userId, onBack }: { post: Post; workspaceId
   }
 
   const previewHtml = useMemo(() => renderBlocks(p.content), [p.content]);
-  const liveUrl = `${BLOG_BASE}/blog/${p.slug || slugify(p.title)}`;
+  const liveUrl = `${BLOG_BASE}/${p.slug || slugify(p.title)}`;
 
   const BLOCK_TYPES: { type: BlogBlock['type']; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { type: 'p', label: 'Text', icon: Type }, { type: 'h2', label: 'Heading', icon: Heading2 }, { type: 'h3', label: 'Subheading', icon: Heading3 },
@@ -269,7 +269,7 @@ function Editor({ post, workspaceId, userId, onBack }: { post: Post; workspaceId
               <div className="text-[11px] font-bold uppercase tracking-wide text-muted mb-2.5">SEO</div>
               <label className="block text-[11.5px] font-medium text-muted mb-1">URL slug</label>
               <div className="flex items-center gap-1 mb-1">
-                <span className="text-[11px] text-faint">/blog/</span>
+                <span className="text-[11px] text-faint">blog.migrizo.com/</span>
                 <input value={p.slug} onChange={(e) => { setSlugTouched(true); set({ slug: slugify(e.target.value) || e.target.value }); }} className="flex-1 px-2 py-1.5 border border-border rounded-md text-[12px] focus:border-indigo outline-none" />
               </div>
               <label className="block text-[11.5px] font-medium text-muted mb-1 mt-3">SEO title <span className="text-faint">(≤60 chars)</span></label>
