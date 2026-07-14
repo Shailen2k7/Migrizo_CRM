@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { FollowUpsList } from '@/components/followups/followups-list';
 import { AddFollowUpDialog } from '@/components/followups/add-followup-dialog';
 import { PaymentRow } from '@/components/payments/payment-row';
+import { ComposeDialog, LeadEmailThread, type LeadEmailRow } from '@/components/emails/compose-dialog';
 import { IndustrySelector, IndustryChip } from '@/components/shared/industry-chip';
 import { initials, avatarColor, formatMoney, timeAgo, scoreColor, cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -24,10 +25,12 @@ interface Props {
 }
 
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
-  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, createFollowUp, role, memberNameById, canViewPayments, canSendEmails, workspace } = useApp();
+  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, createFollowUp, role, memberNameById, canViewPayments, canSendEmails, workspace, user: appUser } = useApp();
   const pl = usePipelines(workspace.id);
   const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups' | 'emails'>('overview');
   const [emailLog, setEmailLog] = useState<EmailLogEntry[] | null>(null);
+  const [leadEmails, setLeadEmails] = useState<LeadEmailRow[] | null>(null);
+  const [composeOpen, setComposeOpen] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
   const [pendingLead, setPendingLead] = useState<Partial<Lead> & { pipeline_id?: string | null }>({});
@@ -94,6 +97,13 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
       .order('created_at', { ascending: false })
       .limit(50)
       .then(({ data }) => { if (!cancelled) setEmailLog((data as EmailLogEntry[]) || []); });
+    supabase
+      .from('lead_emails')
+      .select('id, direction, from_email, to_email, subject, body_text, status, error, created_at')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+      .then(({ data }) => { if (!cancelled) setLeadEmails((data as LeadEmailRow[]) || []); });
     return () => { cancelled = true; };
   }, [leadId]);
 
@@ -132,6 +142,20 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const discardChanges = () => {
     setPendingLead({});
     toast.info('Changes discarded');
+  };
+
+  const refreshEmails = () => {
+    if (!leadId) return;
+    const supabase = createClient();
+    void supabase.from('lead_emails')
+      .select('id, direction, from_email, to_email, subject, body_text, status, error, created_at')
+      .eq('lead_id', leadId).order('created_at', { ascending: false }).limit(50)
+      .then(({ data }) => setLeadEmails((data as LeadEmailRow[]) || []));
+    void supabase.from('activity')
+      .select('id, user_id, action, meta, created_at')
+      .eq('lead_id', leadId).eq('action', 'email_sent')
+      .order('created_at', { ascending: false }).limit(50)
+      .then(({ data }) => setEmailLog((data as EmailLogEntry[]) || []));
   };
 
   const handleClose = () => {
@@ -207,90 +231,6 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
               <div className="flex-1 overflow-y-auto px-6 py-5">
                 {tab === 'overview' && (
                   <div className="space-y-1 mb-6">
-                    {canSendEmails && (
-                    <div className="flex items-center gap-2 pb-3 mb-1 border-b border-border">
-                      <span className="text-[11px] font-semibold text-muted uppercase tracking-wide mr-1">Client emails</span>
-                      <button
-                        onClick={() => { setSlaConfigOpen((o) => !o); setSlaEditMode(false); setSlaDiscount(''); }}
-                        disabled={sendingEmail !== null || !effectiveLead.email}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#506BD8] bg-[#EEF2FF] hover:bg-[#506BD8] hover:text-white transition-all disabled:opacity-50"
-                        title={effectiveLead.email ? 'Prepare and send the branded Service Agreement (optionally apply a discount)' : 'Add an email address first'}
-                      >
-                        <FileText className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : 'Send SLA'}
-                      </button>
-                      <button
-                        onClick={() => sendEmail('onboarding')}
-                        disabled={sendingEmail !== null || !effectiveLead.email}
-                        className="group/onb inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#047857] bg-[#E6F7EE] hover:bg-[#047857] hover:text-white transition-all disabled:opacity-50"
-                        title={effectiveLead.email ? 'Send the welcome/onboarding email (auto-sends on kickstart payment)' : 'Add an email address first'}
-                      >
-                        <Send className="w-3.5 h-3.5 transition-transform group-hover/onb:translate-x-[1px] group-hover/onb:-translate-y-[1px]" /> {sendingEmail === 'onboarding' ? 'Sending…' : 'Send onboarding'}
-                      </button>
-                      <button
-                        onClick={() => sendEmail('process')}
-                        disabled={sendingEmail !== null || !effectiveLead.email}
-                        className="group/prc inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#B45309] bg-[#FEF3C7] hover:bg-[#B45309] hover:text-white transition-all disabled:opacity-50"
-                        title={effectiveLead.email ? 'Send the visual "How it works" process email' : 'Add an email address first'}
-                      >
-                        <FileText className="w-3.5 h-3.5" /> {sendingEmail === 'process' ? 'Sending…' : 'How it works'}
-                      </button>
-                    </div>
-                    )}
-                    {canSendEmails && slaConfigOpen && (
-                      <div className="pb-3 mb-1 -mt-1 bg-[#F7F8FC] border border-border rounded-lg px-3 py-2.5">
-                        {!slaEditMode ? (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[12.5px] text-ink-2">Send the Service Agreement — standard fee <b>£3,000</b>. Any changes?</span>
-                            <div className="ml-auto flex items-center gap-2">
-                              <button
-                                onClick={() => setSlaEditMode(true)}
-                                disabled={sendingEmail !== null}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#506BD8] bg-white border border-[#C7D0F0] hover:bg-[#EEF2FF] transition-all disabled:opacity-50"
-                              >
-                                <Pencil className="w-3.5 h-3.5" /> Edit amount
-                              </button>
-                              <button
-                                onClick={() => sendEmail('sla')}
-                                disabled={sendingEmail !== null}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
-                              >
-                                <Send className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : 'No changes — Send'}
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[12px] font-medium text-ink-2">Discount</span>
-                            <div className="inline-flex items-center gap-1">
-                              <span className="text-[12.5px] text-muted">£</span>
-                              <input
-                                autoFocus type="number" min="0" max="1500" step="50" value={slaDiscount}
-                                onChange={(e) => setSlaDiscount(e.target.value)}
-                                placeholder="0"
-                                className="w-[84px] px-2 py-1 rounded-md border border-border bg-surface text-[12.5px] outline-none focus:border-[#4F46E5]"
-                              />
-                            </div>
-                            <span className="text-[11.5px] text-faint">Net fee payable: <b className="text-ink-2">£{(3000 - Math.min(Math.max(Number(slaDiscount) || 0, 0), 1500)).toLocaleString('en-GB')}</b></span>
-                            <div className="ml-auto flex items-center gap-2">
-                              <button
-                                onClick={() => { setSlaEditMode(false); setSlaDiscount(''); }}
-                                disabled={sendingEmail !== null}
-                                className="px-2.5 py-1.5 rounded-lg text-[12.5px] text-muted hover:bg-surface-2 transition-all disabled:opacity-50"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                onClick={() => sendEmail('sla', Math.min(Math.max(Number(slaDiscount) || 0, 0), 1500))}
-                                disabled={sendingEmail !== null}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
-                              >
-                                <Send className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : 'Send with discount'}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
                     <Row label="Pipeline">
                       <div style={{ maxWidth: 260 }}>
                         {(() => {
@@ -573,7 +513,107 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                 )}
 
                 {tab === 'emails' && (
-                  <EmailHistory log={emailLog} memberNameById={memberNameById} />
+                  <div>
+                    <div className="space-y-1 mb-4">
+                    {canSendEmails && (
+                    <div className="flex items-center gap-2 pb-3 mb-1 border-b border-border">
+                      <span className="text-[11px] font-semibold text-muted uppercase tracking-wide mr-1">Client emails</span>
+                      <button
+                        onClick={() => { setSlaConfigOpen((o) => !o); setSlaEditMode(false); setSlaDiscount(''); }}
+                        disabled={sendingEmail !== null || !effectiveLead.email}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#506BD8] bg-[#EEF2FF] hover:bg-[#506BD8] hover:text-white transition-all disabled:opacity-50"
+                        title={effectiveLead.email ? 'Prepare and send the branded Service Agreement (optionally apply a discount)' : 'Add an email address first'}
+                      >
+                        <FileText className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : 'Send SLA'}
+                      </button>
+                      <button
+                        onClick={() => sendEmail('onboarding')}
+                        disabled={sendingEmail !== null || !effectiveLead.email}
+                        className="group/onb inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#047857] bg-[#E6F7EE] hover:bg-[#047857] hover:text-white transition-all disabled:opacity-50"
+                        title={effectiveLead.email ? 'Send the welcome/onboarding email (auto-sends on kickstart payment)' : 'Add an email address first'}
+                      >
+                        <Send className="w-3.5 h-3.5 transition-transform group-hover/onb:translate-x-[1px] group-hover/onb:-translate-y-[1px]" /> {sendingEmail === 'onboarding' ? 'Sending…' : 'Send onboarding'}
+                      </button>
+                      <button
+                        onClick={() => sendEmail('process')}
+                        disabled={sendingEmail !== null || !effectiveLead.email}
+                        className="group/prc inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#B45309] bg-[#FEF3C7] hover:bg-[#B45309] hover:text-white transition-all disabled:opacity-50"
+                        title={effectiveLead.email ? 'Send the visual "How it works" process email' : 'Add an email address first'}
+                      >
+                        <FileText className="w-3.5 h-3.5" /> {sendingEmail === 'process' ? 'Sending…' : 'How it works'}
+                      </button>
+                    </div>
+                    )}
+                    {canSendEmails && slaConfigOpen && (
+                      <div className="pb-3 mb-1 -mt-1 bg-[#F7F8FC] border border-border rounded-lg px-3 py-2.5">
+                        {!slaEditMode ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[12.5px] text-ink-2">Send the Service Agreement — standard fee <b>£3,000</b>. Any changes?</span>
+                            <div className="ml-auto flex items-center gap-2">
+                              <button
+                                onClick={() => setSlaEditMode(true)}
+                                disabled={sendingEmail !== null}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#506BD8] bg-white border border-[#C7D0F0] hover:bg-[#EEF2FF] transition-all disabled:opacity-50"
+                              >
+                                <Pencil className="w-3.5 h-3.5" /> Edit amount
+                              </button>
+                              <button
+                                onClick={() => sendEmail('sla')}
+                                disabled={sendingEmail !== null}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
+                              >
+                                <Send className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : 'No changes — Send'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[12px] font-medium text-ink-2">Discount</span>
+                            <div className="inline-flex items-center gap-1">
+                              <span className="text-[12.5px] text-muted">£</span>
+                              <input
+                                autoFocus type="number" min="0" max="1500" step="50" value={slaDiscount}
+                                onChange={(e) => setSlaDiscount(e.target.value)}
+                                placeholder="0"
+                                className="w-[84px] px-2 py-1 rounded-md border border-border bg-surface text-[12.5px] outline-none focus:border-[#4F46E5]"
+                              />
+                            </div>
+                            <span className="text-[11.5px] text-faint">Net fee payable: <b className="text-ink-2">£{(3000 - Math.min(Math.max(Number(slaDiscount) || 0, 0), 1500)).toLocaleString('en-GB')}</b></span>
+                            <div className="ml-auto flex items-center gap-2">
+                              <button
+                                onClick={() => { setSlaEditMode(false); setSlaDiscount(''); }}
+                                disabled={sendingEmail !== null}
+                                className="px-2.5 py-1.5 rounded-lg text-[12.5px] text-muted hover:bg-surface-2 transition-all disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => sendEmail('sla', Math.min(Math.max(Number(slaDiscount) || 0, 0), 1500))}
+                                disabled={sendingEmail !== null}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
+                              >
+                                <Send className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : 'Send with discount'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    </div>
+                    {canSendEmails && (
+                      <div className="flex items-center justify-between pb-3 mb-4 border-b border-border">
+                        <span className="text-[11px] font-semibold text-muted uppercase tracking-wide">Write your own</span>
+                        <button onClick={() => setComposeOpen(true)} disabled={!effectiveLead.email}
+                          className="btn btn-primary btn-sm" title={effectiveLead.email ? 'Compose a free-form email — your signature is added automatically' : 'Add an email address first'}>
+                          <Send className="w-3.5 h-3.5" /> Compose email
+                        </button>
+                      </div>
+                    )}
+                    <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-2">Conversation</div>
+                    <LeadEmailThread rows={leadEmails} />
+                    <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-2">Template email history</div>
+                    <EmailHistory log={emailLog} memberNameById={memberNameById} />
+                  </div>
                 )}
 
                 {isDirty && <div className="h-20" />}
@@ -619,6 +659,10 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
         )}
       </AnimatePresence>
 
+      {lead && (
+        <ComposeDialog open={composeOpen} leadId={lead.id} toEmail={effectiveLead?.email || ''} toName={effectiveLead?.full_name || ''}
+          workspaceId={workspace.id} userId={appUser.id} onClose={() => setComposeOpen(false)} onSent={refreshEmails} />
+      )}
       <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}

@@ -1,0 +1,34 @@
+MIGRIZO CRM — EMAIL MODULE · DEPLOY & SETUP
+============================================
+
+STEP 1 · SUPABASE (1 min)
+  SQL Editor → run: supabase/migrations/015_email_system.sql
+
+STEP 2 · GITHUB UPLOAD (one commit)
+  Drag these folders from this package into the ROOT of Shailen2k7/Migrizo_CRM:
+    app/  components/  lib/  supabase/
+  Replace when asked. Commit once. Wait for Netlify green.
+
+STEP 3 · TEST SENDING (works immediately)
+  Open any lead → Emails tab → "Compose email" → send yourself a test.
+  Check Settings → Email signature: your signature is pre-filled — press Save once.
+
+STEP 4 · RECEIVING REPLIES INTO THE CRM (5 min, one time)
+  a) Pick a long random secret, e.g. from https://www.uuidgenerator.net
+  b) Netlify → Environment variables → add:
+       INBOUND_WEBHOOK_SECRET = <your secret>
+     → trigger a redeploy.
+  c) Resend dashboard → your domain → enable INBOUND (follow their MX/route
+     instructions for the address replies are sent to; keep forwarding to
+     info@migrizo.com so your inbox still gets everything).
+  d) Resend → Webhooks → Add endpoint:
+       URL:  https://crm.migrizo.com/api/email/inbound?key=<your secret>
+       Event: email.received
+  e) Reply to a CRM email from your phone → within seconds it appears in the
+     lead's Emails tab as a green RECEIVED message (and in info@migrizo.com).
+
+NOTES
+  · Sending uses your existing RESEND_API_KEY + NOTIFY_FROM (already set).
+  · Replies always go to info@migrizo.com (override with REPLY_TO env var).
+  · Until Step 4 is done, sending + signatures work fully; replies just
+    won't show inside the CRM yet (they still reach your inbox as normal).

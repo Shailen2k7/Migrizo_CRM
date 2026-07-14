@@ -11,15 +11,14 @@ import {
   User as UserIcon, Users, Bell, Database, AlertTriangle,
   Trash2, Eraser, Check, X as XIcon, Crown, Pencil,
   BellRing, Volume2, Sparkles, ShieldCheck, ShieldAlert, Pause, Play, UserCheck, UserX,
-  Hourglass, PauseCircle, IndianRupee,
-} from 'lucide-react';
+  Hourglass, PauseCircle, IndianRupee, Mail } from 'lucide-react';
 import {
   getPrefs, setPrefs, requestBrowserPermission, getBrowserPermission, sendBrowserNotification, playAlertSound,
   type NotifPref,
 } from '@/lib/notifications';
 import { readCoo, writeCoo } from '@/lib/coo';
 
-type Section = 'profile' | 'team' | 'notifications' | 'ai-coo' | 'permissions' | 'sample' | 'danger';
+type Section = 'profile' | 'team' | 'notifications' | 'email' | 'ai-coo' | 'permissions' | 'sample' | 'danger';
 
 function SettingsInner() {
   const router = useRouter();
@@ -33,6 +32,7 @@ function SettingsInner() {
     { id: 'profile' as const,       label: 'Profile & Workspace', icon: UserIcon },
     { id: 'team' as const,          label: 'Team',                icon: Users, badge: pendingCount > 0 ? pendingCount : undefined },
     { id: 'notifications' as const, label: 'Notifications',       icon: Bell },
+    { id: 'email' as const,         label: 'Email signature',     icon: Mail },
     ...(role === 'admin' ? [{ id: 'ai-coo' as const, label: 'AI COO', icon: Sparkles }] : []),
     ...(role === 'admin' ? [{ id: 'permissions' as const, label: 'Permissions', icon: ShieldCheck }] : []),
     { id: 'sample' as const,        label: 'Sample data',         icon: Database },
@@ -74,6 +74,7 @@ function SettingsInner() {
           {section === 'profile' && <ProfileSection />}
           {section === 'team' && <TeamSection />}
           {section === 'notifications' && <NotificationsSection />}
+          {section === 'email' && <SignatureSection />}
           {section === 'ai-coo' && <CooSection />}
           {section === 'permissions' && <PermissionsSection />}
           {section === 'sample' && <SampleDataSection />}
