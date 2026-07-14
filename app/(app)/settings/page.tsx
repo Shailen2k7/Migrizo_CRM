@@ -3,6 +3,7 @@
 import { Suspense, useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp, type Member } from '@/components/shared/app-provider';
+import { SignatureSection } from '@/components/settings/signature-section';
 import { Modal } from '@/components/shared/modal';
 import { createClient } from '@/lib/supabase/client';
 import { cn, initials, avatarColor, timeAgo } from '@/lib/utils';
