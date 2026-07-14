@@ -10,6 +10,7 @@ import { LeadDrawer } from '@/components/leads/lead-drawer';
 import { AddLeadDialog } from '@/components/leads/add-lead-dialog';
 import { ImportDialog } from '@/components/leads/import-dialog';
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog';
+import { MeetingAlerts } from '@/components/meetings/meeting-alerts';
 import type { Workspace, Lead, Payment, Activity } from '@/lib/types';
 
 interface UIState {
@@ -56,6 +57,7 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
   return (
     <AppProvider user={user} workspace={workspace} role={role} initialCanViewPayments={canViewPayments} initialLeads={initialLeads} initialPayments={initialPayments} initialActivity={initialActivity}>
       <PwaSetup />
+      <MeetingAlerts workspaceId={workspace.id} />
       <UIContext.Provider value={ui}>
         {/* Mobile top bar */}
         <header className="md:hidden fixed top-0 left-0 right-0 h-14 bg-surface/90 backdrop-blur-md border-b border-border z-30 flex items-center gap-3 px-4">

@@ -139,6 +139,19 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
     onClose();
   };
 
+  // Escape closes the drawer (prompts first if there are unsaved edits).
+  // Ignored while a nested dialog is open so it doesn't close two things at once.
+  useEffect(() => {
+    if (!leadId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (confirmDelete || confirmClose || addFollowUpOpen || slaConfigOpen) return;
+      handleClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [leadId, isDirty, confirmDelete, confirmClose, addFollowUpOpen, slaConfigOpen]);
+
   const leadPayments: Payment[] = leadId ? payments.filter((p) => p.lead_id === leadId) : [];
   const leadCurrency = effectiveLead?.currency || 'INR';
   const leadFollowUps = useMemo(() => followUps.filter((f) => f.lead_id === leadId), [followUps, leadId]);

@@ -11,16 +11,23 @@ import { toast } from 'sonner';
 import { useApp } from '@/components/shared/app-provider';
 import { isFollowUpOverdue, isFollowUpToday } from '@/lib/types';
 
-type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; badge?: string; new?: boolean };
+// `newUntil`: show the NEW pill only until this date (YYYY-MM-DD), then it
+// disappears automatically. Set it ~4 days ahead whenever a feature ships.
+type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; badge?: string; newUntil?: string };
+
+function isNew(newUntil?: string): boolean {
+  if (!newUntil) return false;
+  return Date.now() < new Date(newUntil + 'T23:59:59').getTime();
+}
 
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/leads', label: 'Leads', icon: Users },
-  { href: '/pipeline', label: 'Pipeline', icon: SquareKanban, new: true },
+  { href: '/pipeline', label: 'Pipeline', icon: SquareKanban },
   { href: '/cases', label: 'Cases', icon: Briefcase },
   { href: '/daily-tracker', label: 'Daily tracker', icon: Activity },
   { href: '/payments', label: 'Payments', icon: IndianRupee },
-  { href: '/meetings', label: 'Meetings', icon: CalendarDays, new: true },
+  { href: '/meetings', label: 'Meetings', icon: CalendarDays, newUntil: '2026-07-18' },
   { href: '/ai', label: 'AI COO', icon: Sparkles },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -91,7 +98,7 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead, mobileOpen
               {item.href === '/daily-tracker' && urgentFollowUps > 0 && (
                 <span className="ml-auto count" style={{ background: '#FEE2E2', color: '#B91C1C' }}>{urgentFollowUps}</span>
               )}
-              {item.new && (
+              {isNew(item.newUntil) && (
                 <span className="ml-auto chip" style={{ background: 'hsl(var(--indigo-soft))', color: '#4338CA', border: 'none', fontSize: '9px', padding: '1px 5px' }}>NEW</span>
               )}
             </Link>

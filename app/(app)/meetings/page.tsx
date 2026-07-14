@@ -8,7 +8,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useApp } from '@/components/shared/app-provider';
 import { createClient } from '@/lib/supabase/client';
-import { CalendarDays, List as ListIcon, Settings2, Copy, X, Clock, CheckCircle2, Ban, UserX, Loader2, Link as LinkIcon, BellRing } from 'lucide-react';
+import { CalendarDays, List as ListIcon, Settings2, Copy, X, Clock, CheckCircle2, Ban, UserX, Loader2, Link as LinkIcon, BellRing, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -43,16 +43,27 @@ export default function MeetingsPage() {
   const [selected, setSelected] = useState<Meeting | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ms }, { data: mem }] = await Promise.all([
-      supabase.from('meetings').select('*').eq('workspace_id', workspace.id).order('starts_at', { ascending: true }).limit(500),
-      supabase.from('scheduler_members').select('*').eq('workspace_id', workspace.id),
-    ]);
-    setMeetings((ms as Meeting[]) || []);
-    setMembers((mem as Member[]) || []);
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const [msRes, memRes] = await Promise.all([
+        supabase.from('meetings').select('*').eq('workspace_id', workspace.id).order('starts_at', { ascending: true }).limit(500),
+        supabase.from('scheduler_members').select('*').eq('workspace_id', workspace.id),
+      ]);
+      if (msRes.error) throw msRes.error;
+      if (memRes.error) throw memRes.error;
+      setMeetings((msRes.data as Meeting[]) || []);
+      setMembers((memRes.data as Member[]) || []);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not load meetings. Please try again.');
+      setMeetings([]);
+      setMembers([]);
+    } finally {
+      setLoading(false);
+    }
   }, [supabase, workspace.id]);
   useEffect(() => { void load(); }, [load]);
 
@@ -136,7 +147,13 @@ export default function MeetingsPage() {
         )}
       </div>
 
-      {loading ? <div className="panel panel-pad text-center py-16 text-muted text-[13px]">Loading meetings…</div> : view === 'list' ? (
+      {loading ? <div className="panel panel-pad text-center py-16 text-muted text-[13px]">Loading meetings…</div> : loadError ? (
+        <div className="panel panel-pad text-center py-16">
+          <div className="text-[13px] text-muted mb-3">Couldn&apos;t load meetings.</div>
+          <div className="text-[11px] text-faint mb-4 max-w-md mx-auto break-words">{loadError}</div>
+          <button onClick={() => void load()} className="btn btn-outline btn-sm">Retry</button>
+        </div>
+      ) : view === 'list' ? (
         <>
           <h2 className="text-[13px] font-bold text-muted uppercase tracking-wide mb-2">Upcoming ({upcoming.length})</h2>
           {upcoming.length === 0 && (
@@ -182,7 +199,10 @@ export default function MeetingsPage() {
         </div>
       )}
 
-      {selected && <MeetingDrawer m={selected} member={memberById.get(selected.member_id)} onClose={() => setSelected(null)} onStatus={(s) => void setStatus(selected, s)} workspaceId={workspace.id} onNotes={(notes) => { setMeetings((prev) => prev.map((x) => x.id === selected.id ? { ...x, notes } : x)); }} />}
+      {selected && <MeetingDrawer m={selected} member={memberById.get(selected.member_id)} onClose={() => setSelected(null)} onStatus={(s) => void setStatus(selected, s)} workspaceId={workspace.id}
+        onNotes={(notes) => { setMeetings((prev) => prev.map((x) => x.id === selected.id ? { ...x, notes } : x)); }}
+        onUpdated={(patch) => { setMeetings((prev) => prev.map((x) => x.id === selected.id ? { ...x, ...patch } : x)); setSelected((cur) => cur ? { ...cur, ...patch } : cur); }}
+        onDeleted={() => { setMeetings((prev) => prev.filter((x) => x.id !== selected.id)); setSelected(null); }} />}
       {settingsOpen && <SettingsDrawer myMember={myMember} members={members} isAdmin={role === 'admin'} userId={user.id} workspaceId={workspace.id} onClose={() => { setSettingsOpen(false); void load(); }} />}
     </div>
   );
@@ -208,14 +228,83 @@ function MeetingRow({ m, member, onOpen, fmtDay, fmtTime }: { m: Meeting; member
   );
 }
 
-function MeetingDrawer({ m, member, onClose, onStatus, workspaceId, onNotes }: {
-  m: Meeting; member?: Member; onClose: () => void; onStatus: (s: string) => void; workspaceId: string; onNotes: (n: string) => void;
+function MeetingDrawer({ m, member, onClose, onStatus, workspaceId, onNotes, onUpdated, onDeleted }: {
+  m: Meeting; member?: Member; onClose: () => void; onStatus: (s: string) => void; workspaceId: string; onNotes: (n: string) => void; onUpdated: (patch: Partial<Meeting>) => void; onDeleted: () => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [notes, setNotes] = useState(m.notes || '');
   const [savingNotes, setSavingNotes] = useState(false);
+
+  // ── Edit / Reschedule / Delete ──────────────────────────────────────────
+  const [editOpen, setEditOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const start0 = new Date(m.starts_at);
+  const dur0 = Math.max(15, Math.round((new Date(m.ends_at).getTime() - start0.getTime()) / 60000));
+  const [eName, setEName] = useState(m.client_name);
+  const [eEmail, setEEmail] = useState(m.client_email);
+  const [ePhone, setEPhone] = useState(m.client_phone || '');
+  const [eDate, setEDate] = useState(() => `${start0.getFullYear()}-${String(start0.getMonth() + 1).padStart(2, '0')}-${String(start0.getDate()).padStart(2, '0')}`);
+  const [eTime, setETime] = useState(() => `${String(start0.getHours()).padStart(2, '0')}:${String(start0.getMinutes()).padStart(2, '0')}`);
+  const [eDur, setEDur] = useState(String(dur0));
+
+  async function saveEdit() {
+    if (!eName.trim() || !eEmail.trim() || !eDate || !eTime) { toast.error('Name, email, date and time are required'); return; }
+    const starts = new Date(`${eDate}T${eTime}:00`);
+    const durMin = Math.max(15, parseInt(eDur, 10) || dur0);
+    const ends = new Date(starts.getTime() + durMin * 60000);
+    if (isNaN(starts.getTime())) { toast.error('Invalid date or time'); return; }
+    setSaving(true);
+    try {
+      const timeChanged = starts.toISOString() !== new Date(m.starts_at).toISOString() || ends.toISOString() !== new Date(m.ends_at).toISOString();
+      const patch = {
+        client_name: eName.trim(), client_email: eEmail.trim(), client_phone: ePhone.trim() || null,
+        starts_at: starts.toISOString(), ends_at: ends.toISOString(), updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from('meetings').update(patch).eq('id', m.id);
+      if (error) throw error;
+      if (timeChanged) {
+        // Re-queue reminder emails for the new time (same offsets as booking flow).
+        await supabase.from('meeting_reminders').update({ status: 'skipped' }).eq('meeting_id', m.id).eq('status', 'queued');
+        const OFF: { kind: string; minutes: number }[] = [
+          { kind: 'h24', minutes: -1440 }, { kind: 'h3', minutes: -180 }, { kind: 'h1', minutes: -60 },
+          { kind: 'm15', minutes: -15 }, { kind: 'start', minutes: 0 }, { kind: 'followup', minutes: 10 },
+        ];
+        const now = Date.now();
+        const rows = OFF.map((o) => ({ meeting_id: m.id, workspace_id: workspaceId, kind: o.kind, send_at: new Date(starts.getTime() + o.minutes * 60000).toISOString() }))
+          .filter((r) => new Date(r.send_at).getTime() > now - 60000);
+        if (rows.length) await supabase.from('meeting_reminders').insert(rows);
+        await supabase.from('meeting_activity').insert({ meeting_id: m.id, workspace_id: workspaceId, event: 'rescheduled', meta: { by: 'staff', to: starts.toISOString() } });
+        const { data } = await supabase.from('meeting_reminders').select('*').eq('meeting_id', m.id).order('send_at');
+        setReminders((data as Reminder[]) || []);
+      } else {
+        await supabase.from('meeting_activity').insert({ meeting_id: m.id, workspace_id: workspaceId, event: 'details_updated', meta: { by: 'staff' } });
+      }
+      onUpdated(patch as Partial<Meeting>);
+      setEditOpen(false);
+      toast.success(timeChanged ? 'Meeting rescheduled — reminders re-queued' : 'Meeting updated');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save changes');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteMeeting() {
+    setDeleting(true);
+    try {
+      const { error } = await supabase.from('meetings').delete().eq('id', m.id);
+      if (error) throw error;
+      toast.success('Meeting deleted');
+      onDeleted(); // reminders & activity are removed automatically (DB cascade)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not delete meeting');
+      setDeleting(false);
+    }
+  }
 
   useEffect(() => {
     void supabase.from('meeting_reminders').select('*').eq('meeting_id', m.id).order('send_at').then(({ data }) => setReminders((data as Reminder[]) || []));
@@ -250,6 +339,50 @@ function MeetingDrawer({ m, member, onClose, onStatus, workspaceId, onNotes }: {
           {member && <><br />🧑‍💼 With {member.display_name}</>}
           {m.meet_link && <><br />🔗 <a href={m.meet_link} target="_blank" className="text-indigo underline" rel="noreferrer">{m.meet_link}</a></>}
         </div>
+
+        {/* Actions: edit / reschedule / delete */}
+        <div className="flex gap-2 mb-4">
+          <button onClick={() => setEditOpen((v) => !v)} className="btn btn-outline btn-sm flex-1"><Pencil className="w-3.5 h-3.5" /> Edit / Reschedule</button>
+          {!confirmDelete ? (
+            <button onClick={() => setConfirmDelete(true)} className="btn btn-sm" style={{ background: '#FDECEC', color: '#B91C1C', border: '1px solid #F5C6C6' }}><Trash2 className="w-3.5 h-3.5" /> Delete</button>
+          ) : (
+            <div className="flex gap-1.5">
+              <button onClick={() => void deleteMeeting()} disabled={deleting} className="btn btn-sm" style={{ background: '#B91C1C', color: '#fff' }}>{deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Confirm delete</button>
+              <button onClick={() => setConfirmDelete(false)} className="btn btn-outline btn-sm">Keep</button>
+            </div>
+          )}
+        </div>
+
+        {/* Inline edit / reschedule panel */}
+        {editOpen && (
+          <div className="panel panel-pad mb-4 space-y-2.5">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-muted">Edit meeting</div>
+            <input value={eName} onChange={(e) => setEName(e.target.value)} placeholder="Client name" className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none" />
+            <div className="grid grid-cols-2 gap-2">
+              <input value={eEmail} onChange={(e) => setEEmail(e.target.value)} placeholder="Email" type="email" className="px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none" />
+              <input value={ePhone} onChange={(e) => setEPhone(e.target.value)} placeholder="Phone (optional)" className="px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none" />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <div className="text-[10.5px] text-muted mb-1 font-semibold">Date</div>
+                <input value={eDate} onChange={(e) => setEDate(e.target.value)} type="date" className="w-full px-2.5 py-2 border border-border rounded-lg text-[12.5px] focus:border-indigo outline-none" />
+              </div>
+              <div>
+                <div className="text-[10.5px] text-muted mb-1 font-semibold">Start time</div>
+                <input value={eTime} onChange={(e) => setETime(e.target.value)} type="time" className="w-full px-2.5 py-2 border border-border rounded-lg text-[12.5px] focus:border-indigo outline-none" />
+              </div>
+              <div>
+                <div className="text-[10.5px] text-muted mb-1 font-semibold">Duration (min)</div>
+                <input value={eDur} onChange={(e) => setEDur(e.target.value)} type="number" min={15} step={5} className="w-full px-2.5 py-2 border border-border rounded-lg text-[12.5px] focus:border-indigo outline-none" />
+              </div>
+            </div>
+            <div className="text-[11px] text-muted">Changing the date or time re-queues all reminder emails for the new slot automatically.</div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => void saveEdit()} disabled={saving} className="btn btn-primary btn-sm">{saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Save changes</button>
+              <button onClick={() => setEditOpen(false)} className="btn btn-outline btn-sm">Cancel</button>
+            </div>
+          </div>
+        )}
 
         {/* Status */}
         <div className="text-[11px] font-bold uppercase tracking-wide text-muted mb-1.5">Status</div>

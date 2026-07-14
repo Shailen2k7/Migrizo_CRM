@@ -196,7 +196,7 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
     return () => window.removeEventListener('click', onClick);
   }, [stageMenu]);
 
-  const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER];
+  const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter((s) => s !== 'mr_coming_soon')];
 
   return (
     <>
