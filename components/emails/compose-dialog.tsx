@@ -70,7 +70,7 @@ export function ComposeDialog({ open, leadId, toEmail, toName, workspaceId, user
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={() => !sending && onClose()}>
+    <div className="fixed inset-0 z-[90] bg-black/40 flex items-center justify-center p-4" onClick={() => !sending && onClose()}>
       <div className="bg-surface w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 className="text-[15px] font-bold text-ink">Compose email</h2>
