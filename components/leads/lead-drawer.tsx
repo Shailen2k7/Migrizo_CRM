@@ -28,7 +28,7 @@ interface Props {
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, createFollowUp, role, memberNameById, canViewPayments, canSendEmails, workspace, user: appUser } = useApp();
   const pl = usePipelines(workspace.id);
-  const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups' | 'emails'>('overview');
+  const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups' | 'emails' | 'roadmap'>('overview');
   const [emailLog, setEmailLog] = useState<EmailLogEntry[] | null>(null);
   const [leadEmails, setLeadEmails] = useState<LeadEmailRow[] | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
