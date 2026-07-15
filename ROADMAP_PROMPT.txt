@@ -1,0 +1,66 @@
+================================================================================
+MIGRIZO — ROADMAP ANALYSIS PROMPT (fixed — use this exact prompt every time)
+================================================================================
+
+HOW TO USE (2 minutes per client):
+  1. Open a new chat in Claude (claude.ai, your Max plan).
+  2. Attach: UK_Global_Talent_Visa_Evidence_Playbook.docx
+  3. Paste the client's Google Drive folder link (Claude reads it via the
+     Google Drive connector — make sure it's enabled).
+  4. Paste the prompt below. Change ONLY the [N]-WEEK number.
+  5. Copy the JSON block Claude returns → CRM → lead → Roadmap tab → paste
+     → Parse & preview.
+
+If the output feels too long/short, just reply "make it 4 weeks instead" —
+Claude re-plans properly (it re-prioritises; the CRM's delete button does not).
+
+────────────────────────── PROMPT STARTS BELOW ──────────────────────────
+
+You are Migrizo's senior Global Talent Visa consultant. Analyse ALL documents
+in this Google Drive folder against the attached Evidence Playbook:
+
+[PASTE DRIVE FOLDER LINK HERE]
+
+Rules:
+- First detect the route: Digital Technology (Tech Nation) or Research &
+  Academia — they have completely different evidence shapes (see playbook).
+- Judge evidence the way the playbook does: external recognition beats
+  internal; apply every 2025 watch-out (equity/bonus belongs in MC not OC3;
+  online-only mentoring fails OC2; startups need audited/formal accounts;
+  evidence dated just before submission is judged harshly).
+- Score honestly. If evidence is thin, say so — clients pay us for truth.
+- Base every claim on a specific document you actually read. Never invent
+  achievements. If a folder is empty or unreadable, treat it as missing.
+- Produce a [8]-WEEK roadmap. Re-prioritise for that length: critical path
+  first, nice-to-haves dropped, never just truncated.
+- red_flags = playbook section 11 checks that apply to THIS client.
+
+Return ONLY this JSON — no commentary, no markdown fences, exact keys:
+
+{
+  "client_name": "Full name from the documents",
+  "route": "Digital Technology (Tech Nation)" or "Research & Academia (Peer Review)",
+  "grade": "Exceptional Talent" or "Exceptional Promise",
+  "assessment": "2-4 sentences: honest overall read of where they stand today and what the roadmap achieves.",
+  "evidence_score": "NN/100",
+  "timeline": "e.g. 8 weeks to submission-ready",
+  "strengths": ["...", "..."],
+  "gaps": ["...", "..."],
+  "priority_actions": ["...", "..."],
+  "roadmap": [
+    { "week": "Week 1–2", "task": "Specific, doable action", "why": "Which criterion it strengthens (MC / OC1 / OC2 / OC3 / OC4 or letters/CV)" }
+  ],
+  "publications": ["Specific publication recommendations, or empty array"],
+  "speaking": ["Specific speaking/visibility recommendations, or empty array"],
+  "red_flags": ["Playbook section-11 risks that apply, or empty array"]
+}
+
+────────────────────────── PROMPT ENDS ──────────────────────────
+
+NOTES
+- The CRM parser requires: client_name, route, grade, assessment,
+  evidence_score, timeline, and at least one roadmap row. Everything else
+  may be an empty array (empty sections are hidden in the email).
+- Keep this file with the playbook. If the playbook changes, the prompt
+  doesn't need to — the playbook IS the rules.
+================================================================================

@@ -1,34 +1,32 @@
-MIGRIZO CRM — EMAIL MODULE · DEPLOY & SETUP
-============================================
+MIGRIZO CRM — ROADMAP MODULE · DEPLOY
+======================================
+REQUIRES: Email module already deployed (it uses lead_emails + your signature).
 
-STEP 1 · SUPABASE (1 min)
-  SQL Editor → run: supabase/migrations/015_email_system.sql
+STEP 1 · SUPABASE (30 sec)
+  SQL Editor → run: supabase/migrations/016_roadmaps.sql
 
-STEP 2 · GITHUB UPLOAD (one commit)
-  Drag these folders from this package into the ROOT of Shailen2k7/Migrizo_CRM:
-    app/  components/  lib/  supabase/
-  Replace when asked. Commit once. Wait for Netlify green.
+STEP 2 · GITHUB (one commit) — 3 NEW files + 1 replacement
+  NEW files — create each via GitHub "Add file → Create new file",
+  typing the FULL path (folders auto-create). Do NOT drag these:
+    lib/roadmap/types.ts
+    lib/roadmap/template.ts
+    app/api/roadmap/send/route.ts
+    components/roadmap/roadmap-tab.tsx
+  REPLACEMENT — drag into its existing folder:
+    components/leads/lead-drawer.tsx
+  Commit. Wait for Netlify green.
 
-STEP 3 · TEST SENDING (works immediately)
-  Open any lead → Emails tab → "Compose email" → send yourself a test.
-  Check Settings → Email signature: your signature is pre-filled — press Save once.
+STEP 3 · USE IT (per client, ~3 minutes)
+  a) Claude (Max) → new chat → attach the Evidence Playbook →
+     paste client's Drive link + the prompt from ROADMAP_PROMPT.txt
+     (set the number of weeks in the prompt).
+  b) Copy the JSON Claude returns.
+  c) CRM → lead → Roadmap tab → paste → Parse & preview.
+  d) Edit anything inline (weeks: edit / delete / add / reorder).
+  e) Preview & send → Confirm. It emails the branded roadmap and logs
+     it in the lead's Emails thread. Or Download PDF (print dialog →
+     Save as PDF) for WhatsApp.
 
-STEP 4 · RECEIVING REPLIES INTO THE CRM (5 min, one time)
-  a) Pick a long random secret, e.g. from https://www.uuidgenerator.net
-  b) Netlify → Environment variables → add:
-       INBOUND_WEBHOOK_SECRET = <your secret>
-     → trigger a redeploy.
-  c) Resend dashboard → your domain → enable INBOUND (follow their MX/route
-     instructions for the address replies are sent to; keep forwarding to
-     info@migrizo.com so your inbox still gets everything).
-  d) Resend → Webhooks → Add endpoint:
-       URL:  https://crm.migrizo.com/api/email/inbound?key=<your secret>
-       Event: email.received
-  e) Reply to a CRM email from your phone → within seconds it appears in the
-     lead's Emails tab as a green RECEIVED message (and in info@migrizo.com).
-
-NOTES
-  · Sending uses your existing RESEND_API_KEY + NOTIFY_FROM (already set).
-  · Replies always go to info@migrizo.com (override with REPLY_TO env var).
-  · Until Step 4 is done, sending + signatures work fully; replies just
-    won't show inside the CRM yet (they still reach your inbox as normal).
+RULE OF THUMB (built into the UI as a reminder):
+  Timeline changes (8→4 weeks) = re-ask Claude, it re-prioritises.
+  Delete button = only for tasks that don't apply to this client.
