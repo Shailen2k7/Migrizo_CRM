@@ -13,7 +13,6 @@ import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/components/shared/app-provider';
 import { parseRoadmap, type RoadmapData, type RoadmapWeek } from '@/lib/roadmap/types';
 import { renderRoadmapEmail } from '@/lib/roadmap/template';
-import { DEFAULT_SIGNATURE, type EmailSignature } from '@/lib/email/custom';
 import { toast } from 'sonner';
 
 interface RoadmapRow { id: string; data: RoadmapData; status: string; sent_at: string | null; created_at: string; }
@@ -53,7 +52,6 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
   const [mode, setMode] = useState<'paste' | 'edit' | 'preview'>('paste');
   const [raw, setRaw] = useState('');
   const [data, setData] = useState<RoadmapData | null>(null);
-  const [sig, setSig] = useState<EmailSignature>(DEFAULT_SIGNATURE);
   const [busy, setBusy] = useState<'' | 'parse' | 'save' | 'send'>('');
   const [confirmSend, setConfirmSend] = useState(false);
 
@@ -64,15 +62,13 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
     Promise.all([
       supabase.from('roadmaps').select('id, data, status, sent_at, created_at').eq('lead_id', leadId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('roadmaps').select('id', { count: 'exact', head: true }).eq('lead_id', leadId),
-      supabase.from('email_signatures').select('signature').eq('workspace_id', workspace.id).eq('user_id', appUser.id).maybeSingle(),
-    ]).then(([latest, count, sigRow]) => {
+    ]).then(([latest, count]) => {
       if (!alive) return;
       if (latest.data) {
         const r = latest.data as RoadmapRow;
         setRow(r); setData(r.data); setMode('edit');
       }
       setHistoryCount(count.count || 0);
-      setSig({ ...DEFAULT_SIGNATURE, ...((sigRow.data?.signature as Partial<EmailSignature>) || {}) });
       setLoading(false);
     });
     return () => { alive = false; };
@@ -135,10 +131,19 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
 
   const doPdf = () => {
     if (!data) return;
-    const html = renderRoadmapEmail(data, sig);
+    // @page{margin:0} stops the browser stamping the page URL / date / page
+    // numbers into the printed margins; we supply our own padding instead.
+    const printCss = `<style>
+      @media print {
+        @page { margin: 0; size: A4; }
+        html, body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body > table { padding: 14mm 8mm !important; background: #ffffff !important; }
+      }
+    </style>`;
+    const html = renderRoadmapEmail(data).replace('</head>', `${printCss}</head>`);
     const w = window.open('', '_blank');
     if (!w) { toast.error('Popup blocked — allow popups to download the PDF'); return; }
-    w.document.write(html.replace('</body>', `<script>window.onload=function(){setTimeout(function(){window.print();},400);};</script></body>`));
+    w.document.write(html.replace('</body>', `<script>document.title=${JSON.stringify(`Migrizo Roadmap - ${data.client_name}`)};window.onload=function(){setTimeout(function(){window.print();},450);};</script></body>`));
     w.document.close();
     toast.info('Choose “Save as PDF” in the print dialog');
   };
@@ -200,7 +205,7 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
             )}
           </div>
         </div>
-        <iframe title="Roadmap preview" sandbox="" srcDoc={renderRoadmapEmail(data, sig)}
+        <iframe title="Roadmap preview" sandbox="" srcDoc={renderRoadmapEmail(data)}
           className="w-full rounded-xl border border-border bg-white" style={{ height: '68vh' }} />
       </div>
     );

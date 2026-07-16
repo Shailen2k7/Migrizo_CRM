@@ -6,6 +6,19 @@
 // ============================================================================
 import type { RoadmapData } from '@/lib/roadmap/types';
 import { renderSignatureHtml, renderSignatureText, type EmailSignature } from '@/lib/email/custom';
+
+// ── Roadmap emails are always signed by the Operations Head, regardless of
+// which team member clicks Send. This is a client-facing deliverable owned by
+// operations, so the sign-off must be consistent for every client.
+export const ROADMAP_SIGNATURE: EmailSignature = {
+  closing: 'Warm Regards,',
+  name: 'Mansi Behl',
+  title: 'Operations Head \u2013 Global Talent Visa',
+  company: 'Migrizo Ventures Pvt Ltd',
+  phone: '+91 9217428262',
+  website: 'https://www.migrizo.com',
+  email: 'info@migrizo.com',
+};
 import { shell } from '@/lib/email/branded';
 
 const NAVY = '#16294E';
@@ -34,7 +47,7 @@ function bulletList(items: string[], color = BLUE): string {
 }
 
 /** The full branded roadmap email — SLA shell + roadmap body. */
-export function renderRoadmapEmail(data: RoadmapData, sig: EmailSignature): string {
+export function renderRoadmapEmail(data: RoadmapData): string {
   const firstName = data.client_name.split(/\s+/)[0] || data.client_name;
 
   const summaryStrip = `
@@ -114,7 +127,7 @@ export function renderRoadmapEmail(data: RoadmapData, sig: EmailSignature): stri
 
     <p style="margin:14px 0 0;font-size:13.5px;line-height:1.7;color:${INK};">Work through the weeks in order — each one feeds the next. Your Migrizo case officer will review progress with you at every milestone and adjust the plan as your evidence lands. When you're ready, simply reply to this email and we'll take the next step together.</p>
 
-    ${renderSignatureHtml(sig)}
+    ${renderSignatureHtml(ROADMAP_SIGNATURE)}
 
     <p style="margin:18px 0 0;font-size:10.5px;line-height:1.6;color:#9AA3B2;border-top:1px solid ${LINE};padding-top:12px;">This roadmap is strategic guidance based on the documents you shared; it is not legal advice. Guidance is verified against live GOV.UK and endorsing-body rules at every review.</p>
   `;
@@ -127,7 +140,7 @@ export function renderRoadmapEmail(data: RoadmapData, sig: EmailSignature): stri
 }
 
 /** Plain-text fallback for the email. */
-export function renderRoadmapText(data: RoadmapData, sig: EmailSignature): string {
+export function renderRoadmapText(data: RoadmapData): string {
   const L: string[] = [];
   L.push(`YOUR GLOBAL TALENT ROADMAP — ${data.client_name}`);
   L.push(`${data.route} · ${data.grade} · Evidence: ${data.evidence_score} · ${data.timeline}`, '');
@@ -139,6 +152,6 @@ export function renderRoadmapText(data: RoadmapData, sig: EmailSignature): strin
   if (data.publications.length) L.push('RECOMMENDED PUBLICATIONS', ...data.publications.map((s) => `• ${s}`), '');
   if (data.speaking.length) L.push('RECOMMENDED SPEAKING', ...data.speaking.map((s) => `• ${s}`), '');
   if (data.red_flags.length) L.push('WATCH-OUTS', ...data.red_flags.map((s) => `! ${s}`), '');
-  L.push('', renderSignatureText(sig));
+  L.push('', renderSignatureText(ROADMAP_SIGNATURE));
   return L.join('\n');
 }

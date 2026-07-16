@@ -2,13 +2,12 @@
 // ROADMAP SEND — POST /api/roadmap/send
 // Body: { roadmapId }
 // Loads the saved roadmap + its lead, renders the branded template with the
-// sender's signature, sends via Resend, records the send in lead_emails (so
+// fixed operations signature, sends via Resend, records it in lead_emails (so
 // it appears in the Emails conversation thread), logs activity, and marks
 // the roadmap row as sent. Same permission model as the email module.
 // ============================================================================
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { DEFAULT_SIGNATURE, type EmailSignature } from '@/lib/email/custom';
 import { renderRoadmapEmail, renderRoadmapText } from '@/lib/roadmap/template';
 import type { RoadmapData } from '@/lib/roadmap/types';
 
@@ -41,12 +40,6 @@ export async function POST(req: Request) {
     }
   }
 
-  // Sender's signature
-  const { data: sigRow } = await supabase
-    .from('email_signatures').select('signature')
-    .eq('workspace_id', lead.workspace_id).eq('user_id', user.id).maybeSingle();
-  const sig: EmailSignature = { ...DEFAULT_SIGNATURE, ...((sigRow?.signature as Partial<EmailSignature>) || {}) };
-
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.NOTIFY_FROM;
   if (!apiKey || !from) return NextResponse.json({ ok: false, reason: 'not_configured' });
@@ -54,8 +47,8 @@ export async function POST(req: Request) {
 
   const data = rm.data as RoadmapData;
   const subject = `Your Global Talent Visa Roadmap — ${data.client_name} | Migrizo`;
-  const html = renderRoadmapEmail(data, sig);
-  const text = renderRoadmapText(data, sig);
+  const html = renderRoadmapEmail(data);
+  const text = renderRoadmapText(data);
 
   let providerId: string | null = null;
   let sendError: string | null = null;
