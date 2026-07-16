@@ -40,7 +40,7 @@ function today(): string {
 // ---------------------------------------------------------------------------
 // Base layout — every email is wrapped in this shell.
 // ---------------------------------------------------------------------------
-function shell(title: string, bodyHtml: string, preheader = ''): string {
+export function shell(title: string, bodyHtml: string, preheader = ""): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

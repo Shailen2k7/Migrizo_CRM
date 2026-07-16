@@ -1,10 +1,11 @@
 // ============================================================================
-// ROADMAP DATA MODEL + PARSER
-// The paste box accepts the JSON block produced by the fixed Claude Max
-// prompt (see ROADMAP_PROMPT.txt). The parser is deliberately tolerant:
-// it strips ```json fences, smart quotes, and leading commentary, then
-// validates hard so a bad paste fails with a clear message — never a
-// half-rendered roadmap.
+// ROADMAP DATA MODEL + DUAL-FORMAT PARSER
+// The paste box accepts EITHER format Claude produces:
+//   1. The simple plain-text block (the Project's default — human-readable)
+//   2. A JSON object (legacy / power users)
+// The parser detects which one was pasted, is tolerant of small formatting
+// noise, and validates hard so a bad paste fails with a clear message —
+// never a half-rendered roadmap.
 // ============================================================================
 
 export interface RoadmapWeek {
@@ -32,43 +33,39 @@ export interface RoadmapData {
 const REQUIRED_STRINGS: (keyof RoadmapData)[] = ['client_name', 'route', 'grade', 'assessment', 'evidence_score', 'timeline'];
 const LIST_FIELDS: (keyof RoadmapData)[] = ['strengths', 'gaps', 'priority_actions', 'publications', 'speaking', 'red_flags'];
 
-/** Strip fences, smart quotes and surrounding chatter, then locate the JSON object. */
-function cleanRaw(raw: string): string {
-  let s = raw.trim();
-  s = s.replace(/```json/gi, '').replace(/```/g, '');
-  s = s.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
-  const first = s.indexOf('{');
-  const last = s.lastIndexOf('}');
-  if (first === -1 || last === -1 || last <= first) throw new Error('No JSON object found. Paste the full block starting with { and ending with }.');
-  return s.slice(first, last + 1);
-}
-
 const asStr = (v: unknown): string => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v));
 const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(asStr).filter(Boolean) : []);
 
-/** Parse + validate a pasted block into RoadmapData. Throws Error with a human message. */
-export function parseRoadmap(raw: string): RoadmapData {
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(cleanRaw(raw));
-  } catch (e) {
-    if (e instanceof Error && e.message.startsWith('No JSON')) throw e;
-    throw new Error('The pasted text is not valid JSON. Copy the complete block from Claude and try again.');
-  }
+// ── shared validation ───────────────────────────────────────────────────────
+function validate(data: RoadmapData): RoadmapData {
+  const missing = REQUIRED_STRINGS.filter((k) => !data[k]);
+  if (missing.length) throw new Error(`Missing: ${missing.map((m) => m.replace('_', ' ')).join(', ')}. Paste the complete block from Claude.`);
+  if (data.roadmap.length === 0) throw new Error('No roadmap weeks found — the block must contain at least one "WEEK …:" line.');
+  for (const k of LIST_FIELDS) (data[k] as string[]).splice(30);
+  data.roadmap.splice(16);
+  return data;
+}
 
-  const data: RoadmapData = {
+// ── JSON path ───────────────────────────────────────────────────────────────
+function parseJsonBlock(raw: string): RoadmapData {
+  let s = raw.replace(/```json/gi, '').replace(/```/g, '').replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+  const first = s.indexOf('{');
+  const last = s.lastIndexOf('}');
+  s = s.slice(first, last + 1);
+  const obj = JSON.parse(s) as Record<string, unknown>;
+  return {
     client_name: asStr(obj.client_name),
     route: asStr(obj.route),
     grade: asStr(obj.grade),
     assessment: asStr(obj.assessment),
-    evidence_score: asStr(obj.evidence_score),
+    evidence_score: asStr(obj.evidence_score ?? obj.score),
     timeline: asStr(obj.timeline),
     strengths: asList(obj.strengths),
     gaps: asList(obj.gaps),
     priority_actions: asList(obj.priority_actions),
     publications: asList(obj.publications),
     speaking: asList(obj.speaking),
-    red_flags: asList(obj.red_flags),
+    red_flags: asList(obj.red_flags ?? obj.watch_outs),
     roadmap: Array.isArray(obj.roadmap)
       ? (obj.roadmap as unknown[]).map((r) => {
           const row = (r || {}) as Record<string, unknown>;
@@ -76,19 +73,112 @@ export function parseRoadmap(raw: string): RoadmapData {
         }).filter((r) => r.week || r.task)
       : [],
   };
+}
 
-  const missing = REQUIRED_STRINGS.filter((k) => !data[k]);
-  if (missing.length) throw new Error(`Missing required field(s): ${missing.join(', ')}. Use the fixed prompt so Claude returns the exact format.`);
-  if (data.roadmap.length === 0) throw new Error('The "roadmap" array is empty — the block must contain at least one week with a task.');
-  if (data.gaps.length === 0 && data.priority_actions.length === 0) throw new Error('Both "gaps" and "priority_actions" are empty — this looks like an incomplete analysis.');
+// ── plain-text path ─────────────────────────────────────────────────────────
+// Format (case-insensitive headers; "None" items ignored):
+//   CLIENT: name              ROUTE: …    GRADE: …    SCORE: NN/100    TIMELINE: …
+//   ASSESSMENT:  (lines until the next header)
+//   STRENGTHS: / GAPS: / PRIORITY ACTIONS: / PUBLICATIONS: / SPEAKING: / WATCH-OUTS:
+//     - bullet items ("-", "•", "*", or "1." prefixes)
+//   ROADMAP:
+//     WEEK 1-2: task | why      (also accepts MONTH …)
+const SECTION_KEYS: Record<string, keyof RoadmapData> = {
+  'STRENGTHS': 'strengths',
+  'GAPS': 'gaps',
+  'PRIORITY ACTIONS': 'priority_actions',
+  'PRIORITIES': 'priority_actions',
+  'PUBLICATIONS': 'publications',
+  'RECOMMENDED PUBLICATIONS': 'publications',
+  'SPEAKING': 'speaking',
+  'RECOMMENDED SPEAKING': 'speaking',
+  'WATCH-OUTS': 'red_flags',
+  'WATCHOUTS': 'red_flags',
+  'RED FLAGS': 'red_flags',
+};
+const SCALAR_KEYS: Record<string, keyof RoadmapData> = {
+  'CLIENT': 'client_name',
+  'CLIENT NAME': 'client_name',
+  'ROUTE': 'route',
+  'GRADE': 'grade',
+  'TRACK': 'grade',
+  'SCORE': 'evidence_score',
+  'EVIDENCE SCORE': 'evidence_score',
+  'TIMELINE': 'timeline',
+};
+const NONE_RE = /^(none|n\/a|nil|-|—)\.?$/i;
+const BULLET_RE = /^\s*(?:[-•*]|\d+[.)])\s+/;
+const WEEK_RE = /^\s*((?:WEEK|MONTH|DAY|PHASE)\s*[\d–\-—&,\s]+[a-z]*)\s*:\s*(.+)$/i;
 
-  // Normalise obvious noise
-  for (const k of LIST_FIELDS) (data[k] as string[]).splice(30); // hard cap, keeps template sane
-  data.roadmap.splice(16);
+function parsePlainText(raw: string): RoadmapData {
+  const data: RoadmapData = {
+    client_name: '', route: '', grade: '', assessment: '', evidence_score: '', timeline: '',
+    strengths: [], gaps: [], priority_actions: [], roadmap: [], publications: [], speaking: [], red_flags: [],
+  };
+  let section: keyof RoadmapData | 'assessment' | 'roadmap' | null = null;
+
+  for (const rawLine of raw.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // week rows win over everything (they contain ':' too)
+    const wk = line.match(WEEK_RE);
+    if (wk) {
+      const rest = wk[2].trim();
+      const bar = rest.lastIndexOf('|');
+      const task = (bar === -1 ? rest : rest.slice(0, bar)).trim();
+      const why = (bar === -1 ? '' : rest.slice(bar + 1)).trim();
+      if (task) data.roadmap.push({ week: wk[1].replace(/\s+/g, ' ').trim(), task, why });
+      section = 'roadmap';
+      continue;
+    }
+
+    // header lines: "KEY:" or "KEY: value"
+    const m = line.match(/^([A-Za-z][A-Za-z \-/]{1,28}):\s*(.*)$/);
+    if (m) {
+      const key = m[1].trim().toUpperCase();
+      const val = m[2].trim();
+      if (key in SCALAR_KEYS) { (data[SCALAR_KEYS[key]] as string) = val; section = null; continue; }
+      if (key === 'ASSESSMENT') { data.assessment = val; section = 'assessment'; continue; }
+      if (key in SECTION_KEYS) {
+        section = SECTION_KEYS[key];
+        if (val && !NONE_RE.test(val)) (data[section] as string[]).push(val.replace(BULLET_RE, ''));
+        continue;
+      }
+      if (key === 'ROADMAP' || key === 'WEEK-BY-WEEK ROADMAP') { section = 'roadmap'; continue; }
+      // Unknown "Key:" line — fall through and treat as content of the current section.
+    }
+
+    // content lines
+    if (section === 'assessment') {
+      data.assessment = data.assessment ? `${data.assessment} ${line}` : line;
+    } else if (section && section !== 'roadmap' && Array.isArray(data[section])) {
+      const item = line.replace(BULLET_RE, '').trim();
+      if (item && !NONE_RE.test(item)) (data[section] as string[]).push(item);
+    }
+  }
   return data;
 }
 
-/** A tiny helper for showing the JSON back (edited data → block the user could re-save). */
+// ── entry point ─────────────────────────────────────────────────────────────
+/** Parse a pasted block (plain text or JSON) into RoadmapData. Throws with a human message. */
+export function parseRoadmap(raw: string): RoadmapData {
+  const s = raw.trim();
+  if (!s) throw new Error('Nothing pasted yet.');
+
+  // JSON if it plausibly is one
+  if (s.includes('{') && s.includes('}') && /"\s*client_name\s*"|"\s*roadmap\s*"/.test(s)) {
+    try { return validate(parseJsonBlock(s)); }
+    catch (e) { if (e instanceof Error && e.message.startsWith('Missing')) throw e; /* else fall through to text */ }
+  }
+  try {
+    return validate(parsePlainText(s));
+  } catch (e) {
+    throw e instanceof Error ? e : new Error('Could not read the pasted text. Copy Claude\u2019s complete reply and paste it as-is.');
+  }
+}
+
+/** Edited data → pretty JSON (for debugging / re-saving). */
 export function roadmapToJson(data: RoadmapData): string {
   return JSON.stringify(data, null, 2);
 }

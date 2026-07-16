@@ -163,10 +163,10 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
       <div>
         <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-2">New roadmap analysis</div>
         <div className="rounded-xl border border-border bg-surface-2 p-3.5 mb-3 text-[12px] text-ink-2 leading-relaxed">
-          <b>How it works:</b> in Claude, attach the Evidence Playbook, paste the client&apos;s Drive link and the fixed prompt (see <b>ROADMAP_PROMPT.txt</b>), choose the number of weeks — then paste Claude&apos;s JSON block below.
+          <b>3 steps:</b> ① open the <b>&ldquo;Migrizo Roadmap&rdquo;</b> project in Claude &nbsp;② paste the client&apos;s Drive link (add &ldquo;4 weeks&rdquo; if you want a shorter plan) &nbsp;③ copy Claude&apos;s reply and paste it below.
         </div>
         <textarea value={raw} onChange={(e) => setRaw(e.target.value)} rows={10}
-          placeholder={'Paste the JSON block from Claude here…\n\n{\n  "client_name": "…",\n  "roadmap": [ { "week": "Week 1–2", "task": "…" } ]\n}'}
+          placeholder={'Paste Claude\u2019s reply here\u2026\n\nCLIENT: Somnath Jadhav\nROUTE: Digital Technology\nGRADE: Exceptional Talent\nSCORE: 62/100\nTIMELINE: 8 weeks\n\nASSESSMENT: \u2026\n\nWEEK 1-2: Secure external award nomination | builds MC'}
           className="w-full px-3 py-2.5 border border-border rounded-xl text-[12px] font-mono focus:border-indigo outline-none resize-y mb-3" />
         <div className="flex items-center gap-2">
           <button onClick={() => void doParse()} disabled={busy === 'parse' || !raw.trim()} className="btn btn-primary btn-sm">
