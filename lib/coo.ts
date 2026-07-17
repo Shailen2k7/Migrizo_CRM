@@ -1,23 +1,22 @@
 'use client';
 
 // AI COO preferences. Stored locally on the owner's device. The feature is
-// admin-only; these toggles let the owner pause/resume the banner and the voice,
-// or switch it off entirely.
+// admin-only; this toggle lets the owner show or hide the briefing banner.
+// The briefing is silent — the only sound in the CRM is the meeting alert.
 export interface CooSettings {
-  enabled: boolean; // master on/off (the banner + voice)
-  voice: boolean;   // spoken briefing on open
+  enabled: boolean; // master on/off for the briefing banner
 }
 
 export const COO_KEY = 'migrizo_coo_v1';
 export const COO_EVENT = 'migrizo-coo-changed';
 
 export function readCoo(): CooSettings {
-  if (typeof window === 'undefined') return { enabled: true, voice: true };
+  if (typeof window === 'undefined') return { enabled: true };
   try {
     const raw = JSON.parse(localStorage.getItem(COO_KEY) || '{}');
-    return { enabled: raw.enabled !== false, voice: raw.voice !== false };
+    return { enabled: raw.enabled !== false };
   } catch {
-    return { enabled: true, voice: true };
+    return { enabled: true };
   }
 }
 

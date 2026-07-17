@@ -8,7 +8,7 @@
 // Drafts and history live in the `roadmaps` table; latest is loaded on open.
 // ============================================================================
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Wand2, Send, Eye, Pencil, Trash2, Plus, ArrowUp, ArrowDown, FileDown, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { Loader2, Wand2, Send, Eye, Pencil, Trash2, Plus, ArrowUp, ArrowDown, FileDown, RotateCcw, CheckCircle2, Save } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/components/shared/app-provider';
 import { parseRoadmap, type RoadmapData, type RoadmapWeek } from '@/lib/roadmap/types';
@@ -54,6 +54,8 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
   const [data, setData] = useState<RoadmapData | null>(null);
   const [busy, setBusy] = useState<'' | 'parse' | 'save' | 'send'>('');
   const [confirmSend, setConfirmSend] = useState(false);
+  const [dirty, setDirty] = useState(false);   // unsaved edits in this session
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   // load latest roadmap + sender signature
   useEffect(() => {
@@ -101,12 +103,20 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
     } finally { setBusy(''); }
   };
 
-  const doSave = async () => {
-    if (!data || !row) return;
+  /** Save the draft. Returns true on success. */
+  const doSave = async (silent = false): Promise<boolean> => {
+    if (!data || !row) return false;
     setBusy('save');
     const id = await persist(data, row.id);
     setBusy('');
-    if (id) toast.success('Draft saved'); else toast.error('Could not save changes');
+    if (id) {
+      setDirty(false);
+      setSavedAt(new Date().toISOString());
+      if (!silent) toast.success('Draft saved \u2014 anyone on the team can now review and send it');
+      return true;
+    }
+    if (!silent) toast.error('Could not save changes');
+    return false;
   };
 
   const doSend = async () => {
@@ -122,6 +132,7 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
       const j = await res.json().catch(() => null);
       if (!j?.ok) throw new Error(j?.reason === 'no_email' ? 'This lead has no email address' : `Send failed${j?.detail ? `: ${String(j.detail).slice(0, 100)}` : ''}`);
       setRow((r) => r ? { ...r, status: 'sent', sent_at: new Date().toISOString() } : r);
+      setDirty(false);
       onSent();
       toast.success(`Roadmap sent to ${clientEmail}`);
     } catch (e) {
@@ -149,7 +160,7 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
   };
 
   // ── week helpers ──
-  const setWeeks = (weeks: RoadmapWeek[]) => setData((d) => d ? { ...d, roadmap: weeks } : d);
+  const setWeeks = (weeks: RoadmapWeek[]) => { setDirty(true); setData((d) => d ? { ...d, roadmap: weeks } : d); };
   const moveWeek = (i: number, dir: -1 | 1) => {
     if (!data) return;
     const w = [...data.roadmap];
@@ -187,8 +198,23 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
   if (mode === 'preview') {
     return (
       <div>
-        <div className="flex items-center gap-2 mb-3">
+        {/* Review strip — tells whoever opens this exactly where the draft stands */}
+        <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+          <span className={`text-[10px] font-extrabold tracking-wide px-2.5 py-1 rounded-full ${row?.status === 'sent' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+            {row?.status === 'sent' ? `SENT ${row.sent_at ? new Date(row.sent_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''}` : 'DRAFT'}
+          </span>
+          {dirty ? (
+            <span className="text-[11px] font-semibold text-amber-700">Unsaved edits \u2014 save the draft so a colleague sees them</span>
+          ) : (
+            <span className="text-[11px] text-muted">{savedAt ? `Saved ${new Date(savedAt).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' })} \u2014 ready for review` : 'Saved \u2014 ready for review'}</span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
           <button onClick={() => setMode('edit')} className="btn btn-outline btn-sm"><Pencil className="w-3.5 h-3.5" /> Back to edit</button>
+          <button onClick={() => void doSave()} disabled={busy === 'save'} className="btn btn-outline btn-sm">
+            {busy === 'save' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save draft{dirty ? ' *' : ''}
+          </button>
           <button onClick={doPdf} className="btn btn-outline btn-sm"><FileDown className="w-3.5 h-3.5" /> Download PDF</button>
           <div className="ml-auto">
             {!confirmSend ? (
@@ -222,17 +248,17 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
         {historyCount > 1 && <span className="text-[11px] text-faint">{historyCount} analyses for this lead</span>}
         <div className="ml-auto flex items-center gap-2">
           <button onClick={() => { setMode('paste'); }} className="btn btn-outline btn-sm"><RotateCcw className="w-3.5 h-3.5" /> New analysis</button>
-          <button onClick={() => void doSave()} disabled={busy === 'save'} className="btn btn-outline btn-sm">{busy === 'save' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Save draft</button>
-          <button onClick={() => setMode('preview')} className="btn btn-primary btn-sm"><Eye className="w-3.5 h-3.5" /> Preview &amp; send</button>
+          <button onClick={() => void doSave()} disabled={busy === 'save'} className="btn btn-outline btn-sm">{busy === 'save' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save draft{dirty ? ' *' : ''}</button>
+          <button onClick={() => { void doSave(true).then(() => setMode('preview')); }} className="btn btn-primary btn-sm"><Eye className="w-3.5 h-3.5" /> Preview &amp; send</button>
         </div>
       </div>
 
       {/* headline fields */}
       <div className="grid grid-cols-2 gap-2.5">
-        {([['client_name', 'Client name'], ['grade', 'Track (Talent / Promise)'], ['route', 'Route'], ['evidence_score', 'Evidence score'], ['timeline', 'Timeline']] as const).map(([k, label]) => (
+        {([['client_name', 'Client name'], ['grade', 'Track (Talent / Promise)'], ['profile', 'Profile (Employee / Founder / Researcher)'], ['route', 'Route'], ['evidence_score', 'Evidence score'], ['timeline', 'Timeline']] as const).map(([k, label]) => (
           <div key={k} className={k === 'route' ? 'col-span-2' : ''}>
             <div className="text-[10.5px] font-bold uppercase tracking-wide text-muted mb-1">{label}</div>
-            <input value={data[k]} onChange={(e) => setData({ ...data, [k]: e.target.value })}
+            <input value={data[k]} onChange={(e) => { setDirty(true); setData({ ...data, [k]: e.target.value }); }}
               className="w-full px-2.5 py-1.5 border border-border rounded-lg text-[12.5px] focus:border-indigo outline-none" />
           </div>
         ))}
@@ -240,7 +266,7 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
 
       <div>
         <div className="text-[10.5px] font-bold uppercase tracking-wide text-muted mb-1">Assessment (the opening paragraph)</div>
-        <textarea value={data.assessment} onChange={(e) => setData({ ...data, assessment: e.target.value })} rows={3}
+        <textarea value={data.assessment} onChange={(e) => { setDirty(true); setData({ ...data, assessment: e.target.value }); }} rows={3}
           className="w-full px-2.5 py-2 border border-border rounded-lg text-[12.5px] focus:border-indigo outline-none resize-y" />
       </div>
 
@@ -248,7 +274,7 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-[10.5px] font-bold uppercase tracking-wide text-muted">Week-by-week roadmap · {data.roadmap.length} steps</span>
-          <button onClick={() => setWeeks([...data.roadmap, { week: `Week ${data.roadmap.length * 2 + 1}–${data.roadmap.length * 2 + 2}`, task: '', why: '' }])}
+          <button onClick={() => setWeeks([...data.roadmap, { week: `Week ${data.roadmap.length * 2 + 1}–${data.roadmap.length * 2 + 2}`, task: '', why: '', priority: '' }])}
             className="text-[11px] font-bold text-indigo hover:underline flex items-center gap-1"><Plus className="w-3 h-3" /> Add week</button>
         </div>
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 mb-2 text-[11px] text-amber-800">
@@ -265,6 +291,13 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
                     className="w-full px-2.5 py-1.5 border border-border rounded-lg text-[12.5px] focus:border-indigo outline-none resize-y" />
                   <input value={w.why} onChange={(e) => setWeeks(data.roadmap.map((x, j) => j === i ? { ...x, why: e.target.value } : x))} placeholder="Why / which criterion (optional)"
                     className="w-full px-2.5 py-1.5 border border-border rounded-lg text-[11.5px] text-muted focus:border-indigo outline-none" />
+                  <select value={w.priority || ''} onChange={(e) => setWeeks(data.roadmap.map((x, j) => j === i ? { ...x, priority: e.target.value } : x))}
+                    className="w-full px-2.5 py-1.5 border border-border rounded-lg text-[11.5px] text-muted focus:border-indigo outline-none bg-surface">
+                    <option value="">Priority (optional)</option>
+                    <option value="ESSENTIAL">ESSENTIAL</option>
+                    <option value="IMPORTANT">IMPORTANT</option>
+                    <option value="GOOD TO HAVE">GOOD TO HAVE</option>
+                  </select>
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <button onClick={() => moveWeek(i, -1)} disabled={i === 0} className="p-1 rounded text-muted hover:bg-surface-2 disabled:opacity-30"><ArrowUp className="w-3.5 h-3.5" /></button>
@@ -278,12 +311,12 @@ export function RoadmapTab({ leadId, clientEmail, onSent }: {
       </div>
 
       {/* lists */}
-      <ListEditor label="Strengths" items={data.strengths} onChange={(v) => setData({ ...data, strengths: v })} placeholder="A strength the evidence already proves" />
-      <ListEditor label="Gaps to close" items={data.gaps} onChange={(v) => setData({ ...data, gaps: v })} placeholder="What's missing for a strong application" />
-      <ListEditor label="Priority actions" items={data.priority_actions} onChange={(v) => setData({ ...data, priority_actions: v })} placeholder="The client's top next moves" />
-      <ListEditor label="Recommended publications" items={data.publications} onChange={(v) => setData({ ...data, publications: v })} placeholder="e.g. Technical article in a recognised outlet" />
-      <ListEditor label="Recommended speaking" items={data.speaking} onChange={(v) => setData({ ...data, speaking: v })} placeholder="e.g. Apply to speak at XYZ Summit" />
-      <ListEditor label="Watch-outs (red flags)" items={data.red_flags} onChange={(v) => setData({ ...data, red_flags: v })} placeholder="A risk to fix before submission" />
+      <ListEditor label="Strengths" items={data.strengths} onChange={(v) => { setDirty(true); setData({ ...data, strengths: v }); }} placeholder="A strength the evidence already proves" />
+      <ListEditor label="Gaps to close" items={data.gaps} onChange={(v) => { setDirty(true); setData({ ...data, gaps: v }); }} placeholder="What's missing for a strong application" />
+      <ListEditor label="Priority actions" items={data.priority_actions} onChange={(v) => { setDirty(true); setData({ ...data, priority_actions: v }); }} placeholder="The client's top next moves" />
+      <ListEditor label="Recommended publications" items={data.publications} onChange={(v) => { setDirty(true); setData({ ...data, publications: v }); }} placeholder="e.g. Technical article in a recognised outlet" />
+      <ListEditor label="Recommended speaking" items={data.speaking} onChange={(v) => { setDirty(true); setData({ ...data, speaking: v }); }} placeholder="e.g. Apply to speak at XYZ Summit" />
+      <ListEditor label="Watch-outs (red flags)" items={data.red_flags} onChange={(v) => { setDirty(true); setData({ ...data, red_flags: v }); }} placeholder="A risk to fix before submission" />
     </div>
   );
 }

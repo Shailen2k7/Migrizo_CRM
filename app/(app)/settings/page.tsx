@@ -663,7 +663,7 @@ function CooSection() {
     <div className="space-y-5">
       <div>
         <h2 className="text-[17px] font-semibold flex items-center gap-2"><Sparkles className="w-4 h-4 text-indigo-600" /> AI COO</h2>
-        <p className="text-[13px] text-muted mt-1">A spoken briefing and banner that greets you when you open the CRM \u2014 your last conversion and this month\u2019s tally. Only you (the owner) see and control this.</p>
+        <p className="text-[13px] text-muted mt-1">A briefing banner that greets you when you open the CRM \u2014 your last conversion and this month\u2019s tally. Only you (the owner) see and control this.</p>
       </div>
 
       <div className="panel divide-y divide-border">
@@ -673,16 +673,9 @@ function CooSection() {
           on={s.enabled}
           onClick={() => update({ enabled: !s.enabled })}
         />
-        <CooToggle
-          label="Voice on open"
-          desc="Speak the briefing aloud once when you open the CRM."
-          on={s.enabled && s.voice}
-          disabled={!s.enabled}
-          onClick={() => update({ voice: !s.voice })}
-        />
       </div>
 
-      <p className="text-[12px] text-muted">Tip: switch the briefing off to disable both the banner and the voice. Your choice is saved on this device.</p>
+      <p className="text-[12px] text-muted">Your choice is saved on this device.</p>
     </div>
   );
 }
