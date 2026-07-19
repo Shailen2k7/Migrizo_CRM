@@ -12,11 +12,13 @@ export interface RoadmapWeek {
   week: string;   // "Week 1–2" — free text, fully editable
   task: string;   // what the client must do
   why: string;    // which criterion / purpose it serves (optional, may be '')
+  priority: string; // ESSENTIAL / IMPORTANT / GOOD TO HAVE (optional, may be '')
 }
 
 export interface RoadmapData {
   client_name: string;
   route: string;               // e.g. "Digital Technology (Tech Nation)"
+  profile: string;              // e.g. "Employee at Infosys" or "Founder of X"
   grade: string;               // e.g. "Exceptional Talent"
   assessment: string;          // 2–4 sentence overall read
   evidence_score: string;      // e.g. "62/100"
@@ -56,6 +58,7 @@ function parseJsonBlock(raw: string): RoadmapData {
   return {
     client_name: asStr(obj.client_name),
     route: asStr(obj.route),
+    profile: asStr(obj.profile),
     grade: asStr(obj.grade),
     assessment: asStr(obj.assessment),
     evidence_score: asStr(obj.evidence_score ?? obj.score),
@@ -69,7 +72,7 @@ function parseJsonBlock(raw: string): RoadmapData {
     roadmap: Array.isArray(obj.roadmap)
       ? (obj.roadmap as unknown[]).map((r) => {
           const row = (r || {}) as Record<string, unknown>;
-          return { week: asStr(row.week), task: asStr(row.task), why: asStr(row.why) };
+          return { week: asStr(row.week), task: asStr(row.task), why: asStr(row.why), priority: asStr(row.priority) };
         }).filter((r) => r.week || r.task)
       : [],
   };
@@ -102,6 +105,7 @@ const SCALAR_KEYS: Record<string, keyof RoadmapData> = {
   'ROUTE': 'route',
   'GRADE': 'grade',
   'TRACK': 'grade',
+  'PROFILE': 'profile',
   'SCORE': 'evidence_score',
   'EVIDENCE SCORE': 'evidence_score',
   'TIMELINE': 'timeline',
@@ -112,7 +116,7 @@ const WEEK_RE = /^\s*((?:WEEK|MONTH|DAY|PHASE)\s*[\d–\-—&,\s]+[a-z]*)\s*:\s*
 
 function parsePlainText(raw: string): RoadmapData {
   const data: RoadmapData = {
-    client_name: '', route: '', grade: '', assessment: '', evidence_score: '', timeline: '',
+    client_name: '', route: '', grade: '', profile: '', assessment: '', evidence_score: '', timeline: '',
     strengths: [], gaps: [], priority_actions: [], roadmap: [], publications: [], speaking: [], red_flags: [],
   };
   let section: keyof RoadmapData | 'assessment' | 'roadmap' | null = null;
@@ -124,11 +128,11 @@ function parsePlainText(raw: string): RoadmapData {
     // week rows win over everything (they contain ':' too)
     const wk = line.match(WEEK_RE);
     if (wk) {
-      const rest = wk[2].trim();
-      const bar = rest.lastIndexOf('|');
-      const task = (bar === -1 ? rest : rest.slice(0, bar)).trim();
-      const why = (bar === -1 ? '' : rest.slice(bar + 1)).trim();
-      if (task) data.roadmap.push({ week: wk[1].replace(/\s+/g, ' ').trim(), task, why });
+      const parts = wk[2].split('|').map((p) => p.trim());
+      const task = parts[0] || '';
+      const why = parts.length > 2 ? parts[1] : (parts[1] || '');
+      const priority = parts.length > 2 ? parts[2] : '';
+      if (task) data.roadmap.push({ week: wk[1].replace(/\s+/g, ' ').trim(), task, why, priority });
       section = 'roadmap';
       continue;
     }

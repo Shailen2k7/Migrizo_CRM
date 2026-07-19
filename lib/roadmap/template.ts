@@ -56,6 +56,7 @@ export function renderRoadmapEmail(data: RoadmapData): string {
       <td width="33%" style="padding:13px 15px;border-right:1px solid ${LINE};">
         <div style="font-size:10px;font-weight:800;letter-spacing:.12em;color:${MUTED};text-transform:uppercase;">Track</div>
         <div style="font-size:13.5px;font-weight:800;color:${NAVY};padding-top:4px;">${esc(data.grade)}</div>
+        ${data.profile ? `<div style="font-size:10.5px;color:${MUTED};padding-top:2px;">${esc(data.profile)}</div>` : ''}
       </td>
       <td width="33%" style="padding:13px 15px;border-right:1px solid ${LINE};">
         <div style="font-size:10px;font-weight:800;letter-spacing:.12em;color:${MUTED};text-transform:uppercase;">Evidence today</div>
@@ -75,7 +76,7 @@ export function renderRoadmapEmail(data: RoadmapData): string {
       </td>
       <td valign="top" style="padding:11px 0;border-top:1px solid ${LINE};">
         <div style="font-size:13px;font-weight:600;line-height:1.55;color:${INK};">${esc(w.task)}</div>
-        ${w.why ? `<div style="font-size:11.5px;line-height:1.5;color:${MUTED};padding-top:3px;">${esc(w.why)}</div>` : ''}
+        ${w.why ? `<div style="font-size:11.5px;line-height:1.5;color:${MUTED};padding-top:3px;">${esc(w.why)}${w.priority ? ` &nbsp;<span style="font-size:9.5px;font-weight:800;letter-spacing:.06em;padding:2px 6px;border-radius:4px;${w.priority.toUpperCase().includes('ESSENTIAL') ? `background:#FEE2E2;color:#991B1B` : w.priority.toUpperCase().includes('IMPORTANT') ? `background:#FEF3C7;color:#92400E` : `background:#E0F2FE;color:#0369A1`}">${esc(w.priority.toUpperCase())}</span>` : ''}</div>` : (w.priority ? `<div style="padding-top:3px;"><span style="font-size:9.5px;font-weight:800;letter-spacing:.06em;padding:2px 6px;border-radius:4px;${w.priority.toUpperCase().includes('ESSENTIAL') ? `background:#FEE2E2;color:#991B1B` : w.priority.toUpperCase().includes('IMPORTANT') ? `background:#FEF3C7;color:#92400E` : `background:#E0F2FE;color:#0369A1`}">${esc(w.priority.toUpperCase())}</span></div>` : '')}
       </td>
       <td valign="top" width="24" align="right" style="padding:11px 0;border-top:1px solid ${LINE};">
         <div style="font-size:10.5px;font-weight:800;color:#B9C2D8;">${String(i + 1).padStart(2, '0')}</div>
@@ -148,7 +149,7 @@ export function renderRoadmapText(data: RoadmapData): string {
   if (data.strengths.length) L.push('STRENGTHS', ...data.strengths.map((s) => `• ${s}`), '');
   if (data.gaps.length) L.push('GAPS TO CLOSE', ...data.gaps.map((s) => `• ${s}`), '');
   if (data.priority_actions.length) L.push('PRIORITY ACTIONS', ...data.priority_actions.map((s, i) => `${i + 1}. ${s}`), '');
-  L.push('WEEK-BY-WEEK ROADMAP', ...data.roadmap.map((w) => `${w.week}: ${w.task}${w.why ? ` (${w.why})` : ''}`), '');
+  L.push('WEEK-BY-WEEK ROADMAP', ...data.roadmap.map((w) => `${w.week}: ${w.task}${w.why ? ` (${w.why})` : ''}${w.priority ? ` [${w.priority}]` : ''}`), '');
   if (data.publications.length) L.push('RECOMMENDED PUBLICATIONS', ...data.publications.map((s) => `• ${s}`), '');
   if (data.speaking.length) L.push('RECOMMENDED SPEAKING', ...data.speaking.map((s) => `• ${s}`), '');
   if (data.red_flags.length) L.push('WATCH-OUTS', ...data.red_flags.map((s) => `! ${s}`), '');
