@@ -6,6 +6,7 @@ import {
   X, Check, Lock, ChevronDown, Trash2, Plus, Link2, Flag,
   CircleCheck, Sparkles, Trophy, Megaphone, Lightbulb, LineChart,
   PartyPopper, Archive, RotateCcw, Copy, ExternalLink, Mail, Send, Pencil,
+  CalendarPlus, CalendarDays, MessageSquareText,
 } from 'lucide-react';
 import { useApp } from '@/components/shared/app-provider';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -47,6 +48,17 @@ export function CaseDrawer({ caseId, onClose }: Props) {
 
   const effectiveExpanded = expanded ?? active.key;
   const progress = overallProgress(journey, phases);
+
+  // Count tasks that are past their due date and not yet done → drives the
+  // overdue warning in the header (and the board card badge reads the same rule).
+  const overdueCount = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    let n = 0;
+    for (const t of Object.values(journey.tasks)) {
+      if (t?.due && !t.done && new Date(t.due) < today) n++;
+    }
+    return n;
+  }, [journey.tasks]);
   const cleared = phasesCleared(journey, phases);
   const journeyDone = allGatesPassed(journey, phases);
   const archived = !!caseData?.archived_at;
@@ -119,10 +131,38 @@ export function CaseDrawer({ caseId, onClose }: Props) {
   };
 
   const toggleTask = (taskKey: string) => {
-    const cur = journey.tasks[taskKey]?.done;
+    const prev = journey.tasks[taskKey] || { done: false };
+    // Preserve any due date / note when toggling done state.
     const next: CaseJourneyState = {
       ...journey,
-      tasks: { ...journey.tasks, [taskKey]: cur ? { done: false } : { done: true, at: new Date().toISOString(), by: user.id } },
+      tasks: {
+        ...journey.tasks,
+        [taskKey]: prev.done
+          ? { ...prev, done: false, at: undefined, by: undefined }
+          : { ...prev, done: true, at: new Date().toISOString(), by: user.id },
+      },
+    };
+    updateCaseJourney(caseData.id, next);
+  };
+
+  // Set (or clear) a task's due date. Kept in the same journey.tasks record,
+  // so no schema change is needed.
+  const setTaskDue = (taskKey: string, due: string | null) => {
+    const prev = journey.tasks[taskKey] || { done: false };
+    const next: CaseJourneyState = {
+      ...journey,
+      tasks: { ...journey.tasks, [taskKey]: { ...prev, due: due || undefined } },
+    };
+    updateCaseJourney(caseData.id, next);
+  };
+
+  // Set (or clear) a task's note.
+  const setTaskNote = (taskKey: string, note: string) => {
+    const prev = journey.tasks[taskKey] || { done: false };
+    const clean = note.trim();
+    const next: CaseJourneyState = {
+      ...journey,
+      tasks: { ...journey.tasks, [taskKey]: { ...prev, note: clean || undefined } },
     };
     updateCaseJourney(caseData.id, next);
   };
@@ -220,6 +260,16 @@ export function CaseDrawer({ caseId, onClose }: Props) {
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
+              {overdueCount > 0 && !archived && (
+                <div className="rounded-[14px] px-4 py-3 flex items-center gap-3" style={{ background: '#FFF1F3', border: '1px solid #FECDD3' }}>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: '#E11D48' }}>
+                    <Flag className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="flex-1 text-[12.5px]" style={{ color: '#9F1239' }}>
+                    <span className="font-bold">{overdueCount} {overdueCount === 1 ? 'task is' : 'tasks are'} overdue.</span> Check the steps marked in red below.
+                  </div>
+                </div>
+              )}
               {archived && (
                 <div className="rounded-[14px] px-4 py-3 flex items-center gap-3" style={{ background: 'hsl(var(--surface-2))', border: '1px solid hsl(var(--border))' }}>
                   <Archive className="w-4 h-4 text-muted flex-shrink-0" />
@@ -250,6 +300,8 @@ export function CaseDrawer({ caseId, onClose }: Props) {
                   expanded={effectiveExpanded === phase.key}
                   onToggleExpand={() => setExpanded(effectiveExpanded === phase.key ? null : phase.key)}
                   onToggleTask={toggleTask}
+                  onSetTaskDue={setTaskDue}
+                  onSetTaskNote={setTaskNote}
                   onTogglePillarDone={togglePillarDone}
                   onAddEvidence={addEvidence}
                   onRemoveEvidence={removeEvidence}
@@ -348,7 +400,7 @@ function ProgressRing({ pct, accent }: { pct: number; accent: string }) {
 }
 
 function PhaseCard({
-  phase, journeyPhases, journey, expanded, onToggleExpand, onToggleTask, onTogglePillarDone,
+  phase, journeyPhases, journey, expanded, onToggleExpand, onToggleTask, onSetTaskDue, onSetTaskNote, onTogglePillarDone,
   onAddEvidence, onRemoveEvidence, onPassGate, caseData, onUpdateCase,
   canEditTasks, onRenameTask, onAddTask, onDeleteTask,
 }: {
@@ -358,6 +410,8 @@ function PhaseCard({
   expanded: boolean;
   onToggleExpand: () => void;
   onToggleTask: (k: string) => void;
+  onSetTaskDue: (k: string, due: string | null) => void;
+  onSetTaskNote: (k: string, note: string) => void;
   onTogglePillarDone: (k: string) => void;
   onAddEvidence: (k: string, title: string, link: string) => void;
   onRemoveEvidence: (k: string, idx: number) => void;
@@ -442,7 +496,10 @@ function PhaseCard({
                       onRename={onRenameTask} onAdd={onAddTask} onDelete={onDeleteTask} />
                   ) : (
                     phase.tasks!.map((t) => (
-                      <TaskRow key={t.key} label={t.label} done={!!journey.tasks[t.key]?.done} accent={phase.accent} onToggle={() => onToggleTask(t.key)} />
+                      <TaskRow key={t.key} label={t.label} state={journey.tasks[t.key]} accent={phase.accent}
+                        onToggle={() => onToggleTask(t.key)}
+                        onSetDue={(due) => onSetTaskDue(t.key, due)}
+                        onSetNote={(note) => onSetTaskNote(t.key, note)} />
                     ))
                   )}
                 </div>
@@ -468,15 +525,110 @@ function PhaseCard({
   );
 }
 
-function TaskRow({ label, done, accent, onToggle }: { label: string; done: boolean; accent: string; onToggle: () => void }) {
+// Task deadline status → drives the little pill on the right of each row.
+function dueStatus(due?: string, done?: boolean): { kind: 'none' | 'done' | 'overdue' | 'soon' | 'upcoming'; label: string; days: number } {
+  if (done) return { kind: 'done', label: 'Done', days: 0 };
+  if (!due) return { kind: 'none', label: '', days: 0 };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(due); d.setHours(0, 0, 0, 0);
+  const days = Math.round((d.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return { kind: 'overdue', label: `Overdue ${Math.abs(days)}d`, days };
+  if (days === 0) return { kind: 'soon', label: 'Due today', days };
+  if (days <= 3) return { kind: 'soon', label: `Due ${days}d`, days };
+  return { kind: 'upcoming', label: `Due ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`, days };
+}
+
+const DUE_STYLES: Record<string, { bg: string; fg: string; bd?: string }> = {
+  done: { bg: '#ECFDF5', fg: '#059669' },
+  overdue: { bg: '#FFF1F3', fg: '#E11D48', bd: '#FECDD3' },
+  soon: { bg: '#FFFBEB', fg: '#D97706' },
+  upcoming: { bg: 'hsl(var(--surface-2))', fg: 'hsl(var(--muted))' },
+};
+
+function TaskRow({ label, state, accent, onToggle, onSetDue, onSetNote }: {
+  label: string;
+  state?: { done: boolean; due?: string; note?: string };
+  accent: string;
+  onToggle: () => void;
+  onSetDue: (due: string | null) => void;
+  onSetNote: (note: string) => void;
+}) {
+  const done = !!state?.done;
+  const due = state?.due;
+  const note = state?.note || '';
+  const st = dueStatus(due, done);
+  const overdue = st.kind === 'overdue';
+
+  const [open, setOpen] = useState(false);           // expand for date + note
+  const [noteDraft, setNoteDraft] = useState(note);
+  useEffect(() => { setNoteDraft(state?.note || ''); }, [state?.note]);
+
+  const style = st.kind !== 'none' ? DUE_STYLES[st.kind] : null;
+
   return (
-    <button onClick={onToggle} className="w-full flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-surface-2 transition-colors text-left group">
-      <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all"
-        style={done ? { background: accent, border: 'none' } : { border: '1.5px solid hsl(var(--border-strong))' }}>
-        {done && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
-      </span>
-      <span className={cn('text-[13px] transition-colors', done ? 'text-muted line-through' : 'text-ink-2 group-hover:text-ink')}>{label}</span>
-    </button>
+    <div className={cn('rounded-xl transition-colors', overdue && 'bg-rose-50/60')}
+      style={overdue ? { boxShadow: 'inset 3px 0 0 #E11D48' } : undefined}>
+      <div className="w-full flex items-center gap-3 py-2 px-2">
+        {/* checkbox */}
+        <button onClick={onToggle} className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all"
+          style={done ? { background: accent, border: 'none' } : { border: '1.5px solid hsl(var(--border-strong))' }}>
+          {done && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+        </button>
+
+        {/* label */}
+        <button onClick={onToggle} className="flex-1 text-left min-w-0">
+          <span className={cn('text-[13px] transition-colors', done ? 'text-muted line-through' : 'text-ink-2')}>{label}</span>
+        </button>
+
+        {/* due pill */}
+        {style && st.label && (
+          <span className="text-[10px] font-bold px-2 py-1 rounded-full flex-shrink-0 whitespace-nowrap"
+            style={{ background: style.bg, color: style.fg, border: style.bd ? `1px solid ${style.bd}` : 'none' }}>
+            {st.label}
+          </span>
+        )}
+
+        {/* note indicator */}
+        {note && !open && (
+          <MessageSquareText className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'hsl(var(--faint))' }} />
+        )}
+
+        {/* expander: set date / note */}
+        <button onClick={() => setOpen((v) => !v)} title="Due date & note"
+          className={cn('flex-shrink-0 flex items-center justify-center rounded-lg transition-colors',
+            open ? 'bg-surface-2 text-ink-2' : (due || note) ? 'text-ink-2 hover:bg-surface-2' : 'text-faint hover:text-ink-2 hover:bg-surface-2')}
+          style={{ width: 28, height: 28 }}>
+          {due ? <CalendarDays className="w-4 h-4" /> : <CalendarPlus className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {/* expanded controls */}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }} className="overflow-hidden">
+            <div className="px-2 pb-3 pt-1 pl-10 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-semibold text-muted">Due</span>
+                <input type="date" value={due ? due.split('T')[0] : ''}
+                  onChange={(e) => onSetDue(e.target.value ? new Date(e.target.value).toISOString() : null)}
+                  className="text-[12px] border border-border rounded-md px-2 py-1 bg-surface outline-none focus:border-indigo-400" />
+                {due && (
+                  <button onClick={() => onSetDue(null)} className="text-[11px] text-faint hover:text-danger">Clear</button>
+                )}
+              </div>
+              <div className="flex items-start gap-2">
+                <MessageSquareText className="w-3.5 h-3.5 mt-1.5 flex-shrink-0" style={{ color: accent }} />
+                <textarea value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
+                  onBlur={() => { if (noteDraft.trim() !== note) onSetNote(noteDraft); }}
+                  placeholder="Add a note for this step…" rows={2}
+                  className="flex-1 text-[12px] border border-border rounded-md px-2.5 py-1.5 bg-surface resize-none outline-none focus:border-indigo-400" />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 

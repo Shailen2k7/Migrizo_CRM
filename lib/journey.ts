@@ -202,7 +202,7 @@ export function decisionMetaFor(kind: DecisionOf) { return kind === 'visa' ? VIS
 // --------------------------------- STATE -------------------------------------
 export interface PillarEvidence { title: string; link?: string }
 export interface CaseJourneyState {
-  tasks: Record<string, { done: boolean; at?: string; by?: string }>;
+  tasks: Record<string, { done: boolean; at?: string; by?: string; due?: string; note?: string }>;
   pillars: Record<string, { done: boolean; evidence?: PillarEvidence[] }>;
   gates: Record<string, { passed: boolean; at?: string }>;
   // Per-case task overrides. When a phase key is present here, these tasks
