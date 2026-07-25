@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen } from 'lucide-react';
+import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Clock } from 'lucide-react';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
@@ -13,7 +13,7 @@ import { isFollowUpOverdue, isFollowUpToday } from '@/lib/types';
 
 // `newUntil`: show the NEW pill only until this date (YYYY-MM-DD), then it
 // disappears automatically. Set it ~4 days ahead whenever a feature ships.
-type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; badge?: string; newUntil?: string };
+type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; badge?: string; newUntil?: string; adminOnly?: boolean };
 
 function isNew(newUntil?: string): boolean {
   if (!newUntil) return false;
@@ -29,6 +29,7 @@ const NAV: NavItem[] = [
   { href: '/payments', label: 'Payments', icon: IndianRupee },
   { href: '/meetings', label: 'Meetings', icon: CalendarDays, newUntil: '2026-07-18' },
   { href: '/learning', label: 'Learning', icon: BookOpen, newUntil: '2026-07-24' },
+  { href: '/team-activity', label: 'Team Activity', icon: Clock, adminOnly: true, newUntil: '2026-07-29' },
   { href: '/ai', label: 'AI COO', icon: Sparkles },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -56,6 +57,7 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead, mobileOpen
   const nav = NAV.filter((item) => {
     if (item.href === '/payments' && !canViewPayments) return false;
     if (item.href === '/cases' && role !== 'admin') return false;
+    if (item.adminOnly && role !== 'admin') return false;
     return true;
   });
 
