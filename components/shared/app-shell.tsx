@@ -6,7 +6,6 @@ import { Menu, Plus } from 'lucide-react';
 import { AppProvider } from '@/components/shared/app-provider';
 import { Sidebar } from '@/components/sidebar';
 import { CooBanner } from '@/components/shared/coo-banner';
-import { ActivityHeartbeat } from '@/components/shared/activity-heartbeat';
 import { LeadDrawer } from '@/components/leads/lead-drawer';
 import { AddLeadDialog } from '@/components/leads/add-lead-dialog';
 import { ImportDialog } from '@/components/leads/import-dialog';
@@ -76,7 +75,6 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
 
         <main className="md:ml-[240px] pt-14 md:pt-0">
           <CooBanner leads={initialLeads} isAdmin={role === 'admin'} userName={user.name} />
-          <ActivityHeartbeat workspaceId={workspace.id} />
           {children}
         </main>
 
