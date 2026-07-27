@@ -9,6 +9,7 @@ import {
   CalendarPlus, CalendarDays, MessageSquareText,
 } from 'lucide-react';
 import { useApp } from '@/components/shared/app-provider';
+import { GateCelebration } from '@/components/cases/gate-celebration';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { cn, initials, avatarColor } from '@/lib/utils';
 import {
@@ -41,6 +42,7 @@ export function CaseDrawer({ caseId, onClose }: Props) {
   const phases = useMemo(() => applyCustomTasks(templatePhases, journey), [templatePhases, journey]);
   const active = useMemo(() => activePhase(journey, phases), [journey, phases]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [celebrate, setCelebrate] = useState<string | null>(null);   // gate key that just cleared
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Who may edit/add/delete tasks: admins always; members only if the owner enabled it.
@@ -197,6 +199,8 @@ export function CaseDrawer({ caseId, onClose }: Props) {
     for (const p of phases) { if (!nextGates[p.key]?.passed) { cp = p.key; break; } }
     updateCaseJourney(caseData.id, next, { current_phase: cp });
     if (!passed) {
+      // Gate just cleared → ribbons.
+      setCelebrate(`${phase.key}-${Date.now()}`);
       const nextPhase = phases[phase.index];
       if (nextPhase) setExpanded(nextPhase.key);
     }
@@ -208,6 +212,7 @@ export function CaseDrawer({ caseId, onClose }: Props) {
         <>
           <motion.div className="fixed inset-0 z-[60]" style={{ background: 'rgba(15,17,21,0.25)', backdropFilter: 'blur(3px)' }}
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={onClose} />
+          <GateCelebration fireKey={celebrate} onDone={() => setCelebrate(null)} />
           <motion.aside className="fixed top-0 right-0 bottom-0 w-[min(680px,94vw)] bg-surface border-l border-border z-[70] flex flex-col"
             initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}>
 

@@ -255,10 +255,11 @@ export function isPhaseComplete(state: CaseJourneyState, phase: JourneyPhase): b
 export function isGatePassed(state: CaseJourneyState, phaseKey: PhaseKey): boolean {
   return !!state.gates[phaseKey]?.passed;
 }
-export function isPhaseUnlocked(state: CaseJourneyState, phase: JourneyPhase, journey: JourneyPhase[] = JOURNEY): boolean {
-  if (phase.index === 1) return true;
-  const prev = journey[phase.index - 2];
-  return prev ? isGatePassed(state, prev.key) : true;
+// All phases are open at all times. The gates still record progress (and fire
+// the celebration when cleared) but they no longer block access — the team can
+// work on any phase in whatever order the case actually demands.
+export function isPhaseUnlocked(_state: CaseJourneyState, _phase: JourneyPhase, _journey: JourneyPhase[] = JOURNEY): boolean {
+  return true;
 }
 export function activePhase(state: CaseJourneyState, journey: JourneyPhase[] = JOURNEY): JourneyPhase {
   for (const p of journey) { if (!isGatePassed(state, p.key)) return p; }
