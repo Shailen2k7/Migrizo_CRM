@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     .select('lead_id, leads!inner(id, full_name, stage, source, visa_type, last_note, attempt_count, last_touched_at, created_at, ai_scored_at)')
     .eq('workspace_id', body.workspaceId)
     .eq('user_id', user.id)
-    .eq('day', new Date().toISOString().slice(0, 10))
+    .eq('day', new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()))
     .eq('status', 'pending')
     .limit(BATCH_MAX);
 

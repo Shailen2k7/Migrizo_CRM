@@ -58,7 +58,11 @@ export default function MyQueuePage() {
   const [note, setNote] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The queue's day is the INDIAN calendar date. Using the browser's UTC date
+  // would ask for the wrong day between midnight and 5:30 AM IST.
+  const today = useMemo(() => new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date()), []);
 
   const load = useCallback(async () => {
     const supabase = createClient();
