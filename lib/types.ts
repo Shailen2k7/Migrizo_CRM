@@ -40,6 +40,15 @@ export interface Lead {
   id: string;
   workspace_id: string;
   full_name: string;
+  // Daily Lead Engine — ownership, staleness and AI scoring.
+  owner_id?: string | null;
+  last_touched_at?: string | null;
+  attempt_count?: number | null;
+  snooze_until?: string | null;
+  retired_at?: string | null;
+  ai_score?: number | null;
+  ai_brief?: string | null;
+  ai_scored_at?: string | null;
   phone: string | null;
   email: string | null;
   visa_type: string | null;

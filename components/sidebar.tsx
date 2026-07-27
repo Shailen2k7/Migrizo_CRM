@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Clock } from 'lucide-react';
+import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Clock, Target, Zap } from 'lucide-react';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
@@ -29,6 +29,8 @@ const NAV: NavItem[] = [
   { href: '/payments', label: 'Payments', icon: IndianRupee },
   { href: '/meetings', label: 'Meetings', icon: CalendarDays, newUntil: '2026-07-18' },
   { href: '/learning', label: 'Learning', icon: BookOpen, newUntil: '2026-07-24' },
+  { href: '/my-queue', label: 'My Queue', icon: Target, newUntil: '2026-08-05' },
+  { href: '/lead-engine', label: 'Lead Engine', icon: Zap, adminOnly: true, newUntil: '2026-08-05' },
   { href: '/team-activity', label: 'Team Activity', icon: Clock, adminOnly: true, newUntil: '2026-07-29' },
   { href: '/ai', label: 'AI COO', icon: Sparkles },
   { href: '/settings', label: 'Settings', icon: Settings },
