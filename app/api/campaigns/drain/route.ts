@@ -55,8 +55,15 @@ export async function POST(req: Request) {
 
   // Cache campaign bodies (subject/html) so we don't refetch per recipient.
   const campIds = Array.from(new Set(batch.map((r) => r.campaign_id)));
-  const { data: camps } = await admin.from('campaigns').select('id, subject, html').in('id', campIds);
-  const campById = new Map((camps || []).map((c) => [c.id, c]));
+  const { data: camps } = await admin.from('campaigns').select('id, subject, html, status').in('id', campIds);
+  // Paused/stopped campaigns hold their queue — nothing sends until resumed.
+  const campById = new Map((camps || []).filter((c) => c.status === 'sending').map((c) => [c.id, c]));
+
+  // Late suppression check: someone may have unsubscribed AFTER being queued.
+  // The queue-time check in /create can't see that, so we re-check here.
+  const wsIds = Array.from(new Set(batch.map((r) => r.workspace_id)));
+  const { data: suppRows } = await admin.from('email_suppressions').select('workspace_id, email').in('workspace_id', wsIds);
+  const suppressed = new Set((suppRows || []).map((x) => `${x.workspace_id}:${(x.email || '').toLowerCase()}`));
 
   let sent = 0, failed = 0;
   const perCampaign: Record<string, { sent: number; failed: number }> = {};
@@ -64,11 +71,22 @@ export async function POST(req: Request) {
   for (const r of batch) {
     const camp = campById.get(r.campaign_id);
     if (!camp) continue;
+
+    // Unsubscribed since queueing → never send; mark skipped.
+    if (suppressed.has(`${r.workspace_id}:${(r.email || '').toLowerCase()}`)) {
+      await admin.from('campaign_recipients').update({ status: 'skipped', error: 'suppressed' }).eq('id', r.id);
+      perCampaign[r.campaign_id] ||= { sent: 0, failed: 0 };
+      continue;
+    }
+
     const first = (r.full_name || 'there').split(' ')[0];
     const unsub = `${SITE}/api/unsubscribe?e=${encodeURIComponent(r.email)}&w=${r.workspace_id}`;
     const subject = camp.subject.replace(/\{\{\s*name\s*\}\}/gi, first);
     const html = camp.html
       .replace(/\{\{\s*name\s*\}\}/gi, first)
+      // New shell: the footer carries an unsubscribe BUTTON pointing at {{UNSUB_URL}}.
+      .replace(/\{\{\s*UNSUB_URL\s*\}\}/gi, unsub)
+      // Legacy templates: {{UNSUB}} becomes a plain link.
       .replace(/\{\{\s*UNSUB\s*\}\}/gi, `<a href="${unsub}" style="color:#8FA0C4;text-decoration:underline;">Unsubscribe</a>`);
 
     perCampaign[r.campaign_id] ||= { sent: 0, failed: 0 };

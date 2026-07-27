@@ -1,32 +1,63 @@
-MIGRIZO CRM — ROADMAP MODULE · DEPLOY
-======================================
-REQUIRES: Email module already deployed (it uses lead_emails + your signature).
+MIGRIZO CRM — CAMPAIGN CENTER · DEPLOY
+=======================================
 
-STEP 1 · SUPABASE (30 sec)
-  SQL Editor → run: supabase/migrations/016_roadmaps.sql
+STEP 1 · SUPABASE (SQL Editor)
+  Run: supabase/migrations/021_campaign_center.sql
+  (Safe to run even if you ran the earlier version: it refreshes the nine
+  seeded templates with the new dash-free wording. Custom templates are
+  never touched.)
+  Adds: super-admin access control, the Access grants table, and the
+  9-template GTV library seeder (runs automatically on first page open).
 
-STEP 2 · GITHUB (one commit) — 3 NEW files + 1 replacement
-  NEW files — create each via GitHub "Add file → Create new file",
-  typing the FULL path (folders auto-create). Do NOT drag these:
-    lib/roadmap/types.ts
-    lib/roadmap/template.ts
-    app/api/roadmap/send/route.ts
-    components/roadmap/roadmap-tab.tsx
-  REPLACEMENT — drag into its existing folder:
-    components/leads/lead-drawer.tsx
-  Commit. Wait for Netlify green.
+STEP 2 · GITHUB (one commit)
+  NEW file — "Add file → Create new file", TYPE THE FULL PATH:
+    lib/email/campaign-shell.ts
+  REPLACEMENTS — drag into their folders:
+    app/(app)/campaigns/page.tsx
+    app/api/campaigns/create/route.ts
+    app/api/campaigns/drain/route.ts
+    components/sidebar.tsx
+  Commit together. Wait for Netlify green.
 
-STEP 3 · USE IT (per client, ~3 minutes)
-  a) Claude (Max) → new chat → attach the Evidence Playbook →
-     paste client's Drive link + the prompt from ROADMAP_PROMPT.txt
-     (set the number of weeks in the prompt).
-  b) Copy the JSON Claude returns.
-  c) CRM → lead → Roadmap tab → paste → Parse & preview.
-  d) Edit anything inline (weeks: edit / delete / add / reorder).
-  e) Preview & send → Confirm. It emails the branded roadmap and logs
-     it in the lead's Emails thread. Or Download PDF (print dialog →
-     Save as PDF) for WhatsApp.
+STEP 3 · OPEN IT
+  Sidebar → Campaigns (only YOU see anything — you are the workspace owner).
+  On first open the 9 Global Talent Visa templates seed themselves:
+  4 cold + 5 hot, grouped in the Templates tab.
 
-RULE OF THUMB (built into the UI as a reminder):
-  Timeline changes (8→4 weeks) = re-ask Claude, it re-prioritises.
-  Delete button = only for tasks that don't apply to this client.
+WHO CAN USE IT
+  • You (workspace owner / super admin): everything.
+  • Everyone else: a "restricted" screen — even other admins.
+  • Access tab (owner only): grant campaign rights to any member with one
+    click; revoke the same way. Granted members get everything except the
+    Access tab itself.
+
+THE FOUR TABS
+  Send      → pick recipients → pick template → edit subject + content →
+              mandatory preview → launch. Sending is blocked while any
+              [square-bracket] placeholder remains in the content.
+  Templates → all 9 GTV templates + your custom ones. Edit name, subject and
+              content; add new; delete. Content-only editing: the frame
+              (logo, GTV badge, Shailen's signature, booking CTA, WhatsApp,
+              unsubscribe button) is applied automatically at send time so
+              every email keeps an identical format.
+  History   → every campaign with live progress. Pause (queue holds),
+              Resume, Stop (queue cancelled permanently).
+  Access    → grant/revoke campaign rights (owner only).
+
+EVERY EMAIL AUTOMATICALLY CARRIES
+  • Migrizo logo header — identical to your SLA/roadmap emails
+  • "GLOBAL TALENT VISA · UNITED KINGDOM" badge before any content, so the
+    reader knows exactly what the email is about
+  • Shailen's plain text signature: name, Lead Consultant title, Migrizo,
+    Migrizo Ventures Pvt Ltd., phone, website, email
+  • "Book a 1-to-1 call →" button → https://crm.migrizo.com/book/shailen
+  • WhatsApp line → +44 7887 348822
+  • Navy footer with a one-click Unsubscribe BUTTON (plus the RFC-8058
+    List-Unsubscribe headers Gmail requires)
+
+SAFETY BUILT IN
+  • Unsubscribed / bounced addresses are removed at queue time AND re-checked
+    at send time (covers people who unsubscribe after being queued).
+  • Paused/stopped campaigns hold their queue at the sending layer.
+  • Preview file included: campaign-email-preview.html — open it to see
+    exactly what a recipient receives.

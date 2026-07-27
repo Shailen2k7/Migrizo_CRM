@@ -5,7 +5,7 @@
 // =============================================================================
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { TEMPLATE_BY_KEY } from '@/lib/email/campaign-templates';
+import { wrapCampaignEmail } from '@/lib/email/campaign-shell';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,8 +22,17 @@ export async function POST(req: Request) {
   if (!member) return NextResponse.json({ ok: false }, { status: 403 });
   const wsId = member.workspace_id;
 
+  // Campaigns are super-admin only (workspace owner, or explicitly granted).
+  const { data: allowed } = await supabase.rpc('is_campaign_admin', { p_workspace_id: wsId });
+  if (!allowed) return NextResponse.json({ ok: false, reason: 'not_campaign_admin' }, { status: 403 });
+
   const subject = (body.subject || '').trim();
-  const html = (body.html || '').trim();
+  // The editor supplies CONTENT ONLY; the branded frame (logo, GTV badge,
+  // signature, CTA, unsubscribe) is fixed and applied here, so every campaign
+  // email has an identical format regardless of edits.
+  const content = (body.html || '').trim();
+  // Legacy custom templates are already complete documents — don't re-wrap.
+  const html = !content ? '' : content.startsWith('<!DOCTYPE') ? content : wrapCampaignEmail(content, subject);
   const leadIds = Array.isArray(body.leadIds) ? body.leadIds : [];
   if (!subject || !html) return NextResponse.json({ ok: false, reason: 'missing_content' }, { status: 400 });
   if (leadIds.length === 0) return NextResponse.json({ ok: false, reason: 'no_recipients' }, { status: 400 });
@@ -52,7 +61,7 @@ export async function POST(req: Request) {
   // Create the campaign row.
   const { data: camp, error: cErr } = await supabase.from('campaigns').insert({
     workspace_id: wsId, created_by: user.id,
-    name: body.name || TEMPLATE_BY_KEY[body.templateKey || '']?.name || 'Campaign',
+    name: body.name || subject || 'Campaign',
     template_key: body.templateKey || 'custom',
     subject, html, status: 'sending', total: recipients.length,
   }).select('id').single();
