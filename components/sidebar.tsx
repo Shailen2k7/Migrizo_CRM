@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Sparkles, Settings, Plus, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Clock, Target, Zap } from 'lucide-react';
+import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Target, Zap } from 'lucide-react';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
@@ -31,8 +31,6 @@ const NAV: NavItem[] = [
   { href: '/learning', label: 'Learning', icon: BookOpen, newUntil: '2026-07-24' },
   { href: '/my-queue', label: 'My Queue', icon: Target, newUntil: '2026-08-05' },
   { href: '/lead-engine', label: 'Lead Engine', icon: Zap, adminOnly: true, newUntil: '2026-08-05' },
-  { href: '/team-activity', label: 'Team Activity', icon: Clock, adminOnly: true, newUntil: '2026-07-29' },
-  { href: '/ai', label: 'AI COO', icon: Sparkles },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -40,12 +38,12 @@ interface Props {
   user: { email: string; name: string };
   workspaceName: string;
   leadsCount: number;
-  onAddLead: () => void;
+  onAddLead?: () => void;   // no longer used — quick-add button removed
   mobileOpen?: boolean;
   onClose?: () => void;
 }
 
-export function Sidebar({ user, workspaceName, leadsCount, onAddLead, mobileOpen = false, onClose }: Props) {
+export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, onClose }: Props) {
   const { cases, followUps, canViewPayments, role } = useApp();
   const casesCount = cases.filter((c) => c.status === 'active' && !c.archived_at).length;
   const urgentFollowUps = followUps.filter((f) => isFollowUpOverdue(f) || isFollowUpToday(f)).length;
@@ -129,15 +127,6 @@ export function Sidebar({ user, workspaceName, leadsCount, onAddLead, mobileOpen
         )}
       </div>
 
-      <div className="px-3 pb-4">
-        <button onClick={onAddLead} className="quick-add">
-          <div className="qa-icon"><Plus className="w-4 h-4" /></div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[12.5px] font-semibold leading-tight">Quick Add Lead</div>
-            <div className="text-[11px] text-muted leading-tight mt-0.5">Add a new client</div>
-          </div>
-        </button>
-      </div>
     </aside>
     </>
   );
