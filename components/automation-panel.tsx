@@ -41,6 +41,11 @@ interface Stats {
   replied: number; sleeping: number; fresh_cold: number; fresh_hot: number;
 }
 interface Step { id: string; sequence_id: string; step_no: number; day_offset: number; template_id: string }
+interface AutoStatus {
+  auto_enrol: boolean; cold_per_day: number; hot_per_day: number;
+  last_enrolled_on: string | null; enrolled_today: boolean;
+  cap_today: number; projected_daily: number;
+}
 interface Tpl { id: string; name: string; category: string; subject: string; html: string }
 interface Enrolment {
   enrolment_id: string; lead_id: string; lead_name: string; lead_email: string; lead_stage: string;
@@ -102,6 +107,12 @@ export default function AutomationPanel() {
   const [batchN, setBatchN] = useState('50');
   const [enrolling, setEnrolling] = useState(false);
 
+  // daily auto enrolment
+  const [auto, setAuto] = useState<AutoStatus | null>(null);
+  const [autoCold, setAutoCold] = useState('30');
+  const [autoHot, setAutoHot] = useState('10');
+  const [savingAuto, setSavingAuto] = useState(false);
+
   // test tab
   const [testTplId, setTestTplId] = useState('');
   const [testTo, setTestTo] = useState('');
@@ -123,6 +134,13 @@ export default function AutomationPanel() {
       supabase.from('email_templates').select('id, name, category, subject, html').eq('workspace_id', workspace.id).order('sort').order('created_at'),
       supabase.rpc('sequence_leads_list', { p_workspace_id: workspace.id, p_limit: 400 }),
     ]);
+    const { data: au } = await supabase.rpc('sequence_auto_status', { p_workspace_id: workspace.id });
+    const a = (Array.isArray(au) ? au[0] : au) as AutoStatus | null;
+    if (a) {
+      setAuto(a);
+      setAutoCold(String(a.cold_per_day || 30));
+      setAutoHot(String(a.hot_per_day || 10));
+    }
     const ov = (o as Seq[]) || [];
     setSeqs(ov);
     setStats(Array.isArray(st) ? (st[0] as Stats) : (st as Stats));
@@ -173,6 +191,19 @@ export default function AutomationPanel() {
     const got = r?.enrolled ?? 0;
     if (got === 0) toast.error('No fresh leads available for that sequence');
     else toast.success(`${got} fresh lead${got === 1 ? '' : 's'} enrolled${r?.reason === 'partial' ? ' — all that were left' : ''}`);
+    await loadAll();
+  };
+
+  const saveAuto = async (active: boolean) => {
+    setSavingAuto(true);
+    const { data, error } = await supabase.rpc('sequence_set_auto_enrol', {
+      p_workspace_id: workspace.id, p_active: active,
+      p_cold: parseInt(autoCold, 10) || 0, p_hot: parseInt(autoHot, 10) || 0,
+    });
+    setSavingAuto(false);
+    if (error) { toast.error(error.message); return; }
+    if (data === 'forbidden') { toast.error('Not allowed'); return; }
+    toast.success(active ? 'Daily top up is on' : 'Daily top up is off');
     await loadAll();
   };
 
@@ -243,6 +274,16 @@ export default function AutomationPanel() {
   const batchSeqObj = seqs.find((s) => s.id === batchSeq);
   const freshFor = batchSeqObj?.audience === 'hot' ? (stats?.fresh_hot ?? 0) : (stats?.fresh_cold ?? 0);
   const testTpl = tplById.get(testTplId);
+  // Enrolling N leads a day does not send N emails a day. Every lead receives
+  // one email per step, so daily volume settles at rate x steps.
+  const coldSteps = seqs.find((x) => x.audience === 'cold')?.steps || 6;
+  const hotSteps = seqs.find((x) => x.audience === 'hot')?.steps || 5;
+  const projected = (parseInt(autoCold, 10) || 0) * coldSteps + (parseInt(autoHot, 10) || 0) * hotSteps;
+  const capToday = auto?.cap_today || 30;
+  const overCap = projected > capToday;
+  const suggestHot = Math.max(0, Math.floor((capToday * 0.25) / hotSteps));
+  const suggestCold = Math.max(0, Math.floor((capToday - suggestHot * hotSteps) / coldSteps));
+
   const capSteps = [30, 60, 120, 180];
   const capIdx = Math.max(0, capSteps.indexOf(stats?.cap_today ?? 30));
   const visibleRows = useMemo(() => {
@@ -367,6 +408,66 @@ export default function AutomationPanel() {
             </div>
             <div className="border-t border-border/60 px-[18px] py-[11px] text-[12px] text-faint">
               {batchSeqObj?.audience === 'hot' ? 'Hot' : 'Cold'} pool · <b className="font-medium text-ink-2">{freshFor} fresh leads available</b> for this sequence
+            </div>
+          </div>
+
+          {/* daily auto enrolment */}
+          <div className="text-[11.5px] font-medium text-faint uppercase tracking-[0.04em] mt-7 mb-2.5 ml-0.5">Top up every day</div>
+          <div className="rounded-[16px] border border-border bg-surface overflow-hidden">
+            <div className="flex items-center gap-3.5 px-[18px] py-4">
+              <div className="flex-1 min-w-0">
+                <div className="text-[14px] font-medium">Enrol fresh leads automatically</div>
+                <div className="text-[12.5px] text-muted mt-[3px]">
+                  {auto?.auto_enrol
+                    ? <>Running daily. {auto.enrolled_today
+                        ? <>Today&rsquo;s batch is already in.</>
+                        : <>Today&rsquo;s batch goes in at the next tick.</>}</>
+                    : <>Off. You are enrolling by hand.</>}
+                </div>
+              </div>
+              <button onClick={() => void saveAuto(!auto?.auto_enrol)} disabled={savingAuto}
+                aria-label={auto?.auto_enrol ? 'Turn off daily top up' : 'Turn on daily top up'}
+                className="relative w-10 h-6 rounded-full flex-shrink-0 transition-colors disabled:opacity-50"
+                style={{ background: auto?.auto_enrol ? '#2F9E68' : '#E2E2E7' }}>
+                <span className="absolute top-[2px] left-[2px] w-5 h-5 rounded-full bg-white shadow transition-transform"
+                  style={{ transform: auto?.auto_enrol ? 'translateX(16px)' : 'none' }} />
+              </button>
+            </div>
+
+            <div className="border-t border-border/60 px-[18px] py-4 flex items-center gap-4 flex-wrap">
+              <label className="flex items-center gap-2.5">
+                <span className="text-[13px] text-muted">Cold per day</span>
+                <input type="number" min={0} value={autoCold} onChange={(e) => setAutoCold(e.target.value)}
+                  className="w-[68px] text-[14px] font-medium text-center border border-border rounded-[9px] py-[7px] bg-surface outline-none focus:border-indigo-400" />
+              </label>
+              <label className="flex items-center gap-2.5">
+                <span className="text-[13px] text-muted">Hot per day</span>
+                <input type="number" min={0} value={autoHot} onChange={(e) => setAutoHot(e.target.value)}
+                  className="w-[68px] text-[14px] font-medium text-center border border-border rounded-[9px] py-[7px] bg-surface outline-none focus:border-indigo-400" />
+              </label>
+              <button onClick={() => void saveAuto(auto?.auto_enrol ?? false)} disabled={savingAuto}
+                className="text-[13px] font-medium px-4 py-2 rounded-full border border-border text-ink-2 hover:bg-surface-2 transition-colors disabled:opacity-40">
+                {savingAuto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save numbers'}
+              </button>
+            </div>
+
+            {/* the arithmetic people get wrong: enrolling N a day does not send
+                N a day, it eventually sends N x the number of steps */}
+            {projected > 0 && (
+              <div className="border-t border-border/60 px-[18px] py-[13px] text-[12.5px] leading-relaxed"
+                style={overCap ? { background: '#FDF0F2', color: '#8E2F42' } : { color: 'hsl(var(--muted))' }}>
+                {overCap
+                  ? <>At these numbers you would settle at roughly <b className="font-semibold">{projected} emails a day</b>, above
+                      today&rsquo;s cap of {auto?.cap_today}. The cap holds, so new leads would queue up and start late.
+                      Try about <b className="font-semibold">{suggestCold} cold</b> and <b className="font-semibold">{suggestHot} hot</b> instead.</>
+                  : <>Settles at roughly <b className="font-semibold text-ink">{projected} emails a day</b> once every stage is running,
+                      inside today&rsquo;s cap of {auto?.cap_today}. Each lead receives one email per step, not one a day.</>}
+              </div>
+            )}
+
+            <div className="border-t border-border/60 px-[18px] py-[11px] text-[12px] text-faint">
+              Fresh pool left: <b className="font-medium text-ink-2">{stats?.fresh_cold ?? 0} cold</b> and{' '}
+              <b className="font-medium text-ink-2">{stats?.fresh_hot ?? 0} hot</b>
             </div>
           </div>
 

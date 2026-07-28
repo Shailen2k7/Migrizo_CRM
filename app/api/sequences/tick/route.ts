@@ -64,6 +64,11 @@ export async function POST(req: Request) {
   }
   const admin = createClient(url, key, { auth: { persistSession: false } });
 
+  // 0 — top up from the fresh pool if auto enrolment is switched on. Runs at
+  // most once per Indian calendar day however often the clock fires.
+  const { data: auto } = await admin.rpc('sequence_auto_enrol');
+  const autoRow = Array.isArray(auto) ? auto[0] : null;
+
   // 1 + 2 — sweep exits, wake sleepers, unwedge.
   const { data: maint } = await admin.rpc('sequence_maintenance');
   await admin.rpc('sequence_unwedge');
@@ -76,7 +81,11 @@ export async function POST(req: Request) {
   const { data: dueRaw } = await admin.rpc('sequence_pick_due', { p_limit: 200 });
   const due = ((dueRaw || []) as DueRow[]);
   if (due.length === 0) {
-    return NextResponse.json({ ok: true, sent: 0, ...(Array.isArray(maint) ? maint[0] : {}) });
+    return NextResponse.json({
+      ok: true, sent: 0,
+      ...(Array.isArray(maint) ? maint[0] : {}),
+      ...(autoRow ? { auto_cold: autoRow.cold_added, auto_hot: autoRow.hot_added } : {}),
+    });
   }
 
   // Remaining cap per workspace = daily cap − already sent today.
@@ -140,5 +149,6 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true, sent, failed, capped,
     ...(Array.isArray(maint) && maint[0] ? { exited: maint[0].exited, woken: maint[0].woken } : {}),
+    ...(autoRow ? { auto_cold: autoRow.cold_added, auto_hot: autoRow.hot_added } : {}),
   });
 }

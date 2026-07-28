@@ -1,106 +1,69 @@
 ════════════════════════════════════════════════════════════════════
-  MIGRIZO — EMAIL SEQUENCE AUTOMATION · SETUP (about 10 minutes)
+  AUTOMATIC DAILY ENROLMENT
 ════════════════════════════════════════════════════════════════════
 
-Do the steps in this order. Nothing sends until you enrol a batch,
-so deploying is completely safe.
+WHAT IT DOES
 
+A toggle and two numbers on the Automation tab: cold per day and hot
+per day. Switch it on and the system enrols that many fresh leads
+every day by itself, oldest untouched first, never repeating anyone.
+You stop pressing Enrol.
 
-──────────────────────────────────────────────
-STEP 1 · SUPABASE — run two SQL files
-──────────────────────────────────────────────
-Supabase → SQL Editor → New query.
+Hot is a separate number on purpose. Hot leads are scarcer and their
+sequence is shorter, five emails over twenty days against six over
+thirty. One shared number would either burn through the hot pool or
+starve the cold one.
 
-  1a. Paste ALL of  supabase/migrations/025_lead_engine_v2.sql  → Run.
-      (This is your live junk-lead fix, now committed to the repo so
-       nothing can silently re-break it. Safe to re-run.)
-
-  1b. Paste ALL of  supabase/migrations/026_sequences.sql  → Run.
-      At the bottom you should see a small confirmation table with
-      "cron job = 1". That means the 30-minute clock is live.
-
-  1c. Verify all four clocks in one line:
-
-        select jobname, schedule, active from cron.job;
-
-      You should see, all active:
-        migrizo-campaign-drain      * * * * *
-        migrizo-meeting-reminders   * * * * *
-        migrizo-push-dispatch       * * * * *
-        migrizo-sequences-tick      */30 * * * *
-
+It runs once per Indian calendar day, driven by the same thirty
+minute clock that sends the emails. If the clock misses a run the
+next one catches up. If it fires ten times in an hour, only the
+first enrols anything.
 
 ──────────────────────────────────────────────
-STEP 2 · GITHUB — one commit, two kinds of files
+THE NUMBER THAT SURPRISES PEOPLE
 ──────────────────────────────────────────────
-⚠ Four files live in BRAND-NEW folders. Drag-drop silently skips new
-  nested folders, so these four must be created by typing the path:
+Enrolling 50 leads a day does NOT send 50 emails a day.
 
-  GitHub → your repo → "Add file" → "Create new file", then type the
-  full path (the / creates the folders), paste the content, commit:
+Every lead receives one email per step. The cold sequence has six
+steps, so at a steady rate you settle at rate x 6. Fifty cold a day
+becomes about 300 emails a day once every stage is running.
 
-    app/(app)/automation/page.tsx
-    app/api/sequences/tick/route.ts
-    app/api/sequences/test/route.ts
-    app/api/email/bounce/route.ts
+Your cap starts at 30 and ramps to 180 over four weeks, and the cap
+always wins, so numbers set too high just make new leads queue up
+and start late.
 
-  These five go into folders that already exist, so normal drag-drop
-  (or open-file → edit → paste) works:
-
-    lib/supabase/middleware.ts          (replace)
-    components/sidebar.tsx              (replace)
-    app/api/queue/outcome/route.ts      (replace — fixes the broken
-                                         "Interested" button)
-    supabase/migrations/025_lead_engine_v2.sql   (new file, old folder)
-    supabase/migrations/026_sequences.sql        (new file, old folder)
-
-  Netlify builds automatically. Wait for the green deploy.
-
+The card does this arithmetic for you and turns red with a suggested
+pair of numbers if you go over. Start around 20 cold and 5 hot while
+the cap is still low, then raise both as it ramps.
 
 ──────────────────────────────────────────────
-STEP 3 · RESEND — bounce webhook (2 minutes, once)
+STEP 1 · SUPABASE
 ──────────────────────────────────────────────
-Resend dashboard → Webhooks → Add webhook:
+    031_auto_enrol.sql
 
-  URL:     https://crm.migrizo.com/api/email/bounce?key=YOUR_INBOUND_WEBHOOK_SECRET
-           (use the exact value of INBOUND_WEBHOOK_SECRET from your
-            Netlify environment variables)
-  Events:  email.bounced, email.complained
-
-From then on, any bounce or spam complaint suppresses the address
-instantly and the next tick exits the lead as Do Not Contact.
-
+Adds the settings and the daily job. Safe to run twice.
 
 ──────────────────────────────────────────────
-STEP 4 · SWITCH IT ON
+STEP 2 · GITHUB  (2 files, one commit)
 ──────────────────────────────────────────────
-  1. Open the CRM → new "Automation" item in the sidebar.
-     The three sequences (Cold nurture · Hot follow-up ·
-     Re-engagement) create themselves on first open, including the
-     two new cold emails and the three re-engagement emails.
+    components/automation-panel.tsx      replace
+    app/api/sequences/tick/route.ts      replace
 
-  2. Test tab → send yourself Cold 1 → check it lands in your inbox.
-
-  3. Sequences tab → "Enrol a batch" → start with 30–50 cold leads.
-
-  4. Done. The clock does everything else: sends at the right day
-     gaps, exits anyone who replies / books / converts /
-     unsubscribes / bounces / turns junk, sleeps finished leads,
-     runs ONE re-engagement cycle months later, then retires them
-     forever. The daily cap ramps 30 → 60 → 120 → 180 by week so
-     the domain warms safely.
-
+Both folders already exist, so drag and drop works.
 
 ──────────────────────────────────────────────
-NOTES
+STEP 3 · SWITCH IT ON
 ──────────────────────────────────────────────
-• Nobody can ever be in two sequences, and nobody can ever receive
-  the same email twice — both are enforced by the database itself,
-  not by app code.
-• Only stage Cold / Hot leads with an email are ever touched, and
-  the whitelist is re-checked at the moment of every send.
-• Stopping an old one-off campaign now permanently cancels its
-  queued recipients too (previous behaviour left them queued).
-• DMARC housekeeping: make sure dmarc@migrizo.com exists or
-  forwards somewhere (Resend can't host mailboxes). After ~3 weeks
-  of clean reports, change the record's  p=none  to  p=quarantine.
+Campaigns, Automation tab, "Top up every day". Set your two numbers,
+press Save numbers, then flip the toggle. First batch goes in at the
+next tick, within thirty minutes.
+
+──────────────────────────────────────────────
+TESTED
+──────────────────────────────────────────────
+Enrols exactly the configured numbers; a second run the same day
+adds nothing; the next day adds a fresh batch; no lead is ever
+enrolled twice; junk and suppressed leads are never touched; asking
+for more leads than exist drains the pool without erroring; running
+against an empty pool is harmless; the over-cap warning fires at the
+right threshold.
