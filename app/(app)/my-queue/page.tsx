@@ -97,7 +97,10 @@ export default function MyQueuePage() {
     let cancelled = false;
     (async () => {
       const supabase = createClient();
-      await supabase.rpc('generate_daily_queue', { p_workspace_id: workspace.id });
+      // Build today's queue if it doesn't exist yet. Surface any problem
+      // instead of silently showing an empty screen.
+      const { error: genErr } = await supabase.rpc('generate_daily_queue', { p_workspace_id: workspace.id });
+      if (genErr) toast.error(`Could not build today's queue: ${genErr.message}`);
       if (cancelled) return;
       await load();
       // Scoring runs in the background — the queue is usable without it.
@@ -264,7 +267,7 @@ export default function MyQueuePage() {
           <Inbox className="w-8 h-8 mx-auto text-faint mb-3" />
           <div className="text-[14px] font-semibold">{total === 0 ? 'No queue for today' : 'All done — queue cleared'}</div>
           <div className="text-[12.5px] text-muted mt-1">
-            {total === 0 ? 'An admin needs to set your daily quota in Lead Engine settings.' : 'Everything assigned to you today has been worked.'}
+            {total === 0 ? 'No leads have been assigned to you today. An admin needs to set your daily quota in Lead Engine and press Generate.' : 'Everything assigned to you today has been worked.'}
           </div>
         </div>
       ) : (

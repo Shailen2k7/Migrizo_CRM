@@ -35,14 +35,26 @@ export default function LeadEnginePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [diag, setDiag] = useState<{ check_name: string; status: string; detail: string }[]>([]);
+  const [today, setToday] = useState<Record<string, { total: number; pending: number; done: number; manual: number }>>({});
+  const [topUp, setTopUp] = useState<Record<string, string>>({});
+  const [busyUser, setBusyUser] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!isAdmin) return;
     const supabase = createClient();
-    const [{ data: r }, { data: h }] = await Promise.all([
+    const [{ data: r }, { data: h }, { data: dg }, { data: tq }] = await Promise.all([
       supabase.from('lead_queue_rules').select('*').eq('workspace_id', workspace.id),
       supabase.rpc('lead_pool_health', { p_workspace_id: workspace.id }),
+      supabase.rpc('queue_diagnose', { p_workspace_id: workspace.id }),
+      supabase.rpc('queue_today_by_person', { p_workspace_id: workspace.id }),
     ]);
+    setDiag((dg as { check_name: string; status: string; detail: string }[]) || []);
+    const tmap: Record<string, { total: number; pending: number; done: number; manual: number }> = {};
+    for (const row of (tq as { user_id: string; total: number; pending: number; done: number; manual: number }[]) || []) {
+      tmap[row.user_id] = { total: row.total, pending: row.pending, done: row.done, manual: row.manual };
+    }
+    setToday(tmap);
     const map: Record<string, Rule> = {};
     for (const row of (r as Rule[]) || []) map[row.user_id] = row;
     setRules(map);
@@ -63,12 +75,88 @@ export default function LeadEnginePage() {
     setSaving(null);
   };
 
+  // Give one person N more leads right now, taking the next oldest-untouched.
+  const assignMore = async (userId: string) => {
+    const n = parseInt(topUp[userId] || '', 10);
+    if (!n || n < 1) { toast.error('Enter how many leads to assign'); return; }
+    setBusyUser(userId);
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc('assign_leads_manual', {
+      p_workspace_id: workspace.id, p_user_id: userId, p_count: n,
+    });
+    if (error) toast.error(error.message);
+    else {
+      const res = Array.isArray(data) ? data[0] : data;
+      const got = res?.assigned ?? 0;
+      if (got === 0) toast.error('No leads available right now — every eligible lead is already assigned today.');
+      else if (res?.reason === 'partial') toast.success(`Assigned ${got}. That was every lead still available today.`);
+      else toast.success(`Assigned ${got} leads`);
+    }
+    setTopUp((p) => ({ ...p, [userId]: '' }));
+    await load();
+    setBusyUser(null);
+  };
+
+  // Hand leads back to the pool. Untouched ones simply release; worked ones are
+  // rewound to the exact state captured when they were assigned.
+  const giveBack = async (userId: string, name: string, includeWorked: boolean) => {
+    const t = today[userId];
+    if (!t || t.total === 0) { toast.error('Nothing assigned today'); return; }
+    if (includeWorked) {
+      if (!confirm(`Undo everything for ${name}?\n\nAll ${t.total} leads return to the pool, including the ${t.done} already worked. Those are rewound to exactly how they were before being assigned, so the pool is left untouched.\n\nUse this for testing.`)) return;
+    } else if (!confirm(`Return ${t.pending} unworked leads from ${name} to the pool?\n\nAnything already worked is left alone.`)) return;
+
+    setBusyUser(userId);
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc('return_queue', {
+      p_workspace_id: workspace.id, p_user_id: userId, p_include_worked: includeWorked,
+    });
+    if (error) toast.error(error.message);
+    else {
+      const res = Array.isArray(data) ? data[0] : data;
+      const rel = res?.released ?? 0, rew = res?.rewound ?? 0;
+      toast.success(rew > 0 ? `${rel + rew} leads returned, ${rew} rewound to their original state` : `${rel} leads returned to the pool`);
+    }
+    await load();
+    setBusyUser(null);
+  };
+
   const runNow = async () => {
     setGenerating(true);
     const supabase = createClient();
-    const { data, error } = await supabase.rpc('generate_daily_queue', { p_workspace_id: workspace.id });
+    const { data, error } = await supabase.rpc('generate_daily_queue_v2', { p_workspace_id: workspace.id });
+    if (error) {
+      toast.error(error.message);
+    } else {
+      const res = Array.isArray(data) ? data[0] : data;
+      const made = res?.created ?? 0;
+      const why = res?.reason as string | undefined;
+      if (made > 0) {
+        toast.success(`${made} leads assigned for today`);
+      } else if (why === 'no_quotas') {
+        toast.error('Nobody has a daily quota yet. Set a number below and switch them Active.');
+      } else if (why === 'no_cold_leads') {
+        toast.error('No leads currently qualify as cold, so there is nothing to assign.');
+      } else {
+        toast('Today\u2019s queues were already generated. Use Rebuild to start them over.');
+      }
+    }
+    await load();
+    setGenerating(false);
+  };
+
+  // Clears today's UNWORKED assignments and regenerates — for when quotas change
+  // mid-day. Anything already worked is left alone.
+  const rebuild = async () => {
+    if (!confirm('Rebuild today\u2019s queues?\n\nUnworked assignments for today are cleared and handed out again. Leads already worked are untouched.')) return;
+    setGenerating(true);
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc('regenerate_today', { p_workspace_id: workspace.id });
     if (error) toast.error(error.message);
-    else toast.success(`${data ?? 0} leads assigned for today`);
+    else {
+      const res = Array.isArray(data) ? data[0] : data;
+      toast.success(`${res?.created ?? 0} leads assigned for today`);
+    }
     await load();
     setGenerating(false);
   };
@@ -99,17 +187,49 @@ export default function LeadEnginePage() {
           </h1>
           <p className="text-[13px] text-muted mt-1">Cold leads are handed out every morning, oldest-untouched first, so none are forgotten.</p>
         </div>
-        <button onClick={runNow} disabled={generating}
-          className="text-[12.5px] font-bold px-4 py-2.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
-          {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          Generate today&rsquo;s queues
-        </button>
+        <div className="flex gap-2">
+          <button onClick={rebuild} disabled={generating}
+            className="text-[12.5px] font-bold px-4 py-2.5 rounded-xl border border-border text-ink-2 hover:bg-surface-2 disabled:opacity-50">
+            Rebuild
+          </button>
+          <button onClick={runNow} disabled={generating}
+            className="text-[12.5px] font-bold px-4 py-2.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Generate today&rsquo;s queues
+          </button>
+        </div>
       </div>
 
       {loading ? (
         <div className="py-16 text-center text-[13px] text-muted"><Loader2 className="w-5 h-5 animate-spin inline mr-2" />Loading…</div>
       ) : (
         <>
+          {/* System check — surfaces anything preventing assignment */}
+          {diag.length > 0 && (
+            <div className="mt-5 rounded-[15px] border overflow-hidden"
+              style={diag.some((d) => d.status === 'BLOCKED')
+                ? { borderColor: '#FECDD3', background: '#FFF8F9' }
+                : { borderColor: 'hsl(var(--border))', background: 'hsl(var(--surface))' }}>
+              <div className="px-4 py-3 text-[11px] font-extrabold tracking-[0.09em] uppercase"
+                style={{ color: diag.some((d) => d.status === 'BLOCKED') ? '#E11D48' : 'hsl(var(--faint))' }}>
+                {diag.some((d) => d.status === 'BLOCKED') ? 'Action needed — leads are not being assigned' : 'System check — all good'}
+              </div>
+              {diag.map((d) => (
+                <div key={d.check_name} className="px-4 py-3 border-t flex gap-3" style={{ borderTopColor: 'hsl(var(--border))' }}>
+                  <span className="text-[9.5px] font-extrabold px-2 py-1 rounded-md h-fit whitespace-nowrap"
+                    style={d.status === 'OK' ? { background: '#ECFDF5', color: '#059669' }
+                      : d.status === 'EMPTY' ? { background: '#FFF8EC', color: '#B45309' }
+                      : { background: '#FFF1F3', color: '#E11D48' }}>
+                    {d.status}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[12.5px] font-semibold">{d.check_name}</div>
+                    <div className="text-[12px] text-muted mt-0.5 leading-relaxed">{d.detail}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {/* health */}
           <div className="text-[11px] font-extrabold tracking-[0.09em] uppercase text-faint mt-6 mb-3">Pool health</div>
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}>
@@ -154,6 +274,55 @@ export default function LeadEnginePage() {
                 </span>
               ))}
             </div>
+          </div>
+
+          {/* today's queues — assign more / hand back */}
+          <div className="text-[11px] font-extrabold tracking-[0.09em] uppercase text-faint mt-6 mb-3">Today&rsquo;s queues</div>
+          <div className="space-y-2.5">
+            {activeMembers.map((m) => {
+              const t = today[m.user_id] || { total: 0, pending: 0, done: 0, manual: 0 };
+              const busy = busyUser === m.user_id;
+              return (
+                <div key={m.user_id} className="rounded-[15px] border border-border bg-surface p-4">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="av flex-shrink-0" style={{ background: avatarColor(m.user_id), width: 34, height: 34, borderRadius: 10, fontSize: 12 }}>{initials(m.full_name)}</div>
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-semibold">{m.full_name}</div>
+                      <div className="text-[11.5px] text-faint mt-0.5">
+                        {t.total === 0 ? 'Nothing assigned today'
+                          : <>{t.total} assigned · <b className="text-ink-2">{t.pending} left</b> · {t.done} worked{t.manual > 0 && <> · {t.manual} added by hand</>}</>}
+                      </div>
+                    </div>
+                    <div className="ml-auto flex items-center gap-2 flex-wrap">
+                      <input type="number" min={1} max={500} placeholder="30" value={topUp[m.user_id] || ''}
+                        onChange={(e) => setTopUp((p) => ({ ...p, [m.user_id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') void assignMore(m.user_id); }}
+                        disabled={busy}
+                        className="w-[70px] text-[13.5px] font-semibold text-center py-2 border border-border rounded-lg bg-surface outline-none focus:border-indigo-400 disabled:opacity-50" />
+                      <button onClick={() => void assignMore(m.user_id)} disabled={busy}
+                        className="text-[12.5px] font-bold px-3.5 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
+                        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Assign'}
+                      </button>
+                      <button onClick={() => void giveBack(m.user_id, m.full_name, false)} disabled={busy || t.pending === 0}
+                        title="Return leads they haven't worked yet"
+                        className="text-[12.5px] font-bold px-3.5 py-2 rounded-lg border border-border text-ink-2 hover:bg-surface-2 disabled:opacity-40">
+                        Return unworked
+                      </button>
+                      <button onClick={() => void giveBack(m.user_id, m.full_name, true)} disabled={busy || t.total === 0}
+                        title="Undo everything, including worked leads — for testing"
+                        className="text-[12.5px] font-bold px-3.5 py-2 rounded-lg border border-border text-rose-600 hover:bg-rose-50 hover:border-rose-200 disabled:opacity-40">
+                        Undo all
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-2.5 text-[11.5px] text-muted leading-relaxed px-1">
+            <b className="text-ink-2">Assign</b> hands over the next oldest-untouched leads, skipping anything already given out today.
+            <b className="text-ink-2"> Return unworked</b> releases only leads nobody has touched.
+            <b className="text-ink-2"> Undo all</b> also rewinds worked leads to exactly how they were before being assigned, so a test run leaves the pool untouched.
           </div>
 
           {/* rules */}
