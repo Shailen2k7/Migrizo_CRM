@@ -21,17 +21,18 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/components/shared/app-provider';
 import { createClient } from '@/lib/supabase/client';
 import { wrapCampaignEmail } from '@/lib/email/campaign-shell';
-import { plainToHtml, htmlToPlain } from '@/lib/email/plain-text';
+import RichEmailEditor, { sanitizeEmailHtml } from '@/components/rich-email-editor';
+import AutomationPanel from '@/components/automation-panel';
 import {
   Send, Eye, CheckCircle2, Loader2, Plus, Trash2, ArrowLeft, X,
-  Megaphone, FileText, History, ShieldCheck, Pause, Play, Square, Pencil, Users,
+  Megaphone, FileText, History, ShieldCheck, Pause, Play, Square, Pencil, Users, Workflow,
 } from 'lucide-react';
 import { cn, initials, avatarColor } from '@/lib/utils';
 import { toast } from 'sonner';
 
 interface Tpl { id: string; name: string; track: string; category: string; sort: number; is_seeded: boolean; subject: string; html: string }
 interface Camp { id: string; name: string; subject: string; status: string; total: number; sent: number; failed: number; created_at: string }
-type Tab = 'send' | 'templates' | 'history' | 'access';
+type Tab = 'send' | 'automation' | 'templates' | 'history' | 'access';
 type SendStep = 'recipients' | 'template' | 'edit' | 'review';
 
 const CATEGORY_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -124,7 +125,7 @@ export default function CampaignCenterPage() {
 
   // ── template ops ──
   async function saveTpl() {
-    const body = plainToHtml(plainBody);
+    const body = sanitizeEmailHtml(plainBody);
     if (!editing?.name?.trim() || !editing?.subject?.trim() || !body.trim()) {
       toast.error('Name, subject and content are all required'); return;
     }
@@ -191,7 +192,7 @@ export default function CampaignCenterPage() {
         body: JSON.stringify({
           name: tpls.find((t) => t.id === srcId)?.name || subject,
           templateKey: srcId || 'custom',
-          subject, html: plainToHtml(content), leadIds: recipients.map((r) => r.id),
+          subject, html: sanitizeEmailHtml(content), leadIds: recipients.map((r) => r.id),
         }),
       });
       const data = await res.json();
@@ -203,9 +204,9 @@ export default function CampaignCenterPage() {
     setSending(false);
   }
 
-  // `c` is the plain text the person typed; convert before framing it.
+  // `c` is editor HTML; sanitise to the safe tag set before framing it.
   const previewHtml = (c: string) => wrapCampaignEmail(
-    plainToHtml(c).replace(/\{\{\s*name\s*\}\}/gi, previewName || 'there'), subject
+    sanitizeEmailHtml(c).replace(/\{\{\s*name\s*\}\}/gi, previewName || 'there'), subject
   ).replace(/\{\{\s*UNSUB_URL\s*\}\}/gi, '#');
 
   // ── gates ──
@@ -239,6 +240,7 @@ export default function CampaignCenterPage() {
 
   const TABS: { key: Tab; label: string; Icon: typeof Send; ownerOnly?: boolean }[] = [
     { key: 'send', label: 'Send', Icon: Megaphone },
+    { key: 'automation', label: 'Automation', Icon: Workflow },
     { key: 'templates', label: 'Templates', Icon: FileText },
     { key: 'history', label: 'History', Icon: History },
     { key: 'access', label: 'Access', Icon: ShieldCheck, ownerOnly: true },
@@ -250,7 +252,7 @@ export default function CampaignCenterPage() {
         <span className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center"><Megaphone className="w-4 h-4" /></span>
         Campaign Center
       </h1>
-      <p className="text-[13px] text-muted mt-1">Global Talent Visa email campaigns — every send carries the Migrizo frame, Shailen&rsquo;s signature, a booking CTA and one-click unsubscribe.</p>
+      <p className="text-[13px] text-muted mt-1">One off sends and self running sequences, in one place. Every email carries the same frame, signature, booking link and one click unsubscribe.</p>
 
       {/* tabs */}
       <div className="flex gap-1.5 mt-5 border-b border-border pb-0 flex-wrap">
@@ -262,6 +264,9 @@ export default function CampaignCenterPage() {
           </button>
         ))}
       </div>
+
+      {/* ════ AUTOMATION ════ */}
+      {tab === 'automation' && <AutomationPanel />}
 
       {/* ════ SEND ════ */}
       {tab === 'send' && (
@@ -313,7 +318,7 @@ export default function CampaignCenterPage() {
                 {tpls.map((t) => {
                   const m = CATEGORY_META[t.category] || CATEGORY_META.custom;
                   return (
-                    <button key={t.id} onClick={() => { setSrcId(t.id); setSubject(t.subject); setContent(htmlToPlain(t.html)); setStep('edit'); }}
+                    <button key={t.id} onClick={() => { setSrcId(t.id); setSubject(t.subject); setContent(t.html); setStep('edit'); }}
                       className="text-left rounded-[15px] border border-border bg-surface p-4 hover:-translate-y-0.5 hover:shadow-lg hover:border-indigo-200 transition-all">
                       <span className="text-[9px] font-extrabold px-2 py-1 rounded-md" style={{ background: m.bg, color: m.color }}>{m.label}</span>
                       <div className="text-[13.5px] font-bold mt-2.5 leading-snug">{t.name}</div>
@@ -335,15 +340,11 @@ export default function CampaignCenterPage() {
               <input value={subject} onChange={(e) => setSubject(e.target.value)}
                 className="w-full text-[13.5px] font-semibold border border-border rounded-xl px-3.5 py-2.5 bg-surface outline-none focus:border-indigo-400 mt-1.5 mb-4" />
               <label className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-faint">Message</label>
-              <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={18}
-                placeholder={'Hi {{name}},\n\nWrite your email here, just like a normal message.'}
-                className="w-full text-[13.5px] border border-border rounded-xl px-3.5 py-3 bg-surface outline-none focus:border-indigo-400 mt-1.5"
-                style={{ lineHeight: 1.75 }} />
+              <div className="mt-1.5">
+                <RichEmailEditor value={content} onChange={setContent} minHeight={300} />
+              </div>
               <div className="text-[11.5px] text-muted mt-2 leading-relaxed rounded-lg bg-surface-2 px-3 py-2.5">
-                <b className="font-semibold text-ink-2">Blank line</b> starts a new paragraph.{' '}
-                <b className="font-semibold text-ink-2">*Asterisks*</b> make text bold.{' '}
-                <b className="font-semibold text-ink-2">{'{{name}}'}</b> becomes the person&rsquo;s first name.<br/>
-                Signature, booking link and unsubscribe are added automatically.
+                Type <b className="font-semibold text-ink-2">{'{{name}}'}</b> anywhere and it becomes the person&rsquo;s first name.
               </div>
               {/\[[A-Z]/.test(content) && (
                 <div className="text-[12px] mt-2 rounded-lg px-3 py-2.5" style={{ background: '#FDF0F2', color: '#C9455C' }}>
@@ -389,7 +390,7 @@ export default function CampaignCenterPage() {
         <div className="mt-5">
           <div className="flex items-center justify-between mb-4">
             <span className="text-[12.5px] text-muted">Everything is editable — name, subject and content. The email frame stays fixed so the format never drifts.</span>
-            <button onClick={() => { setEditing({ name: '', subject: '', html: '' }); setPlainBody('Hi {{name}},\n\n'); setEditorOpen(true); setTplPreview(false); }} className="btn btn-primary"><Plus className="w-4 h-4" /> New template</button>
+            <button onClick={() => { setEditing({ name: '', subject: '', html: '' }); setPlainBody('<p>Hi {{name}},</p><p><br/></p>'); setEditorOpen(true); setTplPreview(false); }} className="btn btn-primary"><Plus className="w-4 h-4" /> New template</button>
           </div>
           {(['cold', 'hot', 'custom'] as const).map((cat) => {
             const list = tpls.filter((t) => (t.category || 'custom') === cat);
@@ -404,7 +405,7 @@ export default function CampaignCenterPage() {
                       <div className="text-[13.5px] font-bold leading-snug">{t.name}</div>
                       <div className="text-[11.5px] text-faint mt-1.5 line-clamp-2">{t.subject}</div>
                       <div className="flex gap-2 mt-3.5">
-                        <button onClick={() => { setEditing({ ...t }); setPlainBody(htmlToPlain(t.html)); setEditorOpen(true); setTplPreview(false); }}
+                        <button onClick={() => { setEditing({ ...t }); setPlainBody(t.html); setEditorOpen(true); setTplPreview(false); }}
                           className="flex-1 text-[11.5px] font-bold py-2 rounded-lg border border-border hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
                           <Pencil className="w-3 h-3 inline mr-1" />Edit
                         </button>
@@ -527,22 +528,18 @@ export default function CampaignCenterPage() {
                   <input value={editing.subject || ''} onChange={(e) => setEditing((p) => ({ ...p!, subject: e.target.value }))}
                     className="w-full text-[13.5px] border border-border rounded-xl px-3.5 py-2.5 bg-surface outline-none focus:border-indigo-400 mt-1.5 mb-4" />
                   <label className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-faint">Message</label>
-                  <textarea value={plainBody} onChange={(e) => setPlainBody(e.target.value)} rows={20}
-                    placeholder={'Hi {{name}},\n\nWrite your email here, just like a normal message.\n\nLeave a blank line between paragraphs.'}
-                    className="w-full text-[13.5px] border border-border rounded-xl px-3.5 py-3 bg-surface outline-none focus:border-indigo-400 mt-1.5"
-                    style={{ lineHeight: 1.75 }} />
+                  <div className="mt-1.5">
+                    <RichEmailEditor value={plainBody} onChange={setPlainBody} minHeight={320} />
+                  </div>
                   <div className="text-[11.5px] text-muted mt-2 leading-relaxed rounded-lg bg-surface-2 px-3 py-2.5">
-                    Write plain text. Three things are worth knowing:<br/>
-                    <b className="font-semibold text-ink-2">Blank line</b> starts a new paragraph.{' '}
-                    <b className="font-semibold text-ink-2">*Asterisks*</b> make text bold.{' '}
-                    <b className="font-semibold text-ink-2">{'{{name}}'}</b> becomes the person&rsquo;s first name.<br/>
-                    Your signature, booking link and unsubscribe are added automatically. Do not type them.
+                    Type <b className="font-semibold text-ink-2">{'{{name}}'}</b> anywhere and it becomes the person&rsquo;s first name.
+                    The signature block below the message is added to every email automatically, so there is no need to type it.
                   </div>
                 </>
               ) : (
                 <div className="rounded-xl border border-border overflow-hidden bg-white" style={{ height: '100%', minHeight: 480 }}>
                   <iframe title="tpl-preview" className="w-full h-full"
-                    srcDoc={wrapCampaignEmail(plainToHtml(plainBody).replace(/\{\{\s*name\s*\}\}/gi, 'Rahul'), editing.subject || '').replace(/\{\{\s*UNSUB_URL\s*\}\}/gi, '#')}
+                    srcDoc={wrapCampaignEmail(sanitizeEmailHtml(plainBody).replace(/\{\{\s*name\s*\}\}/gi, 'Rahul'), editing.subject || '').replace(/\{\{\s*UNSUB_URL\s*\}\}/gi, '#')}
                     sandbox="" />
                 </div>
               )}
