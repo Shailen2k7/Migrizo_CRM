@@ -341,11 +341,9 @@ export default function CampaignCenterPage() {
                 className="w-full text-[13.5px] font-semibold border border-border rounded-xl px-3.5 py-2.5 bg-surface outline-none focus:border-indigo-400 mt-1.5 mb-4" />
               <label className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-faint">Message</label>
               <div className="mt-1.5">
-                <RichEmailEditor value={content} onChange={setContent} minHeight={300} />
+                <RichEmailEditor value={content} onChange={setContent} minHeight={440} />
               </div>
-              <div className="text-[11.5px] text-muted mt-2 leading-relaxed rounded-lg bg-surface-2 px-3 py-2.5">
-                Type <b className="font-semibold text-ink-2">{'{{name}}'}</b> anywhere and it becomes the person&rsquo;s first name.
-              </div>
+
               {/\[[A-Z]/.test(content) && (
                 <div className="text-[12px] mt-2 rounded-lg px-3 py-2.5" style={{ background: '#FDF0F2', color: '#C9455C' }}>
                   This message still contains something in [SQUARE BRACKETS]. Replace it before sending.
@@ -529,12 +527,9 @@ export default function CampaignCenterPage() {
                     className="w-full text-[13.5px] border border-border rounded-xl px-3.5 py-2.5 bg-surface outline-none focus:border-indigo-400 mt-1.5 mb-4" />
                   <label className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-faint">Message</label>
                   <div className="mt-1.5">
-                    <RichEmailEditor value={plainBody} onChange={setPlainBody} minHeight={320} />
+                    <RichEmailEditor value={plainBody} onChange={setPlainBody} minHeight={460} />
                   </div>
-                  <div className="text-[11.5px] text-muted mt-2 leading-relaxed rounded-lg bg-surface-2 px-3 py-2.5">
-                    Type <b className="font-semibold text-ink-2">{'{{name}}'}</b> anywhere and it becomes the person&rsquo;s first name.
-                    The signature block below the message is added to every email automatically, so there is no need to type it.
-                  </div>
+
                 </>
               ) : (
                 <div className="rounded-xl border border-border overflow-hidden bg-white" style={{ height: '100%', minHeight: 480 }}>

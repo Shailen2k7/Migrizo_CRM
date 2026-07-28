@@ -12,9 +12,9 @@
 //   - Typing a URL and pressing space or enter turns it into a real link
 //   - Pasting from Word, Docs or a webpage strips their formatting, which is
 //     the single biggest cause of broken-looking emails
-//   - The signature, booking link and unsubscribe are shown underneath, exactly
-//     as the customer sees them, but locked. They come from the shared frame,
-//     so editing them here would silently change one template and not the rest.
+//   - The ENTIRE email is editable, signature and footer included. Nothing is
+//     injected behind your back except an unsubscribe line, and only if the
+//     template does not already contain one.
 //   - Output is sanitised down to a small tag set that every mail client
 //     renders the same way
 // =============================================================================
@@ -24,8 +24,6 @@ import {
   Bold, Italic, Underline, List, ListOrdered, Link2, Heading, Eraser, Undo2, Redo2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-const BOOKING = 'https://crm.migrizo.com/book/shailen';
 
 /** Tags a mail client can be trusted with. Everything else is unwrapped. */
 const ALLOWED = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'UL', 'OL', 'LI', 'A', 'H3']);
@@ -58,7 +56,8 @@ export function sanitizeEmailHtml(html: string): string {
       if (child.tagName === 'A') {
         const href = child.getAttribute('href') || '';
         // Only real web links and mailto survive. No javascript: anything.
-        if (!/^(https?:\/\/|mailto:)/i.test(href)) {
+        // {{UNSUB_URL}} is a merge token replaced at send time, so it must survive.
+        if (!/^(https?:\/\/|mailto:)/i.test(href) && !/\{\{\s*UNSUB_URL\s*\}\}/i.test(href)) {
           const parent = child.parentNode;
           if (parent) {
             while (child.firstChild) parent.insertBefore(child.firstChild, child);
@@ -244,33 +243,6 @@ export default function RichEmailEditor({ value, onChange, minHeight = 340 }: Pr
           fontSize: 15, lineHeight: 1.7, color: '#222222',
         }}
       />
-
-      {/* Locked. This is the shared frame, identical on every email. */}
-      <div className="px-5 pt-1 pb-5 select-none" style={{ background: '#FAFAFB' }}>
-        <div className="text-[10px] font-bold uppercase tracking-[0.07em] text-faint mb-2.5 pt-3 border-t border-border">
-          Added automatically to every email
-        </div>
-        <div style={{
-          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif",
-          fontSize: 15, lineHeight: 1.7, color: '#555',
-        }}>
-          <p style={{ margin: '0 0 15px' }}>
-            You can book a time with me here:<br />
-            <span style={{ color: '#1A4FBF' }}>{BOOKING}</span>
-          </p>
-          <p style={{ margin: '0 0 15px' }}>
-            Warm regards,<br />
-            Shailen Pathak<br />
-            Lead Consultant, Global Talent Visa<br />
-            Migrizo<br />
-            WhatsApp +44 7887 348822
-          </p>
-          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: '#999' }}>
-            Migrizo Ventures Pvt Ltd. &middot; www.migrizo.com &middot; info@migrizo.com<br />
-            You received this because you enquired with Migrizo about the UK Global Talent Visa. Unsubscribe
-          </p>
-        </div>
-      </div>
 
       <style jsx global>{`
         .email-body p { margin: 0 0 15px; }
