@@ -51,6 +51,8 @@ export function wrapCampaignEmail(contentHtml: string, preheader: string): strin
   li{margin-bottom:6px;}
   a{color:${LINK};}
   b,strong{font-weight:600;}
+  hr{border:none;border-top:1px solid #E6E6EA;margin:22px 0;}
+  img{max-width:100%;height:auto;}
 </style></head>
 <body>
   <span style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(preheader)}</span>
