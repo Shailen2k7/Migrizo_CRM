@@ -17,7 +17,8 @@ const REMINDER_OFFSETS: { kind: ReminderKind; minutes: number }[] = [
   { kind: 'h1', minutes: -60 },
   { kind: 'm15', minutes: -15 },
   { kind: 'start', minutes: 0 },
-  { kind: 'followup', minutes: 10 },
+  // NOTE: no post-call 'followup' email. Calls are often taken on WhatsApp
+  // rather than the Meet link, so a "we missed you" note would be wrong.
 ];
 
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {

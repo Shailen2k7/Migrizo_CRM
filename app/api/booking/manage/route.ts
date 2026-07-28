@@ -72,9 +72,10 @@ export async function POST(req: Request) {
     await db.from('meetings').update({ starts_at: starts.toISOString(), ends_at: ends.toISOString(), updated_at: new Date().toISOString() }).eq('id', m.id);
     // re-queue reminders for the new time
     await db.from('meeting_reminders').update({ status: 'skipped' }).eq('meeting_id', m.id).eq('status', 'queued');
-    const OFF: { kind: 'h24' | 'h3' | 'h1' | 'm15' | 'start' | 'followup'; minutes: number }[] = [
+    const OFF: { kind: 'h24' | 'h3' | 'h1' | 'm15' | 'start'; minutes: number }[] = [
       { kind: 'h24', minutes: -1440 }, { kind: 'h3', minutes: -180 }, { kind: 'h1', minutes: -60 },
-      { kind: 'm15', minutes: -15 }, { kind: 'start', minutes: 0 }, { kind: 'followup', minutes: 10 },
+      { kind: 'm15', minutes: -15 }, { kind: 'start', minutes: 0 },
+      // no post-call 'followup' email — see booking/create route.
     ];
     const now = Date.now();
     const rows = OFF.map((o) => ({ meeting_id: m.id, workspace_id: m.workspace_id, kind: o.kind, send_at: new Date(starts.getTime() + o.minutes * 60000).toISOString() }))

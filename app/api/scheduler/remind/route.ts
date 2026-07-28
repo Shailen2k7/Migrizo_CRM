@@ -1,7 +1,6 @@
 // CRON: drain due meeting reminders — throttled, retried, fully logged.
 // - Skips reminders whose meeting is no longer 'upcoming'
-// - 'followup' only sends if the meeting is STILL 'upcoming' 10 minutes in
-//   (mark the meeting Completed in the CRM to suppress it)
+// - Post-call 'followup' emails are never sent (calls often happen on WhatsApp)
 // - Failed sends retry up to 3 times on subsequent cron runs
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
@@ -38,6 +37,12 @@ export async function POST(req: Request) {
   for (const r of due) {
     const m = meetingById.get(r.meeting_id);
     const member = m ? memberById.get(m.member_id) : null;
+    // Never send the post-call "we missed you" note — calls are often taken on
+    // WhatsApp rather than the Meet link, so it would reach clients we spoke to.
+    if (r.kind === 'followup') {
+      await admin.from('meeting_reminders').update({ status: 'skipped' }).eq('id', r.id);
+      skipped++; continue;
+    }
     if (!m || !member || m.status !== 'upcoming') {
       await admin.from('meeting_reminders').update({ status: 'skipped' }).eq('id', r.id);
       skipped++; continue;
