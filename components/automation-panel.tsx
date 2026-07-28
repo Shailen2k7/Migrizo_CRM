@@ -24,7 +24,7 @@ import { wrapCampaignEmail } from '@/lib/email/campaign-shell';
 import { cn, initials, avatarColor, timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
-  Loader2, ShieldCheck, Zap, Pause, Play, Square, RotateCcw, Send,
+  Loader2, ShieldCheck, Zap, Pause, Play, Square, RotateCcw, Send, Clock,
   ChevronRight, Plus, Trash2, Check, Moon, Sparkles, X,
 } from 'lucide-react';
 
@@ -45,6 +45,8 @@ interface AutoStatus {
   auto_enrol: boolean; cold_per_day: number; hot_per_day: number;
   last_enrolled_on: string | null; enrolled_today: boolean;
   cap_today: number; projected_daily: number;
+  send_from_hour: number; send_to_hour: number; send_on_sunday: boolean;
+  window_open: boolean; allowance_now: number;
 }
 interface Tpl { id: string; name: string; category: string; subject: string; html: string }
 interface Enrolment {
@@ -496,8 +498,21 @@ export default function AutomationPanel() {
               ))}
             </div>
             <div className="border-t border-border/60 mt-3.5 pt-3 text-[12.5px] text-muted">
-              <b className="font-medium text-ink">{stats?.sent_today ?? 0} of {stats?.cap_today ?? 30}</b> sent today, spread through the day. The cap rises weekly so your domain warms safely.
+              <b className="font-medium text-ink">{stats?.sent_today ?? 0} of {stats?.cap_today ?? 30}</b> sent today. The cap rises weekly so your domain warms safely.
             </div>
+            {auto && (
+              <div className="border-t border-border/60 mt-3 pt-3 text-[12.5px] text-muted flex items-start gap-2">
+                <Clock className="w-3.5 h-3.5 text-faint flex-shrink-0 mt-[2px]" />
+                <span>
+                  Sending hours <b className="font-medium text-ink">{auto.send_from_hour}:00 to {auto.send_to_hour}:00 IST</b>
+                  {auto.send_on_sunday ? ', every day' : ', Monday to Saturday'}. Volume is released gradually through
+                  the day rather than all at once.{' '}
+                  {auto.window_open
+                    ? <span style={{ color: '#2F9E68' }}>Open now, {auto.allowance_now} may go out this moment.</span>
+                    : <span style={{ color: '#B0791B' }}>Closed now. Anything due is waiting for the morning.</span>}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

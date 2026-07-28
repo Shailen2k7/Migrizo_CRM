@@ -88,18 +88,25 @@ export async function POST(req: Request) {
     });
   }
 
-  // Remaining cap per workspace = daily cap − already sent today.
+  // How many may go out right now. This is NOT simply the daily cap minus what
+  // has been sent: outside the working-hours window it is zero, and inside it
+  // the cap is released gradually across the day so the whole allowance is not
+  // dumped in the first tick of the morning.
   const wsIds = Array.from(new Set(due.map((d) => d.workspace_id)));
   const remaining = new Map<string, number>();
   for (const ws of wsIds) {
-    const [{ data: cap }, { data: sentToday }] = await Promise.all([
-      admin.rpc('sequence_daily_cap', { p_workspace_id: ws }),
-      admin.rpc('sequence_sent_today', { p_workspace_id: ws }),
-    ]);
-    remaining.set(ws, Math.max(0, (Number(cap) || 30) - (Number(sentToday) || 0)));
+    const { data: allowance } = await admin.rpc('sequence_allowance_now', { p_workspace_id: ws });
+    remaining.set(ws, Math.max(0, Number(allowance) || 0));
   }
 
   let sent = 0, failed = 0, capped = 0;
+  // Nothing to do outside the window; every workspace returns an allowance of 0.
+  if (Array.from(remaining.values()).every((v) => v <= 0)) {
+    return NextResponse.json({
+      ok: true, sent: 0, waiting: due.length, reason: 'outside_sending_window',
+      ...(autoRow ? { auto_cold: autoRow.cold_added, auto_hot: autoRow.hot_added } : {}),
+    });
+  }
 
   for (const r of due) {
     if (sent + failed >= BATCH) break;
