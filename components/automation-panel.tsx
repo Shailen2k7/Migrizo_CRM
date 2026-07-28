@@ -280,9 +280,13 @@ export default function AutomationPanel() {
   const hotSteps = seqs.find((x) => x.audience === 'hot')?.steps || 5;
   const projected = (parseInt(autoCold, 10) || 0) * coldSteps + (parseInt(autoHot, 10) || 0) * hotSteps;
   const capToday = auto?.cap_today || 30;
-  const overCap = projected > capToday;
-  const suggestHot = Math.max(0, Math.floor((capToday * 0.25) / hotSteps));
-  const suggestCold = Math.max(0, Math.floor((capToday - suggestHot * hotSteps) / coldSteps));
+  // Compare against the cap this volume will actually meet, not today's.
+  // Steady state is roughly a month away, by which point the ramp is finished,
+  // so judging it against the week-one cap tells you to aim far too low.
+  const capFull = Math.max(capToday, 180);
+  const overCap = projected > capFull;
+  const suggestHot = Math.max(1, Math.floor((capFull * 0.15) / hotSteps));
+  const suggestCold = Math.max(1, Math.floor((capFull - suggestHot * hotSteps) / coldSteps));
 
   const capSteps = [30, 60, 120, 180];
   const capIdx = Math.max(0, capSteps.indexOf(stats?.cap_today ?? 30));
@@ -457,11 +461,13 @@ export default function AutomationPanel() {
               <div className="border-t border-border/60 px-[18px] py-[13px] text-[12.5px] leading-relaxed"
                 style={overCap ? { background: '#FDF0F2', color: '#8E2F42' } : { color: 'hsl(var(--muted))' }}>
                 {overCap
-                  ? <>At these numbers you would settle at roughly <b className="font-semibold">{projected} emails a day</b>, above
-                      today&rsquo;s cap of {auto?.cap_today}. The cap holds, so new leads would queue up and start late.
+                  ? <>These numbers settle at roughly <b className="font-semibold">{projected} emails a day</b>, past your
+                      full capacity of {capFull}. The cap holds, so leads would queue up and start late.
                       Try about <b className="font-semibold">{suggestCold} cold</b> and <b className="font-semibold">{suggestHot} hot</b> instead.</>
-                  : <>Settles at roughly <b className="font-semibold text-ink">{projected} emails a day</b> once every stage is running,
-                      inside today&rsquo;s cap of {auto?.cap_today}. Each lead receives one email per step, not one a day.</>}
+                  : <>Settles at roughly <b className="font-semibold text-ink">{projected} emails a day</b> once every stage is
+                      running, within your full capacity of {capFull}. Each lead receives one email per step, not one a day.
+                      {projected > capToday && <> While the cap is still ramping ({capToday} today) the first weeks send less
+                      than this, which is the point of the ramp.</>}</>}
               </div>
             )}
 
