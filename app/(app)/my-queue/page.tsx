@@ -86,7 +86,7 @@ export default function MyQueuePage() {
       .select('*')
       .eq('workspace_id', workspace.id)
       .eq('owner_id', user.id)
-      .in('stage', ['qualified', 'consultation', 'proposal', 'partial'])
+      .eq('stage', 'hot')   // the CRM's only hot stage
       .order('last_touched_at', { ascending: true, nullsFirst: true })
       .limit(20);
     setHot((h as Lead[]) || []);
