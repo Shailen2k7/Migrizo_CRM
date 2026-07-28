@@ -74,7 +74,8 @@ const CHECKS: { t: string; d: string }[] = [
   { t: 'One-click unsubscribe', d: 'Header and visible button both present, as Gmail requires' },
   { t: 'Plain text version included', d: 'HTML-only mail scores worse with every filter' },
   { t: 'No spam trigger words', d: 'No "free", "act now", "guarantee", no all-caps, no exclamation marks' },
-  { t: 'Text-led, one image', d: 'Image-heavy mail lands in Promotions. Only the logo is an image.' },
+  { t: 'Zero images, plain layout', d: 'No logo, no buttons, no coloured blocks. This is what keeps mail out of Promotions.' },
+  { t: 'Only two links', d: 'The booking link and unsubscribe. More links raises the spam score.' },
   { t: 'Throttled sending', d: 'Daily cap ramps 30 → 60 → 120 → 180 so the domain warms safely' },
   { t: 'Physical company shown', d: 'Migrizo Ventures Pvt Ltd. in every footer' },
   { t: 'Real reply-to address', d: 'info@migrizo.com — a monitored inbox, never no-reply@' },
@@ -578,7 +579,7 @@ export default function AutomationPage() {
                 ))}
               </div>
               <div className="text-[12px] text-muted leading-[1.65] px-4 py-[13px] bg-surface-2 border border-border rounded-xl mt-3">
-                <b className="font-medium text-ink">9 of 9 passing.</b> This is the ceiling of what anyone can control. Nobody can guarantee the inbox, but this maximises the odds.
+                <b className="font-medium text-ink">10 of 10 passing.</b> Emails are deliberately plain so they land in the Primary inbox rather than Promotions. Nobody can guarantee placement, but this maximises the odds.
               </div>
             </div>
           </div>
