@@ -49,7 +49,16 @@ export default function LeadEnginePage() {
       supabase.rpc('queue_diagnose', { p_workspace_id: workspace.id }),
       supabase.rpc('queue_today_by_person', { p_workspace_id: workspace.id }),
     ]);
-    setDiag((dg as { check_name: string; status: string; detail: string }[]) || []);
+    // Diagnose missing entirely means the setup SQL has not been run.
+    if (!dg) {
+      setDiag([{
+        check_name: 'Database setup',
+        status: 'BLOCKED',
+        detail: 'The queue functions are missing. Run FINAL_SETUP.sql in the Supabase SQL editor, then reload this page. It is safe to run more than once.',
+      }]);
+    } else {
+      setDiag(dg as { check_name: string; status: string; detail: string }[]);
+    }
     const tmap: Record<string, { total: number; pending: number; done: number; manual: number }> = {};
     for (const row of (tq as { user_id: string; total: number; pending: number; done: number; manual: number }[]) || []) {
       tmap[row.user_id] = { total: row.total, pending: row.pending, done: row.done, manual: row.manual };
@@ -75,6 +84,14 @@ export default function LeadEnginePage() {
     setSaving(null);
   };
 
+  // Turn Postgres/PostgREST noise into something actionable.
+  const explain = (msg: string) => {
+    if (/could not find the function|schema cache|does not exist/i.test(msg)) {
+      return 'The database is not set up yet. Run FINAL_SETUP.sql in the Supabase SQL editor, then reload this page.';
+    }
+    return msg;
+  };
+
   // Give one person N more leads right now, taking the next oldest-untouched.
   const assignMore = async (userId: string) => {
     const n = parseInt(topUp[userId] || '', 10);
@@ -84,7 +101,7 @@ export default function LeadEnginePage() {
     const { data, error } = await supabase.rpc('assign_leads_manual', {
       p_workspace_id: workspace.id, p_user_id: userId, p_count: n,
     });
-    if (error) toast.error(error.message);
+    if (error) toast.error(explain(error.message));
     else {
       const res = Array.isArray(data) ? data[0] : data;
       const got = res?.assigned ?? 0;
@@ -111,7 +128,7 @@ export default function LeadEnginePage() {
     const { data, error } = await supabase.rpc('return_queue', {
       p_workspace_id: workspace.id, p_user_id: userId, p_include_worked: includeWorked,
     });
-    if (error) toast.error(error.message);
+    if (error) toast.error(explain(error.message));
     else {
       const res = Array.isArray(data) ? data[0] : data;
       const rel = res?.released ?? 0, rew = res?.rewound ?? 0;
@@ -126,7 +143,7 @@ export default function LeadEnginePage() {
     const supabase = createClient();
     const { data, error } = await supabase.rpc('generate_daily_queue_v2', { p_workspace_id: workspace.id });
     if (error) {
-      toast.error(error.message);
+      toast.error(explain(error.message));
     } else {
       const res = Array.isArray(data) ? data[0] : data;
       const made = res?.created ?? 0;
@@ -152,7 +169,7 @@ export default function LeadEnginePage() {
     setGenerating(true);
     const supabase = createClient();
     const { data, error } = await supabase.rpc('regenerate_today', { p_workspace_id: workspace.id });
-    if (error) toast.error(error.message);
+    if (error) toast.error(explain(error.message));
     else {
       const res = Array.isArray(data) ? data[0] : data;
       toast.success(`${res?.created ?? 0} leads assigned for today`);
