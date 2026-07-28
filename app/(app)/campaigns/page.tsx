@@ -21,6 +21,7 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/components/shared/app-provider';
 import { createClient } from '@/lib/supabase/client';
 import { wrapCampaignEmail } from '@/lib/email/campaign-shell';
+import { plainToHtml, htmlToPlain } from '@/lib/email/plain-text';
 import {
   Send, Eye, CheckCircle2, Loader2, Plus, Trash2, ArrowLeft, X,
   Megaphone, FileText, History, ShieldCheck, Pause, Play, Square, Pencil, Users,
@@ -69,6 +70,8 @@ export default function CampaignCenterPage() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Partial<Tpl> | null>(null);
   const [tplPreview, setTplPreview] = useState(false);
+  // The editor works in ordinary text; HTML is produced only on save.
+  const [plainBody, setPlainBody] = useState('');
 
   // ── boot: check access, seed defaults, load everything ──
   const loadAll = useCallback(async () => {
@@ -121,23 +124,25 @@ export default function CampaignCenterPage() {
 
   // ── template ops ──
   async function saveTpl() {
-    if (!editing?.name?.trim() || !editing?.subject?.trim() || !editing?.html?.trim()) {
+    const body = plainToHtml(plainBody);
+    if (!editing?.name?.trim() || !editing?.subject?.trim() || !body.trim()) {
       toast.error('Name, subject and content are all required'); return;
     }
+    editing.html = body;
     const supabase = createClient();
     if (editing.id) {
       const { error } = await supabase.from('email_templates')
-        .update({ name: editing.name, subject: editing.subject, html: editing.html, updated_at: new Date().toISOString() })
+        .update({ name: editing.name, subject: editing.subject, html: body, updated_at: new Date().toISOString() })
         .eq('id', editing.id);
       if (error) { toast.error(error.message); return; }
       toast.success('Template saved');
     } else {
       const { error } = await supabase.from('email_templates')
-        .insert({ workspace_id: workspace.id, name: editing.name, track: 'Custom', category: 'custom', sort: 100, subject: editing.subject, html: editing.html });
+        .insert({ workspace_id: workspace.id, name: editing.name, track: 'Custom', category: 'custom', sort: 100, subject: editing.subject, html: body });
       if (error) { toast.error(error.message); return; }
       toast.success('Template added');
     }
-    setEditorOpen(false); setEditing(null); setTplPreview(false);
+    setEditorOpen(false); setEditing(null); setTplPreview(false); setPlainBody('');
     void loadAll();
   }
   async function deleteTpl(id: string) {
@@ -186,7 +191,7 @@ export default function CampaignCenterPage() {
         body: JSON.stringify({
           name: tpls.find((t) => t.id === srcId)?.name || subject,
           templateKey: srcId || 'custom',
-          subject, html: content, leadIds: recipients.map((r) => r.id),
+          subject, html: plainToHtml(content), leadIds: recipients.map((r) => r.id),
         }),
       });
       const data = await res.json();
@@ -198,8 +203,9 @@ export default function CampaignCenterPage() {
     setSending(false);
   }
 
+  // `c` is the plain text the person typed; convert before framing it.
   const previewHtml = (c: string) => wrapCampaignEmail(
-    c.replace(/\{\{\s*name\s*\}\}/gi, previewName || 'there'), subject
+    plainToHtml(c).replace(/\{\{\s*name\s*\}\}/gi, previewName || 'there'), subject
   ).replace(/\{\{\s*UNSUB_URL\s*\}\}/gi, '#');
 
   // ── gates ──
@@ -307,7 +313,7 @@ export default function CampaignCenterPage() {
                 {tpls.map((t) => {
                   const m = CATEGORY_META[t.category] || CATEGORY_META.custom;
                   return (
-                    <button key={t.id} onClick={() => { setSrcId(t.id); setSubject(t.subject); setContent(t.html); setStep('edit'); }}
+                    <button key={t.id} onClick={() => { setSrcId(t.id); setSubject(t.subject); setContent(htmlToPlain(t.html)); setStep('edit'); }}
                       className="text-left rounded-[15px] border border-border bg-surface p-4 hover:-translate-y-0.5 hover:shadow-lg hover:border-indigo-200 transition-all">
                       <span className="text-[9px] font-extrabold px-2 py-1 rounded-md" style={{ background: m.bg, color: m.color }}>{m.label}</span>
                       <div className="text-[13.5px] font-bold mt-2.5 leading-snug">{t.name}</div>
@@ -328,10 +334,22 @@ export default function CampaignCenterPage() {
               <label className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-faint">Subject</label>
               <input value={subject} onChange={(e) => setSubject(e.target.value)}
                 className="w-full text-[13.5px] font-semibold border border-border rounded-xl px-3.5 py-2.5 bg-surface outline-none focus:border-indigo-400 mt-1.5 mb-4" />
-              <label className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-faint">Content — the frame (logo, signature, CTA, unsubscribe) is added automatically</label>
-              <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={16}
-                className="w-full text-[12.5px] font-mono border border-border rounded-xl px-3.5 py-3 bg-surface outline-none focus:border-indigo-400 mt-1.5 leading-relaxed" />
-              <div className="text-[11.5px] text-faint mt-1.5">Use {'{{name}}'} for the lead&rsquo;s first name. Square brackets like [AMOUNT] must be replaced before sending.</div>
+              <label className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-faint">Message</label>
+              <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={18}
+                placeholder={'Hi {{name}},\n\nWrite your email here, just like a normal message.'}
+                className="w-full text-[13.5px] border border-border rounded-xl px-3.5 py-3 bg-surface outline-none focus:border-indigo-400 mt-1.5"
+                style={{ lineHeight: 1.75 }} />
+              <div className="text-[11.5px] text-muted mt-2 leading-relaxed rounded-lg bg-surface-2 px-3 py-2.5">
+                <b className="font-semibold text-ink-2">Blank line</b> starts a new paragraph.{' '}
+                <b className="font-semibold text-ink-2">*Asterisks*</b> make text bold.{' '}
+                <b className="font-semibold text-ink-2">{'{{name}}'}</b> becomes the person&rsquo;s first name.<br/>
+                Signature, booking link and unsubscribe are added automatically.
+              </div>
+              {/\[[A-Z]/.test(content) && (
+                <div className="text-[12px] mt-2 rounded-lg px-3 py-2.5" style={{ background: '#FDF0F2', color: '#C9455C' }}>
+                  This message still contains something in [SQUARE BRACKETS]. Replace it before sending.
+                </div>
+              )}
               <div className="flex justify-between mt-4">
                 <button onClick={() => setStep('template')} className="btn"><ArrowLeft className="w-4 h-4" /> Templates</button>
                 <button disabled={!subject.trim() || !content.trim()} onClick={() => setStep('review')} className="btn btn-primary disabled:opacity-40"><Eye className="w-4 h-4" /> Preview</button>
@@ -371,7 +389,7 @@ export default function CampaignCenterPage() {
         <div className="mt-5">
           <div className="flex items-center justify-between mb-4">
             <span className="text-[12.5px] text-muted">Everything is editable — name, subject and content. The email frame stays fixed so the format never drifts.</span>
-            <button onClick={() => { setEditing({ name: '', subject: '', html: '<p>Hi {{name}},</p>\n<p></p>' }); setEditorOpen(true); setTplPreview(false); }} className="btn btn-primary"><Plus className="w-4 h-4" /> New template</button>
+            <button onClick={() => { setEditing({ name: '', subject: '', html: '' }); setPlainBody('Hi {{name}},\n\n'); setEditorOpen(true); setTplPreview(false); }} className="btn btn-primary"><Plus className="w-4 h-4" /> New template</button>
           </div>
           {(['cold', 'hot', 'custom'] as const).map((cat) => {
             const list = tpls.filter((t) => (t.category || 'custom') === cat);
@@ -386,7 +404,7 @@ export default function CampaignCenterPage() {
                       <div className="text-[13.5px] font-bold leading-snug">{t.name}</div>
                       <div className="text-[11.5px] text-faint mt-1.5 line-clamp-2">{t.subject}</div>
                       <div className="flex gap-2 mt-3.5">
-                        <button onClick={() => { setEditing({ ...t }); setEditorOpen(true); setTplPreview(false); }}
+                        <button onClick={() => { setEditing({ ...t }); setPlainBody(htmlToPlain(t.html)); setEditorOpen(true); setTplPreview(false); }}
                           className="flex-1 text-[11.5px] font-bold py-2 rounded-lg border border-border hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
                           <Pencil className="w-3 h-3 inline mr-1" />Edit
                         </button>
@@ -488,10 +506,16 @@ export default function CampaignCenterPage() {
             <div className="px-5 py-4 border-b border-border flex items-center gap-3">
               <div className="text-[15px] font-bold">{editing.id ? 'Edit template' : 'New template'}</div>
               {editing.is_seeded && <span className="text-[9px] font-extrabold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">GTV LIBRARY</span>}
-              <button onClick={() => setTplPreview((v) => !v)} className={cn('ml-auto text-[11.5px] font-bold px-3 py-1.5 rounded-lg border transition-colors', tplPreview ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-border text-muted')}>
-                <Eye className="w-3 h-3 inline mr-1" />{tplPreview ? 'Editing' : 'Preview'}
-              </button>
-              <button onClick={() => { setEditorOpen(false); setEditing(null); }} className="p-1.5 text-faint hover:text-ink"><X className="w-5 h-5" /></button>
+              <div className="ml-auto flex gap-0.5 p-0.5 rounded-lg bg-surface-2">
+                <button onClick={() => setTplPreview(false)}
+                  className={cn('text-[12px] font-semibold px-3 py-1.5 rounded-[7px] transition-colors',
+                    !tplPreview ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink')}>Write</button>
+                <button onClick={() => setTplPreview(true)}
+                  className={cn('text-[12px] font-semibold px-3 py-1.5 rounded-[7px] transition-colors',
+                    tplPreview ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink')}>
+                  <Eye className="w-3 h-3 inline mr-1" />Preview</button>
+              </div>
+              <button onClick={() => { setEditorOpen(false); setEditing(null); setPlainBody(''); }} className="p-1.5 text-faint hover:text-ink"><X className="w-5 h-5" /></button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {!tplPreview ? (
@@ -502,21 +526,29 @@ export default function CampaignCenterPage() {
                   <label className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-faint">Subject line</label>
                   <input value={editing.subject || ''} onChange={(e) => setEditing((p) => ({ ...p!, subject: e.target.value }))}
                     className="w-full text-[13.5px] border border-border rounded-xl px-3.5 py-2.5 bg-surface outline-none focus:border-indigo-400 mt-1.5 mb-4" />
-                  <label className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-faint">Content — paragraphs only; the frame is added automatically</label>
-                  <textarea value={editing.html || ''} onChange={(e) => setEditing((p) => ({ ...p!, html: e.target.value }))} rows={18}
-                    className="w-full text-[12.5px] font-mono border border-border rounded-xl px-3.5 py-3 bg-surface outline-none focus:border-indigo-400 mt-1.5 leading-relaxed" />
-                  <div className="text-[11.5px] text-faint mt-1.5">{'{{name}}'} = first name. Wrap paragraphs in &lt;p&gt;…&lt;/p&gt;, bold with &lt;b&gt;…&lt;/b&gt;.</div>
+                  <label className="text-[10px] font-extrabold tracking-[0.08em] uppercase text-faint">Message</label>
+                  <textarea value={plainBody} onChange={(e) => setPlainBody(e.target.value)} rows={20}
+                    placeholder={'Hi {{name}},\n\nWrite your email here, just like a normal message.\n\nLeave a blank line between paragraphs.'}
+                    className="w-full text-[13.5px] border border-border rounded-xl px-3.5 py-3 bg-surface outline-none focus:border-indigo-400 mt-1.5"
+                    style={{ lineHeight: 1.75 }} />
+                  <div className="text-[11.5px] text-muted mt-2 leading-relaxed rounded-lg bg-surface-2 px-3 py-2.5">
+                    Write plain text. Three things are worth knowing:<br/>
+                    <b className="font-semibold text-ink-2">Blank line</b> starts a new paragraph.{' '}
+                    <b className="font-semibold text-ink-2">*Asterisks*</b> make text bold.{' '}
+                    <b className="font-semibold text-ink-2">{'{{name}}'}</b> becomes the person&rsquo;s first name.<br/>
+                    Your signature, booking link and unsubscribe are added automatically. Do not type them.
+                  </div>
                 </>
               ) : (
                 <div className="rounded-xl border border-border overflow-hidden bg-white" style={{ height: '100%', minHeight: 480 }}>
                   <iframe title="tpl-preview" className="w-full h-full"
-                    srcDoc={wrapCampaignEmail((editing.html || '').replace(/\{\{\s*name\s*\}\}/gi, 'Rahul'), editing.subject || '').replace(/\{\{\s*UNSUB_URL\s*\}\}/gi, '#')}
+                    srcDoc={wrapCampaignEmail(plainToHtml(plainBody).replace(/\{\{\s*name\s*\}\}/gi, 'Rahul'), editing.subject || '').replace(/\{\{\s*UNSUB_URL\s*\}\}/gi, '#')}
                     sandbox="" />
                 </div>
               )}
             </div>
             <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
-              <button onClick={() => { setEditorOpen(false); setEditing(null); }} className="btn">Cancel</button>
+              <button onClick={() => { setEditorOpen(false); setEditing(null); setPlainBody(''); }} className="btn">Cancel</button>
               <button onClick={() => void saveTpl()} className="btn btn-primary">Save template</button>
             </div>
           </aside>
