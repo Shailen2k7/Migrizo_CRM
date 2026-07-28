@@ -1,63 +1,106 @@
-MIGRIZO CRM — CAMPAIGN CENTER · DEPLOY
-=======================================
+════════════════════════════════════════════════════════════════════
+  MIGRIZO — EMAIL SEQUENCE AUTOMATION · SETUP (about 10 minutes)
+════════════════════════════════════════════════════════════════════
 
-STEP 1 · SUPABASE (SQL Editor)
-  Run: supabase/migrations/021_campaign_center.sql
-  (Safe to run even if you ran the earlier version: it refreshes the nine
-  seeded templates with the new dash-free wording. Custom templates are
-  never touched.)
-  Adds: super-admin access control, the Access grants table, and the
-  9-template GTV library seeder (runs automatically on first page open).
+Do the steps in this order. Nothing sends until you enrol a batch,
+so deploying is completely safe.
 
-STEP 2 · GITHUB (one commit)
-  NEW file — "Add file → Create new file", TYPE THE FULL PATH:
-    lib/email/campaign-shell.ts
-  REPLACEMENTS — drag into their folders:
-    app/(app)/campaigns/page.tsx
-    app/api/campaigns/create/route.ts
-    app/api/campaigns/drain/route.ts
-    components/sidebar.tsx
-  Commit together. Wait for Netlify green.
 
-STEP 3 · OPEN IT
-  Sidebar → Campaigns (only YOU see anything — you are the workspace owner).
-  On first open the 9 Global Talent Visa templates seed themselves:
-  4 cold + 5 hot, grouped in the Templates tab.
+──────────────────────────────────────────────
+STEP 1 · SUPABASE — run two SQL files
+──────────────────────────────────────────────
+Supabase → SQL Editor → New query.
 
-WHO CAN USE IT
-  • You (workspace owner / super admin): everything.
-  • Everyone else: a "restricted" screen — even other admins.
-  • Access tab (owner only): grant campaign rights to any member with one
-    click; revoke the same way. Granted members get everything except the
-    Access tab itself.
+  1a. Paste ALL of  supabase/migrations/025_lead_engine_v2.sql  → Run.
+      (This is your live junk-lead fix, now committed to the repo so
+       nothing can silently re-break it. Safe to re-run.)
 
-THE FOUR TABS
-  Send      → pick recipients → pick template → edit subject + content →
-              mandatory preview → launch. Sending is blocked while any
-              [square-bracket] placeholder remains in the content.
-  Templates → all 9 GTV templates + your custom ones. Edit name, subject and
-              content; add new; delete. Content-only editing: the frame
-              (logo, GTV badge, Shailen's signature, booking CTA, WhatsApp,
-              unsubscribe button) is applied automatically at send time so
-              every email keeps an identical format.
-  History   → every campaign with live progress. Pause (queue holds),
-              Resume, Stop (queue cancelled permanently).
-  Access    → grant/revoke campaign rights (owner only).
+  1b. Paste ALL of  supabase/migrations/026_sequences.sql  → Run.
+      At the bottom you should see a small confirmation table with
+      "cron job = 1". That means the 30-minute clock is live.
 
-EVERY EMAIL AUTOMATICALLY CARRIES
-  • Migrizo logo header — identical to your SLA/roadmap emails
-  • "GLOBAL TALENT VISA · UNITED KINGDOM" badge before any content, so the
-    reader knows exactly what the email is about
-  • Shailen's plain text signature: name, Lead Consultant title, Migrizo,
-    Migrizo Ventures Pvt Ltd., phone, website, email
-  • "Book a 1-to-1 call →" button → https://crm.migrizo.com/book/shailen
-  • WhatsApp line → +44 7887 348822
-  • Navy footer with a one-click Unsubscribe BUTTON (plus the RFC-8058
-    List-Unsubscribe headers Gmail requires)
+  1c. Verify all four clocks in one line:
 
-SAFETY BUILT IN
-  • Unsubscribed / bounced addresses are removed at queue time AND re-checked
-    at send time (covers people who unsubscribe after being queued).
-  • Paused/stopped campaigns hold their queue at the sending layer.
-  • Preview file included: campaign-email-preview.html — open it to see
-    exactly what a recipient receives.
+        select jobname, schedule, active from cron.job;
+
+      You should see, all active:
+        migrizo-campaign-drain      * * * * *
+        migrizo-meeting-reminders   * * * * *
+        migrizo-push-dispatch       * * * * *
+        migrizo-sequences-tick      */30 * * * *
+
+
+──────────────────────────────────────────────
+STEP 2 · GITHUB — one commit, two kinds of files
+──────────────────────────────────────────────
+⚠ Four files live in BRAND-NEW folders. Drag-drop silently skips new
+  nested folders, so these four must be created by typing the path:
+
+  GitHub → your repo → "Add file" → "Create new file", then type the
+  full path (the / creates the folders), paste the content, commit:
+
+    app/(app)/automation/page.tsx
+    app/api/sequences/tick/route.ts
+    app/api/sequences/test/route.ts
+    app/api/email/bounce/route.ts
+
+  These five go into folders that already exist, so normal drag-drop
+  (or open-file → edit → paste) works:
+
+    lib/supabase/middleware.ts          (replace)
+    components/sidebar.tsx              (replace)
+    app/api/queue/outcome/route.ts      (replace — fixes the broken
+                                         "Interested" button)
+    supabase/migrations/025_lead_engine_v2.sql   (new file, old folder)
+    supabase/migrations/026_sequences.sql        (new file, old folder)
+
+  Netlify builds automatically. Wait for the green deploy.
+
+
+──────────────────────────────────────────────
+STEP 3 · RESEND — bounce webhook (2 minutes, once)
+──────────────────────────────────────────────
+Resend dashboard → Webhooks → Add webhook:
+
+  URL:     https://crm.migrizo.com/api/email/bounce?key=YOUR_INBOUND_WEBHOOK_SECRET
+           (use the exact value of INBOUND_WEBHOOK_SECRET from your
+            Netlify environment variables)
+  Events:  email.bounced, email.complained
+
+From then on, any bounce or spam complaint suppresses the address
+instantly and the next tick exits the lead as Do Not Contact.
+
+
+──────────────────────────────────────────────
+STEP 4 · SWITCH IT ON
+──────────────────────────────────────────────
+  1. Open the CRM → new "Automation" item in the sidebar.
+     The three sequences (Cold nurture · Hot follow-up ·
+     Re-engagement) create themselves on first open, including the
+     two new cold emails and the three re-engagement emails.
+
+  2. Test tab → send yourself Cold 1 → check it lands in your inbox.
+
+  3. Sequences tab → "Enrol a batch" → start with 30–50 cold leads.
+
+  4. Done. The clock does everything else: sends at the right day
+     gaps, exits anyone who replies / books / converts /
+     unsubscribes / bounces / turns junk, sleeps finished leads,
+     runs ONE re-engagement cycle months later, then retires them
+     forever. The daily cap ramps 30 → 60 → 120 → 180 by week so
+     the domain warms safely.
+
+
+──────────────────────────────────────────────
+NOTES
+──────────────────────────────────────────────
+• Nobody can ever be in two sequences, and nobody can ever receive
+  the same email twice — both are enforced by the database itself,
+  not by app code.
+• Only stage Cold / Hot leads with an email are ever touched, and
+  the whitelist is re-checked at the moment of every send.
+• Stopping an old one-off campaign now permanently cancels its
+  queued recipients too (previous behaviour left them queued).
+• DMARC housekeeping: make sure dmarc@migrizo.com exists or
+  forwards somewhere (Resend can't host mailboxes). After ~3 weeks
+  of clean reports, change the record's  p=none  to  p=quarantine.

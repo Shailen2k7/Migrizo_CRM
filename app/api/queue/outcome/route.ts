@@ -54,8 +54,11 @@ export async function POST(req: Request) {
   const patch: Record<string, unknown> = { last_touched_at: now, attempt_count: attempts };
 
   if (outcome === 'interested') {
-    // Promote to hot and hand to whoever takes hot leads.
-    patch.stage = stage || 'qualified';
+    // Promote to hot and hand to whoever takes hot leads. This CRM's stages
+    // are hot/cold/mr_coming_soon/invoice_sent/won/junk — 'hot' is the only
+    // valid promotion target here, whatever the client sends.
+    void stage;
+    patch.stage = 'hot';
     patch.snooze_until = null;
     const { data: hotOwner } = await supabase
       .from('lead_queue_rules')
@@ -72,15 +75,15 @@ export async function POST(req: Request) {
     patch.owner_id = q.user_id;
   } else if (outcome === 'no_answer') {
     // Straight back into the pool. Auto-retire once it's clearly unreachable.
+    // (Retirement alone removes it from rotation; the stage stays 'cold'.)
     if (attempts >= MAX_ATTEMPTS) {
       patch.retired_at = now;
-      patch.stage = 'lost';
-    } else if (lead.stage === 'new') {
-      patch.stage = 'attempted';
     }
   } else if (outcome === 'dead') {
+    // Not interested / wrong number — retire permanently and mark junk, which
+    // is this CRM's real stage for exactly that.
     patch.retired_at = now;
-    patch.stage = 'lost';
+    patch.stage = 'junk';
   }
 
   const { error: upErr } = await supabase.from('leads').update(patch).eq('id', q.lead_id);
