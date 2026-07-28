@@ -39,7 +39,7 @@ export function wrapCampaignEmail(contentHtml: string, preheader: string): strin
 <html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
 <style>
   body{margin:0;padding:0;background:#ffffff;}
-  .wrap{max-width:580px;margin:0 auto;padding:22px 20px 30px;
+  .wrap{max-width:640px;margin:0;padding:20px 18px 28px;
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
     font-size:15px;line-height:1.7;color:${INK};}
   p{margin:0 0 15px;font-size:15px;line-height:1.7;color:${INK};}
