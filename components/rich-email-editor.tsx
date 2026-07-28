@@ -20,7 +20,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import {
   Bold, Italic, Underline, Strikethrough, List, ListOrdered, Link2,
-  AlignLeft, AlignCenter, Minus, Eraser, Undo2, Redo2, Baseline, Type,
+  AlignLeft, AlignCenter, Minus, Eraser, Undo2, Redo2, Baseline, Type, PanelBottom,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -100,7 +100,7 @@ export function sanitizeEmailHtml(html: string): string {
     .trim();
 }
 
-const SIZES = [12, 13, 14, 15, 16, 17, 18, 20, 24];
+const SIZES = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24, 28];
 const FONTS: [string, string][] = [
   ['Default', "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif"],
   ['Georgia', "Georgia,'Times New Roman',serif"],
@@ -164,7 +164,11 @@ export default function RichEmailEditor({ value, onChange, minHeight = 430 }: Pr
     emit();
   };
 
-  /** Toggle the small grey footer styling on whichever line the cursor is in. */
+  /**
+   * Toggle the small grey footer styling on whichever line the cursor is in.
+   * Detected by the grey colour, not the size, so you can still resize a
+   * small-print line with the Size menu afterwards and toggle it off cleanly.
+   */
   const toggleFine = () => {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
@@ -172,9 +176,43 @@ export default function RichEmailEditor({ value, onChange, minHeight = 430 }: Pr
     if (n && n.nodeType === Node.TEXT_NODE) n = n.parentNode;
     const block = (n as Element | null)?.closest?.('p,li,h3,div');
     if (!block || !ref.current?.contains(block)) return;
-    const isFine = (block.getAttribute('style') || '').includes('12px');
+    const isFine = /#8A8A90/i.test(block.getAttribute('style') || '');
     if (isFine) block.removeAttribute('style'); else block.setAttribute('style', FINE);
     emit(); ref.current?.focus();
+  };
+
+  /**
+   * One press inserts the complete Migrizo footer block at the end of the
+   * email: company line, the "you received this" line, and a working
+   * Unsubscribe link, already in small grey print. If a footer is already
+   * there, pressing again just moves the cursor to it instead of duplicating.
+   */
+  const insertFooter = () => {
+    const el = ref.current;
+    if (!el) return;
+    const existing = Array.from(el.querySelectorAll('a'))
+      .find((a) => /\{\{\s*UNSUB_URL\s*\}\}/i.test(a.getAttribute('href') || ''));
+    if (existing) {
+      const sel = window.getSelection();
+      const r = document.createRange();
+      r.selectNodeContents(existing.closest('p,div') || existing);
+      r.collapse(false);
+      sel?.removeAllRanges(); sel?.addRange(r);
+      el.focus();
+      return;
+    }
+    const p1 = document.createElement('p');
+    p1.setAttribute('style', FINE);
+    p1.innerHTML = 'Migrizo Ventures Pvt Ltd. &middot; ' +
+      '<a href="https://www.migrizo.com">www.migrizo.com</a> &middot; ' +
+      '<a href="mailto:info@migrizo.com">info@migrizo.com</a>';
+    const p2 = document.createElement('p');
+    p2.setAttribute('style', FINE);
+    p2.innerHTML = 'You received this because you enquired with Migrizo about the UK Global Talent Visa. ' +
+      '<a href="{{UNSUB_URL}}">Unsubscribe</a>';
+    el.appendChild(p1);
+    el.appendChild(p2);
+    emit(); el.focus();
   };
 
   /** Typing a web address and pressing space turns it into a link. */
@@ -287,7 +325,8 @@ export default function RichEmailEditor({ value, onChange, minHeight = 430 }: Pr
 
         <Sep />
         <Btn onClick={openLink} title="Insert link"><Link2 className="w-3.5 h-3.5" /></Btn>
-        <Btn onClick={toggleFine} title="Small print, for the footer line"><Type className="w-3.5 h-3.5" /></Btn>
+        <Btn onClick={toggleFine} title="Small print, makes the current line small and grey"><Type className="w-3.5 h-3.5" /></Btn>
+        <Btn onClick={insertFooter} title="Insert the Migrizo footer with the unsubscribe link"><PanelBottom className="w-3.5 h-3.5" /></Btn>
         <Btn onClick={() => exec('insertHTML', '<hr>')} title="Divider line"><Minus className="w-3.5 h-3.5" /></Btn>
         <Btn onClick={() => exec('removeFormat')} title="Clear formatting"><Eraser className="w-3.5 h-3.5" /></Btn>
 
