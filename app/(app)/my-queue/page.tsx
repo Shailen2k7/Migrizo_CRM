@@ -29,7 +29,8 @@ interface QueueRow {
 }
 
 const OUTCOMES = [
-  { key: 'interested', label: 'Interested', desc: 'Becomes a hot lead', Icon: Flame, tone: '#059669', bg: '#ECFDF5' },
+  { key: 'interested_hot', label: 'Interested \u2014 Hot', desc: 'Ready to move. Becomes a hot lead, handed to the hot-lead owner', Icon: Flame, tone: '#059669', bg: '#ECFDF5' },
+  { key: 'interested_cold', label: 'Interested \u2014 Cold', desc: 'Keen but still deciding. Stays cold and keeps its place in the rotation', Icon: Flame, tone: '#4F46E5', bg: '#EEF0FF' },
   { key: 'not_now', label: 'Not right now', desc: 'Sleeps 30 days, then returns', Icon: Pause, tone: '#B45309', bg: '#FFF8EC' },
   { key: 'no_answer', label: 'No answer', desc: 'Back in pool for next rotation', Icon: PhoneOff, tone: '#6B7280', bg: '#F4F6FA' },
   { key: 'dead', label: 'Not interested / wrong number', desc: 'Retired from the pool', Icon: Ban, tone: '#E11D48', bg: '#FFF1F3' },
@@ -116,7 +117,7 @@ export default function MyQueuePage() {
   const doneCount = (rows || []).length - pending.length;
   const total = (rows || []).length;
   const pct = total ? Math.round((doneCount / total) * 100) : 0;
-  const promoted = (rows || []).filter((r) => r.outcome === 'interested').length;
+  const promoted = (rows || []).filter((r) => r.outcome === 'interested_hot').length;
   const rolled = (rows || []).filter((r) => r.rolled_over).length;
 
   const visible = useMemo(() => {
@@ -139,8 +140,9 @@ export default function MyQueuePage() {
       const d = await res.json();
       if (!res.ok) { toast.error(d.error || 'Could not save'); return; }
 
-      if (outcome === 'not_now') {
-        // Offer Claude's follow-up before closing.
+      if (outcome === 'not_now' || outcome === 'interested_cold') {
+        // Offer Claude's follow-up before closing. A keen-but-cold lead is
+        // exactly who benefits from a prompt, personal follow-up note.
         const dr = await fetch('/api/queue/draft', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ leadId: active.lead_id }),
@@ -149,7 +151,8 @@ export default function MyQueuePage() {
       }
 
       toast.success(
-        outcome === 'interested' ? 'Marked hot — handed to the hot-lead owner'
+        outcome === 'interested_hot' ? 'Marked hot — handed to the hot-lead owner'
+        : outcome === 'interested_cold' ? 'Interest noted — stays cold, still in rotation'
         : outcome === 'not_now' ? 'Sleeping for 30 days'
         : d.retired ? 'Retired from the pool'
         : 'Back in the pool'

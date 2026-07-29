@@ -4,7 +4,9 @@
 // Recording an outcome is what keeps the whole engine turning. Each choice
 // routes the lead somewhere different:
 //
-//   interested → becomes a hot lead, handed to whoever takes hot leads
+//   interested_hot  → becomes a hot lead, handed to whoever takes hot leads
+//   interested_cold → keen but still deciding; stays cold, keeps its place in
+//                     the rotation so the rep keeps following up
 //   not_now    → sleeps 30 days, then rejoins the rotation
 //   no_answer  → attempt counter rises, back in the pool for its next turn
 //   dead       → retired permanently, stops clogging the queue
@@ -28,7 +30,7 @@ export async function POST(req: Request) {
 
   const { queueId, outcome, note, stage } = body;
   if (!queueId || !outcome) return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
-  if (!['interested', 'not_now', 'no_answer', 'dead'].includes(outcome)) {
+  if (!['interested_hot', 'interested_cold', 'not_now', 'no_answer', 'dead'].includes(outcome)) {
     return NextResponse.json({ error: 'Unknown outcome' }, { status: 400 });
   }
 
@@ -53,10 +55,10 @@ export async function POST(req: Request) {
   // Every outcome counts as a touch — this is what drives the rotation.
   const patch: Record<string, unknown> = { last_touched_at: now, attempt_count: attempts };
 
-  if (outcome === 'interested') {
-    // Promote to hot and hand to whoever takes hot leads. This CRM's stages
-    // are hot/cold/mr_coming_soon/invoice_sent/won/junk — 'hot' is the only
-    // valid promotion target here, whatever the client sends.
+  if (outcome === 'interested_hot') {
+    // Ready to move. Promote to hot and hand to whoever takes hot leads. This
+    // CRM's stages are hot/cold/mr_coming_soon/invoice_sent/won/junk — 'hot'
+    // is the only valid promotion target here, whatever the client sends.
     void stage;
     patch.stage = 'hot';
     patch.snooze_until = null;
@@ -69,6 +71,14 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle();
     patch.owner_id = hotOwner?.user_id || q.user_id;
+  } else if (outcome === 'interested_cold') {
+    // Keen but still deciding. The discussion is live, so the lead STAYS cold
+    // and keeps its place in the rotation — recording the touch (already in
+    // patch) is enough to move it to the back of the queue for a natural
+    // follow-up on its next turn. Stage unchanged, not retired, not snoozed,
+    // and it stays with the same rep who is having the conversation.
+    void stage;
+    patch.owner_id = q.user_id;
   } else if (outcome === 'not_now') {
     const wake = new Date(); wake.setDate(wake.getDate() + SNOOZE_DAYS);
     patch.snooze_until = wake.toISOString();
@@ -97,7 +107,7 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     ok: true,
-    promoted: outcome === 'interested',
+    promoted: outcome === 'interested_hot',
     retired: !!patch.retired_at,
     attempts,
   });
