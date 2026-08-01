@@ -31,7 +31,12 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
 
-  let body: { type?: string; leadId?: string; paymentId?: string; force?: boolean; discount?: number };
+  let body: {
+    type?: string; leadId?: string; paymentId?: string; force?: boolean; discount?: number;
+    // Editable documents: preview returns the rendered html without sending;
+    // the override fields carry the user's edited version back for sending.
+    preview?: boolean; overrideHtml?: string; overrideSubject?: string;
+  };
   try { body = await req.json(); } catch { return NextResponse.json({ ok: false, reason: 'bad_request' }, { status: 400 }); }
   const type = body.type as EmailType;
   const leadId = body.leadId;
@@ -133,6 +138,26 @@ export async function POST(req: Request) {
       ? { name: (ws as { case_manager_name: string }).case_manager_name, phone: (ws as { case_manager_phone?: string }).case_manager_phone || '' }
       : undefined;
     email = renderOnboarding(lead as Lead, cm);
+  }
+
+  // ── Editable documents ────────────────────────────────────────────────────
+  // preview: true      → return the rendered subject + html, send nothing.
+  //                      The drawer uses this to open the editor.
+  // overrideHtml/…Subject → the user edited the preview; send their version.
+  //                      Only the full-document types are editable. Invoices
+  //                      are generated from payment records, so their figures
+  //                      must stay machine-produced.
+  const editable = type === 'sla' || type === 'process';
+  if (body.preview === true) {
+    if (!editable) return NextResponse.json({ ok: false, reason: 'not_editable' }, { status: 400 });
+    return NextResponse.json({ ok: true, preview: true, subject: email.subject, html: email.html });
+  }
+  if (editable && typeof body.overrideHtml === 'string' && body.overrideHtml.trim().length > 200) {
+    email = { ...email, html: body.overrideHtml };
+    meta = { ...meta, edited: true };
+  }
+  if (editable && typeof body.overrideSubject === 'string' && body.overrideSubject.trim()) {
+    email = { ...email, subject: body.overrideSubject.trim().slice(0, 200) };
   }
 
   // Send via the Resend REST API (same pattern as notify-client).

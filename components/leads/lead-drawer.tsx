@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star, Pencil, Send, Inbox } from 'lucide-react';
+import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star, Pencil, Send, Inbox, Eye } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { Lead, Note, Payment, LeadStage } from '@/lib/types';
 import { STAGE_META, MILESTONE_META, VISA_META, getVisaMeta } from '@/lib/types';
@@ -18,6 +18,7 @@ import { RoadmapTab } from '@/components/roadmap/roadmap-tab';
 import { IndustrySelector, IndustryChip } from '@/components/shared/industry-chip';
 import { initials, avatarColor, formatMoney, timeAgo, scoreColor, cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { DocEditorModal } from '@/components/leads/doc-editor-modal';
 
 interface Props {
   leadId: string | null;
@@ -45,6 +46,45 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const [slaConfigOpen, setSlaConfigOpen] = useState(false);
   const [slaEditMode, setSlaEditMode] = useState(false);
   const [slaDiscount, setSlaDiscount] = useState('');
+
+  // Review-and-edit before sending. Which document the editor holds, plus the
+  // discount captured at open time so the preview and the send agree.
+  const [docEditor, setDocEditor] = useState<null | { type: 'sla' | 'process'; discount?: number }>(null);
+
+  const fetchDocPreview = async (): Promise<{ subject: string; html: string } | null> => {
+    if (!lead || !docEditor) return null;
+    try {
+      const res = await fetch('/api/email/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: docEditor.type, leadId: lead.id, preview: true,
+          ...(docEditor.discount ? { discount: docEditor.discount } : {}) }),
+      });
+      const j = await res.json().catch(() => null);
+      if (j?.ok && j.html) return { subject: j.subject, html: j.html };
+      toast.error(`Could not prepare the document${j?.reason ? `: ${j.reason}` : ''}`);
+      return null;
+    } catch { toast.error('Could not prepare the document'); return null; }
+  };
+
+  const sendEditedDoc = async (subject: string, html: string): Promise<boolean> => {
+    if (!lead || !docEditor) return false;
+    try {
+      const res = await fetch('/api/email/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: docEditor.type, leadId: lead.id,
+          overrideHtml: html, overrideSubject: subject,
+          ...(docEditor.discount ? { discount: docEditor.discount } : {}) }),
+      });
+      const j = await res.json().catch(() => null);
+      if (j?.ok) {
+        toast.success(`${docEditor.type === 'sla' ? 'Agreement' : '"How it works" email'} sent to ${lead.email}`);
+        if (docEditor.type === 'sla') { setSlaConfigOpen(false); setSlaEditMode(false); setSlaDiscount(''); }
+        return true;
+      }
+      toast.error(`Send failed${j?.reason ? `: ${j.reason}` : ''}`);
+      return false;
+    } catch { toast.error('Send failed — check your connection'); return false; }
+  };
 
   const sendEmail = async (type: 'sla' | 'onboarding' | 'process', discount?: number) => {
     if (!lead) return;
@@ -543,6 +583,14 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                       >
                         <FileText className="w-3.5 h-3.5" /> {sendingEmail === 'process' ? 'Sending…' : 'How it works'}
                       </button>
+                      <button
+                        onClick={() => setDocEditor({ type: 'process' })}
+                        disabled={sendingEmail !== null}
+                        title="Review and edit before sending"
+                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-[#506BD8] bg-white border border-[#C7D0F0] hover:bg-[#EEF2FF] transition-all disabled:opacity-50"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                     )}
                     {canSendEmails && slaConfigOpen && (
@@ -557,6 +605,13 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#506BD8] bg-white border border-[#C7D0F0] hover:bg-[#EEF2FF] transition-all disabled:opacity-50"
                               >
                                 <Pencil className="w-3.5 h-3.5" /> Edit amount
+                              </button>
+                              <button
+                                onClick={() => setDocEditor({ type: 'sla' })}
+                                disabled={sendingEmail !== null}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-ink-2 bg-white border border-border hover:bg-surface-2 transition-all disabled:opacity-50"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> Review &amp; edit
                               </button>
                               <button
                                 onClick={() => sendEmail('sla')}
@@ -587,6 +642,13 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                                 className="px-2.5 py-1.5 rounded-lg text-[12.5px] text-muted hover:bg-surface-2 transition-all disabled:opacity-50"
                               >
                                 Cancel
+                              </button>
+                              <button
+                                onClick={() => setDocEditor({ type: 'sla', discount: Math.min(Math.max(Number(slaDiscount) || 0, 0), 1500) })}
+                                disabled={sendingEmail !== null}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-ink-2 bg-white border border-border hover:bg-surface-2 transition-all disabled:opacity-50"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> Review &amp; edit
                               </button>
                               <button
                                 onClick={() => sendEmail('sla', Math.min(Math.max(Number(slaDiscount) || 0, 0), 1500))}
@@ -668,6 +730,15 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
         <ComposeDialog open={composeOpen} leadId={lead.id} toEmail={effectiveLead?.email || ''} toName={effectiveLead?.full_name || ''}
           workspaceId={workspace.id} userId={appUser.id} onClose={() => setComposeOpen(false)} onSent={refreshEmails} />
       )}
+      <DocEditorModal
+        open={docEditor !== null}
+        onClose={() => setDocEditor(null)}
+        docLabel={docEditor?.type === 'sla' ? 'Service Agreement — review before sending' : '"How it works" email — review before sending'}
+        recipient={lead?.email || ''}
+        fetchPreview={fetchDocPreview}
+        send={sendEditedDoc}
+      />
+
       <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}

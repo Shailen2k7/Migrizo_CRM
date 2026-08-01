@@ -112,10 +112,18 @@ function checkRows(items: string[]): string {
     </tr>`).join('');
 }
 
+// Which visa family does this lead belong to? Drives which agreement,
+// process email and invoice wording they receive. Anything not clearly the
+// Innovator Founder route falls back to Global Talent, which preserves the
+// exact behaviour that existed before IFV support was added.
+export function visaKindOf(visa_type: string | null | undefined): 'gtv' | 'ifv' {
+  const v = (visa_type || '').toLowerCase();
+  return v.includes('ifv') || v.includes('innovator') || v.includes('founder') ? 'ifv' : 'gtv';
+}
+
 export function renderOnboarding(lead: Pick<Lead, 'full_name' | 'visa_type'>, caseManager?: { name: string; phone: string }): { subject: string; html: string; text: string } {
   const first = (lead.full_name || 'there').split(' ')[0];
-  const visa = (lead.visa_type || '').toLowerCase().includes('ifv') || (lead.visa_type || '').toLowerCase().includes('innovator')
-    ? 'Innovator Founder Visa' : 'Global Talent Visa';
+  const visa = visaKindOf(lead.visa_type) === 'ifv' ? 'Innovator Founder Visa' : 'Global Talent Visa';
 
   const steps = [
     ['1', 'Roadmap call', 'Your case manager schedules a kickoff call and walks you through your personalised roadmap.'],
@@ -185,7 +193,14 @@ export function renderOnboarding(lead: Pick<Lead, 'full_name' | 'visa_type'>, ca
 //    branding (logo, layout) is Migrizo. M4 references are part of the
 //    contract's legal content and are intentionally preserved.
 // ---------------------------------------------------------------------------
-export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discount = 0): { subject: string; html: string; text: string } {
+export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone' | 'visa_type'>, discount = 0): { subject: string; html: string; text: string } {
+  // Dispatch on the visa route. The GTV path below is untouched, so existing
+  // clients receive exactly the agreement they always did.
+  if (visaKindOf(lead.visa_type) === 'ifv') return renderSLAIFV(lead, discount);
+  return renderSLAGTV(lead, discount);
+}
+
+function renderSLAGTV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discount = 0): { subject: string; html: string; text: string } {
   const name = esc(lead.full_name);
   const email = esc(lead.email || '—');
   const phone = esc(lead.phone || '—');
@@ -420,16 +435,307 @@ export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, dis
 }
 
 // ---------------------------------------------------------------------------
+// 2a) SLA — INNOVATOR FOUNDER VISA variant. Mirrors the GTV agreement clause
+//     for clause (all 13 sections, all seven refund sub-clauses) with the
+//     route-specific parts swapped: the ten-step founder scope, the IFV
+//     milestone table, and government costs reduced to a single clause (4.2)
+//     with no figures, per the approved wireframe. The discount cascades the
+//     same way as GTV: first against the Business Plan milestone, then the
+//     Final Balance, capped at 1,500.
+// ---------------------------------------------------------------------------
+function renderSLAIFV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discount = 0): { subject: string; html: string; text: string } {
+  const name = esc(lead.full_name);
+  const email = esc(lead.email || '—');
+  const phone = esc(lead.phone || '—');
+
+  const d = Math.max(0, Math.min(discount || 0, 1500));
+  let r2 = 0, r4 = 0;
+  if (d <= 500) { r2 = d; }
+  else if (d <= 1000) { r2 = 500; r4 = d - 500; }
+  else { r2 = 500 + (d - 1000) / 2; r4 = 500 + (d - 1000) / 2; }
+  const M1 = 500, M2 = 1000 - r2, M3 = 750, M4 = 750 - r4;
+  const netFee = M1 + M2 + M3 + M4; // === 3000 - d
+  const gbp = (n: number) => `\u00A3${n.toLocaleString('en-GB')}`;
+
+  const feeIntro = d > 0
+    ? `The standard professional fee for the end-to-end Innovator Founder Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as milestone-based payments below. As a special arrangement, a discount of ${gbp(d)} has been applied — adjusted across the Business Plan and Final Balance milestones as shown below — bringing your net professional fee to <b>${gbp(netFee)}</b>.`
+    : `The total professional fee payable to Migrizo for the end-to-end Innovator Founder Visa service is <b>\u00A33,000</b> (Three Thousand Pounds Sterling). This is structured as milestone-based payments as detailed below.`;
+
+  const kv = (k: string, v: string) => `
+    <tr>
+      <td style="padding:7px 12px;background:${BG};font-size:12px;font-weight:700;color:${NAVY};width:190px;border-bottom:2px solid #fff;">${k}</td>
+      <td style="padding:7px 12px;background:#F8F9FC;font-size:12.5px;color:${INK};border-bottom:2px solid #fff;">${v}</td>
+    </tr>`;
+
+  const feeRow = (n: string, dsc: string, a: string, by: string) => `
+    <tr>
+      <td style="padding:8px 10px;font-size:12px;color:${MUTED};border-bottom:1px solid #E7EAF1;">${n}</td>
+      <td style="padding:8px 10px;font-size:12.5px;color:${INK};border-bottom:1px solid #E7EAF1;line-height:1.5;">${dsc}</td>
+      <td style="padding:8px 10px;font-size:12.5px;font-weight:700;color:${NAVY};border-bottom:1px solid #E7EAF1;white-space:nowrap;" align="right">${a}</td>
+      <td style="padding:8px 10px;font-size:11.5px;color:${MUTED};border-bottom:1px solid #E7EAF1;white-space:nowrap;">${by}</td>
+    </tr>`;
+
+  const li = (t: string) => `<li style="font-size:12.5px;line-height:1.7;color:${INK};margin-bottom:6px;">${t}</li>`;
+  const sub = (t: string) => `<div style="font-size:13px;font-weight:700;color:${NAVY};margin:12px 0 4px;">${t}</div>`;
+
+  const body = `
+    ${h1('Innovator Founder Visa (UK) — Professional Services Agreement')}
+    ${small(`Issued ${today()} · Prepared for ${name}. Please read this Agreement carefully before accepting.`)}
+
+
+    ${h2('1. Parties to this Agreement')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
+      ${kv('Service Provider', 'M4 Investments Ltd (trading as Migrizo)')}
+      ${kv('Head Office — Registered Address', 'Suite 39, Podium, 85 Ealing Cross, Ealing, London, W5 5BW, United Kingdom')}
+      ${kv('Registered In', 'England &amp; Wales')}
+      ${kv('Indian Partner', 'Migrizo Ventures Pvt Ltd. (Formerly known as Grownmind Educational Services Pvt Ltd)')}
+      ${kv('Director', 'Jeet Choudhary')}
+      ${kv('AVP — India Operations', 'Shailendra Pathak')}
+      ${kv('Website', '<a href="https://www.migrizo.com" style="color:' + BLUE + ';">www.migrizo.com</a>')}
+      ${kv('Telephone', '+44 7887 348822')}
+    </table>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+      ${kv('Client Full Name', `<b>${name}</b>`)}
+      ${kv('Email Address', email)}
+      ${kv('Contact Number', phone)}
+      ${kv('Nationality', 'Indian')}
+    </table>
+    ${p(`This Service Agreement ("Agreement") is entered into on the date last signed below between M4 Investments Ltd ("Migrizo" / "Service Provider") and the above-named individual ("Client"). Both parties agree to the terms and conditions set out herein.`)}
+
+    ${h2('2. Authorisation of Indian Operations')}
+    ${p(`M4 Investments Ltd, a company registered in England and Wales, hereby authorises and acknowledges that Migrizo Ventures Pvt Ltd. (Formerly known as Grownmind Educational Services Pvt Ltd), operating under the brand name Migrizo (accessible at www.migrizo.com), serves as its officially recognised Indian partner and subsidiary for the purposes of client acquisition, consultation, documentation support, and end-to-end immigration advisory services in India. All services rendered by Grownmind Educational Services Pvt Ltd under the Migrizo brand in relation to UK immigration matters, including but not limited to the Innovator Founder Visa, are conducted under the authority, oversight, and full accountability of M4 Investments Ltd. Clients engaging with Migrizo in India are hereby assured that they are engaging with a recognised representative of M4 Investments Ltd, and all commitments made by Migrizo under a duly executed Service Agreement are binding upon and backed by M4 Investments Ltd. Clients can make all the relevant payments of cases either in an Indian bank account or in a UK bank account.`)}
+
+    ${h2('3. Purpose &amp; Scope of Services')}
+    ${p(`Migrizo agrees to provide end-to-end advisory, documentation, and submission support services to assist the Client in applying for an Innovator Founder Visa under the UK Home Office immigration framework. The scope of engagement is described below.`)}
+    <ul style="margin:0 0 10px;padding-left:20px;">
+      ${li(`<b>Founder profile analysis</b> — review of the Client's background, experience, and business intent to assess suitability for the route.`)}
+      ${li(`<b>Business idea assessment</b> — evaluation of innovation, scalability, and market potential against UK endorsement standards.`)}
+      ${li(`<b>Eligibility mapping</b> — alignment of the Client's profile and business concept with the official Innovator Founder criteria.`)}
+      ${li(`<b>Gap identification</b> — identification of missing elements such as business clarity, market validation, or founder positioning.`)}
+      ${li(`<b>Business structuring plan</b> — a clear roadmap covering the business model, UK relevance, and scalability.`)}
+      ${li(`<b>Documentation support</b> — assistance with the business plan, pitch deck, founder statement, and supporting evidence.`)}
+      ${li(`<b>Endorsement preparation</b> — preparation and refinement of endorsement documentation for the approved endorsing body.`)}
+      ${li(`<b>Endorsement application submission</b> — complete submission and coordination with the endorsing body.`)}
+      ${li(`<b>Visa filing assistance</b> — post-endorsement support with Home Office filing, the Immigration Health Surcharge, and compliance steps.`)}
+      ${li(`<b>Post-approval and business setup support</b> — guidance on UK business setup, operations, dependants, and settlement planning.`)}
+    </ul>
+
+    ${h2('4. Fee Schedule &amp; Payment Terms')}
+    ${sub('4.1 Professional Fee')}
+    ${p(feeIntro)}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 12px;border:1px solid #E7EAF1;border-radius:10px;overflow:hidden;">
+      <tr style="background:${NAVY};">
+        <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;">#</td>
+        <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;">Milestone / Description</td>
+        <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;" align="right">Amount</td>
+        <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;">Paid By</td>
+      </tr>
+      ${feeRow('1', 'Kickstart Fee (Idea) — Engagement commencement, founder profile analysis and business idea assessment', gbp(M1), 'Client → Migrizo')}
+      ${feeRow('2', 'Business Plan Stage — Business structuring plan, business plan and pitch deck development' + (r2 > 0 ? ' (discount applied)' : ''), gbp(M2), 'Client → Migrizo')}
+      ${feeRow('3', 'Endorsement Application Submission — Due at the time of submission to the endorsing body', gbp(M3), 'Client → Migrizo')}
+      ${M4 > 0 ? feeRow('4', 'Final Professional Fee Balance — Payable upon receipt of endorsement approval' + (r4 > 0 ? ' (discount applied)' : ''), gbp(M4), 'Client → Migrizo') : ''}
+      ${d > 0 ? `
+      <tr style="background:#E6F7EE;">
+        <td style="padding:8px 10px;"></td>
+        <td style="padding:8px 10px;font-size:12px;font-weight:700;color:#047857;">Special Discount Applied</td>
+        <td style="padding:8px 10px;font-size:12.5px;font-weight:800;color:#047857;" align="right">\u2212 ${gbp(d)}</td>
+        <td style="padding:8px 10px;font-size:11px;color:#047857;">Adjusted in milestones above</td>
+      </tr>` : ''}
+      <tr style="background:#FBF7DE;">
+        <td style="padding:8px 10px;"></td>
+        <td style="padding:8px 10px;font-size:12.5px;font-weight:800;color:${NAVY};">${d > 0 ? 'NET PROFESSIONAL FEE PAYABLE (Migrizo)' : 'TOTAL PROFESSIONAL FEE (Migrizo)'}</td>
+        <td style="padding:8px 10px;font-size:13px;font-weight:800;color:${NAVY};" align="right">${gbp(netFee)}</td>
+        <td style="padding:8px 10px;"></td>
+      </tr>
+    </table>
+
+    ${sub('4.2 Government and Third-Party Costs')}
+    ${p(`All government, endorsing body, and third-party fees relating to this application — including but not limited to endorsement fees, visa application fees, the Immigration Health Surcharge, any contact point meeting charges levied by the endorsing body, and any dependant fees — are payable by the Client directly to the relevant authority. These costs do not form part of Migrizo's professional fee, are set by the relevant authorities, and are subject to change without notice. Current figures will be shared with the Client at the applicable stage and may be verified independently on the UK Government website.`)}
+
+    ${sub('4.3 Payment Terms')}
+    ${p(`It is suggested to release the payment on time in phases for the smooth operations and process flow. Delay in payments might cause the nullify the agreement and company will not be liable to any responsibility in lieu of the successful application.`)}
+    <ul style="margin:0 0 10px;padding-left:20px;">
+      ${li(`All payments to Migrizo (India) OR M4 Investment Ltd. (UK) must be made via bank transfer — or, for clients in India, via UPI (grownmind@icici) — to the account details provided in the invoice issued at each milestone. Receipts will be issued for every payment received.`)}
+      ${li(`All fees are quoted in Pounds Sterling (£). International clients are responsible for any currency conversion or banking transaction charges.`)}
+    </ul>
+
+    ${h2('5. Cancellation &amp; Refund Policy')}
+    ${sub('5.1 Cancellation by the Client')}
+    ${p(`In the event that the Client elects to cancel, withdraw, or discontinue the engagement at any stage after the commencement of services, all fees paid to Migrizo or M4 Investments Ltd shall remain strictly non-refundable. The Client acknowledges that the services provided under this Agreement are advisory, strategic, and intellectual in nature, and are deemed to have been consumed upon delivery of consultation, roadmap planning, documentation support, or any related service component. The Client further acknowledges that services shall be deemed to have commenced and partially or substantially delivered upon the initiation of any consultation, communication of strategy, sharing of roadmap, allocation of internal resources, or engagement of personnel by Migrizo, irrespective of whether the overall scope of services has been fully completed.`)}
+    ${sub('5.2 Nature of Services and Fee Structure')}
+    ${p(`The Client expressly agrees that all payments made under this Agreement are in consideration of professional time, expertise, resource allocation, and strategic guidance provided by Migrizo. Such services are non-tangible, non-returnable, and cannot be reversed once delivered. Accordingly, fees paid are not contingent upon any specific outcome, including but not limited to endorsement approval, visa grant, or immigration success.`)}
+    ${sub('5.3 No Refund on Unsuccessful Outcome')}
+    ${p(`The Client understands and agrees that all decisions relating to endorsement and visa applications are made solely by the UK Home Office, UK Visas &amp; Immigration (UKVI), and/or relevant endorsing bodies. Migrizo has no control over such decisions. Therefore, under no circumstances shall any refund be issued in the event of an unsuccessful application, regardless of the reason, including where no fault, error, or omission is attributed to the Client. However, Migrizo will reapply next time with fresh evidence, narration, and fresh bundle of evidence without any cost and shall not charge anything for full strategy end to end. The Client will only need to pay the applicable endorsement fee directly to the endorsing body.`)}
+    ${sub('5.4 External Factors and Policy Changes')}
+    ${p(`The Client acknowledges that immigration policies, endorsement criteria, and regulatory requirements may change at any time and are outside the control of Migrizo. Any such changes, including delays, refusals, or additional requirements imposed by authorities, shall not constitute grounds for any refund, compensation, or claim against Migrizo.`)}
+    ${sub('5.5 Termination by Either Party')}
+    ${p(`In the event of termination of this Agreement by either the Client or Migrizo, for any reason whatsoever, all fees paid up to the date of termination shall remain non-refundable. Migrizo reserves the right to discontinue services where the Client fails to comply with obligations, delays communication, or engages in conduct that may affect the integrity of the application process, without any liability for refund.`)}
+    ${sub('5.6 Waiver of Refund Claims')}
+    ${p(`By entering into this Agreement, the Client expressly waives any right to seek refunds, reversals, or chargebacks of fees paid, including through financial institutions, payment gateways, or legal proceedings, on the basis of dissatisfaction with outcomes, perceived service quality, or any other reason related to the application process.`)}
+    ${sub('5.7 Service Satisfaction and Dispute Waiver')}
+    ${p(`The Client agrees that any dissatisfaction with the quality, speed, format, or perceived effectiveness of the services provided shall not constitute grounds for any refund, dispute, or chargeback. The Client acknowledges that the services rendered under this Agreement are advisory, strategic, and subjective in nature, and may vary based on individual profile, external factors, and regulatory assessment criteria. Accordingly, no claims shall arise on the basis of perceived service inadequacy or unmet expectations.`)}
+
+    ${h2('6. Client Obligations')}
+    ${p(`The Client acknowledges and agrees to the following obligations, all of which are essential to the success of the application:`)}
+    <ul style="margin:0 0 10px;padding-left:20px;">
+      ${li(`Provide accurate, complete, and truthful information, documents, and details as requested by Migrizo at each stage of the process.`)}
+      ${li(`Complete all tasks and activities outlined in the personalised roadmap delivered by Migrizo. Non-completion of mandatory roadmap tasks shall constitute a material breach of this Agreement and shall not give rise to any refund, compensation, or claim against Migrizo under any circumstances.`)}
+      ${li(`Actively participate in business plan development, including providing genuine financial projections, market research inputs, and timely feedback on drafts.`)}
+      ${li(`Ensure that the business idea and all supporting business information provided are genuine, original, and accurately represented. The Client is solely responsible for the authenticity of the business concept and any trading history submitted.`)}
+      ${li(`Remain willing and able to actively run the business in the United Kingdom, and attend any contact point meetings required by the endorsing body.`)}
+      ${li(`Respond to communications from Migrizo within a reasonable timeframe (typically 48–72 hours on working days) to avoid delays in the process.`)}
+      ${li(`Notify Migrizo immediately of any material changes to personal or business circumstances that may affect the application.`)}
+      ${li(`Comply with all UK immigration laws and UKVI requirements at all times.`)}
+      ${li(`Make all payments in accordance with the fee schedule in Section 4. Delays in payment may result in delays to the service and/or suspension of work.`)}
+    </ul>
+
+    ${h2('7. No Guarantee of Outcome')}
+    <ul style="margin:0 0 10px;padding-left:20px;">
+      ${li(`Migrizo provides professional advisory, preparation, and submission services only. Migrizo does not guarantee the approval of any visa application, endorsement application, or any other immigration-related decision.`)}
+      ${li(`All immigration decisions are made solely and exclusively by the UK Home Office, UK Visas &amp; Immigration (UKVI), and/or the relevant endorsing body. Migrizo has no influence, control, or relationship with any UK government official, Home Office caseworker, or endorsing body assessor.`)}
+      ${li(`Approval or rejection of an application is entirely at the discretion of the UK Home Office and is subject to their due diligence processes, immigration rules, and applicable policies at the time of assessment.`)}
+      ${li(`Any change in UK immigration policy, endorsement criteria, or Home Office guidelines after the commencement of this Agreement is beyond Migrizo's control and shall not constitute grounds for a refund or claim against Migrizo.`)}
+      ${li(`Migrizo shall not be liable for any consequential loss, financial loss, loss of business opportunity, or other damages arising from an unsuccessful visa or endorsement application.`)}
+    </ul>
+
+    ${h2('8. Confidentiality')}
+    <ul style="margin:0 0 10px;padding-left:20px;">
+      ${li(`Both parties agree to keep confidential all personal data, documents, and information exchanged under this Agreement and to use such information solely for the purposes of the immigration application.`)}
+      ${li(`Migrizo will handle all Client data in accordance with applicable data protection laws, including the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018.`)}
+      ${li(`The Client consents to Migrizo storing, processing, and (where necessary) sharing their personal and business data with UK endorsing bodies and UKVI solely for the purposes of this engagement.`)}
+      ${li(`Migrizo will not disclose Client information to any third party for marketing or commercial purposes without explicit written consent.`)}
+    </ul>
+
+    ${h2('9. Limitation of Liability')}
+    <ul style="margin:0 0 10px;padding-left:20px;">
+      ${li(`Migrizo's total aggregate liability to the Client under or in connection with this Agreement shall not exceed the total professional fees paid by the Client to Migrizo at the time the claim arises.`)}
+      ${li(`Migrizo shall not be liable for: (a) delays caused by the Client's failure to provide required documents or complete roadmap tasks; (b) decisions made by UKVI, the Home Office, or any endorsing body; (c) changes in UK immigration rules or policies; (d) any indirect, consequential, or special loss.`)}
+    </ul>
+
+    ${h2('10. Intellectual Property')}
+    ${p(`All content, documents, templates, strategies, and written materials prepared by Migrizo under this Agreement — including business plans, pitch decks, and financial models — remain the intellectual property of M4 Investments Ltd. They are provided for the Client's personal use in connection with their visa application only and may not be reproduced, resold, or shared without Migrizo's express written consent.`)}
+
+    ${h2('11. Governing Law &amp; Dispute Resolution')}
+    <ul style="margin:0 0 10px;padding-left:20px;">
+      ${li(`This Agreement shall be governed by and construed in accordance with the laws of Uttar Pradesh, India.`)}
+      ${li(`In the event of any dispute arising under or in connection with this Agreement, the parties shall first attempt to resolve the matter amicably through good-faith negotiation within 30 days of written notice.`)}
+      ${li(`If the dispute cannot be resolved amicably, either party may refer the matter to mediation before commencing legal proceedings.`)}
+      ${li(`The courts of Noida shall have exclusive jurisdiction over any disputes arising from this Agreement.`)}
+    </ul>
+
+    ${h2('12. General Provisions')}
+    <ul style="margin:0 0 10px;padding-left:20px;">
+      ${li(`<b>Entire Agreement:</b> This Agreement constitutes the entire understanding between the parties and supersedes all prior representations, discussions, or agreements relating to the subject matter herein.`)}
+      ${li(`<b>Amendments:</b> Any amendments to this Agreement must be made in writing and signed by both parties.`)}
+      ${li(`<b>Severability:</b> If any provision of this Agreement is found to be unenforceable, the remaining provisions shall continue in full force and effect.`)}
+      ${li(`<b>Waiver:</b> Failure by either party to enforce any provision of this Agreement shall not constitute a waiver of that provision or any other right.`)}
+      ${li(`<b>Notices:</b> All formal notices under this Agreement shall be sent by email to the addresses recorded at the head of this Agreement and shall be deemed received within 24 hours of sending.`)}
+    </ul>
+
+    ${h2('13. Declaration & Acceptance')}
+    ${p(`Both parties confirm that they have read, understood, and agree to be bound by all the terms and conditions of this Agreement.`)}
+    <div style="border:1.5px solid ${BLUE};background:#F4F6FE;border-radius:12px;padding:16px 18px;margin:18px 0 8px;">
+      <div style="font-size:11px;font-weight:800;color:${NAVY};letter-spacing:0.6px;margin-bottom:6px;">ACCEPTANCE OF THIS AGREEMENT</div>
+      <div style="font-size:12.5px;color:${INK};line-height:1.75;">
+        The Service Level Agreement (SLA) is set out above for your review. By <b>replying to this email with "I Accept"</b> — or any other written confirmation of acceptance — you acknowledge that you have read, understood, and voluntarily accepted all terms and conditions contained herein. Such acceptance shall constitute a legally binding agreement between the parties, subject to applicable laws.
+      </div>
+    </div>
+    ${small(`M4 Investments Ltd | www.migrizo.com | info@migrizo.com | +44 7887 348822 | Suite 39, Podium, 85 Ealing Cross, Ealing, London W5 5BW, United Kingdom`)}
+  `;
+
+  return {
+    subject: `Migrizo — Your Innovator Founder Visa Service Agreement`,
+    html: shell('Migrizo Service Agreement', body, 'Your professional services agreement — please review and accept.'),
+    text: `Dear ${lead.full_name}, please find your Innovator Founder Visa Professional Services Agreement with Migrizo. Review the full terms in this email and reply to this email with "I Accept" to accept. — Team Migrizo`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 2b) PROCESS / "HOW IT WORKS" — visual, icon-led explainer of the journey and
 //     what the client needs to provide. One-click from the lead drawer.
 // ---------------------------------------------------------------------------
 export function renderProcess(lead: Pick<Lead, 'full_name' | 'visa_type'>): { subject: string; html: string; text: string } {
+  if (visaKindOf(lead.visa_type) === 'ifv') return renderProcessIFV(lead);
   // The approved GTV marketing/process email — sent as-is (self-contained,
   // email-safe HTML with its own header, hero banner and footer).
   return {
     subject: `UK Global Talent Visa — how it works, what we need, and what it costs`,
     html: GTV_PROCESS_HTML,
     text: `Hi ${lead.full_name}, here is how the UK Global Talent Visa works with Migrizo: a fully-managed 7-step process (profile evaluation, personalised roadmap, profile building, supporting documents, endorsement submission, visa application, post-landing support) for a fixed GBP 3,000 professional fee across 4 milestones. Government and third-party costs (endorsement GBP 561, visa GBP 210, IHS, optional PR) are paid directly by you. Total estimated all-inclusive cost: about GBP 7,500 (3-year visa) or GBP 9,500 (5-year visa). Book a free profile assessment on WhatsApp: https://wa.me/447887348822 - Team Migrizo`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 2c) PROCESS — INNOVATOR FOUNDER VISA variant. Built from the approved
+//     brochure: what the route gives, the ten-step Migrizo process, the
+//     timeline, and the costs (this is a quote, so figures are appropriate
+//     here even though the agreement itself keeps them to one clause).
+// ---------------------------------------------------------------------------
+function renderProcessIFV(lead: Pick<Lead, 'full_name'>): { subject: string; html: string; text: string } {
+  const first = (lead.full_name || 'there').split(' ')[0];
+  const li = (t: string) => `<li style="font-size:12.5px;line-height:1.7;color:${INK};margin-bottom:6px;">${t}</li>`;
+  const step = (n: string, t: string, d: string) => `
+    <tr>
+      <td width="44" valign="top" style="padding:9px 0;">
+        <div style="width:30px;height:30px;border-radius:50%;background:${BLUE};color:#fff;font-weight:700;font-size:13px;text-align:center;line-height:30px;">${n}</div>
+      </td>
+      <td valign="top" style="padding:9px 0;">
+        <div style="font-size:13.5px;font-weight:700;color:${NAVY};">${t}</div>
+        <div style="font-size:12.5px;color:${MUTED};line-height:1.6;margin-top:2px;">${d}</div>
+      </td>
+    </tr>`;
+
+  const body = `
+    ${h1(`UK Innovator Founder Visa — how it works, what we need, and what it costs`)}
+    ${p(`Hi ${esc(first)},`)}
+    ${p(`The <b>Innovator Founder Visa</b> is for entrepreneurs establishing or scaling an innovative business in the UK. It rewards innovation, scalability and viability rather than passive investment — there is <b>no minimum investment threshold, no job offer, and no sponsor</b> required.`)}
+
+    ${h2('What it gives you')}
+    <ul style="margin:0 0 14px;padding-left:20px;">
+      ${li(`A <b>three year visa</b> with a direct pathway to settlement (ILR) after three continuous years.`)}
+      ${li(`No minimum investment and no job offer required.`)}
+      ${li(`Dependants included — spouse and children, from day one.`)}
+      ${li(`Full freedom to build and grow your own UK business.`)}
+      ${li(`Endorsed by approved UK endorsing bodies.`)}
+    </ul>
+
+    ${h2('Our ten step process')}
+    <div style="background:${BG};border-radius:12px;padding:6px 18px;margin:12px 0 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        ${step('1', 'Founder profile analysis', 'We review your background, experience and business intent to assess suitability.')}
+        ${step('2', 'Business idea assessment', 'Innovation, scalability and market potential evaluated against UK endorsement standards.')}
+        ${step('3', 'Eligibility mapping', 'Your profile and business concept aligned with the official Innovator Founder criteria.')}
+        ${step('4', 'Gap identification', 'Missing elements — business clarity, market validation, founder positioning — identified early.')}
+        ${step('5', 'Business structuring plan', 'A clear roadmap covering business model, UK relevance and scalability.')}
+        ${step('6', 'Documentation support', 'Business plan, pitch deck, founder statement and supporting evidence.')}
+        ${step('7', 'Endorsement preparation', 'Documentation prepared and refined for the approved endorsing body.')}
+        ${step('8', 'Endorsement submission', 'Complete submission and coordination with the endorsing body.')}
+        ${step('9', 'Visa filing assistance', 'Home Office filing, the health surcharge, and compliance steps after endorsement.')}
+        ${step('10', 'Post-approval &amp; setup', 'UK business setup, operations, dependants and settlement planning.')}
+      </table>
+    </div>
+
+    ${h2('Timeline')}
+    ${p(`Endorsement stage <b>4 to 6 weeks</b>. Visa stage <b>2 to 3 weeks</b>. The total timeline depends on business readiness — where the business idea or profile is not yet ready, we provide structured preparation support before submission.`)}
+
+    ${h2('What it costs')}
+    ${p(`Our professional fee is <b>\u00A33,000 fixed</b>, paid across four milestones as the work happens: \u00A3500 to kickstart, \u00A31,000 at the business plan stage, \u00A3750 at endorsement submission, and \u00A3750 once you are approved.`)}
+    ${p(`Government and third-party costs — the endorsement fee, visa fee and Immigration Health Surcharge — come to approximately <b>\u00A35,500</b> for a single applicant on a three year visa and are paid by you directly to the relevant authority. All in, a realistic total is around <b>\u00A38,500</b>. Government charges are set by the authorities and can change.`)}
+
+    <div style="border:1.5px solid ${GOLD};background:#FFFDF2;border-radius:12px;padding:14px 18px;margin:16px 0 8px;">
+      <div style="font-size:12.5px;color:${INK};line-height:1.7;">
+        <b>Next step:</b> book a free founder profile assessment on WhatsApp at
+        <a href="https://wa.me/447887348822" style="color:${BLUE};font-weight:700;">+44 7887 348822</a>
+        and we will tell you honestly whether your business idea is ready for this route.
+      </div>
+    </div>
+    ${p(`— Team Migrizo`)}
+  `;
+
+  return {
+    subject: `UK Innovator Founder Visa — how it works, what we need, and what it costs`,
+    html: shell('UK Innovator Founder Visa with Migrizo', body, 'No minimum investment. No job offer. Settlement in three years.'),
+    text: `Hi ${first}, the UK Innovator Founder Visa with Migrizo: a fully-managed 10-step process (founder analysis, business idea assessment, eligibility mapping, gap identification, business structuring, documentation, endorsement preparation and submission, visa filing, post-approval setup) for a fixed GBP 3,000 professional fee across 4 milestones (500 / 1,000 / 750 / 750). Government and third-party costs (~GBP 5,500 for a single applicant, 3-year visa) are paid by you directly. All-in approximately GBP 8,500. Timeline: endorsement 4-6 weeks, visa 2-3 weeks. Book a free assessment on WhatsApp: https://wa.me/447887348822 — Team Migrizo`,
   };
 }
 
@@ -445,9 +751,20 @@ export function renderInvoice(
 ): { subject: string; html: string; text: string } {
   const currency = lead.currency || 'INR';
   const amount = payment.amount || 0;
-  const milestone = MILESTONE_META[payment.milestone]?.label || payment.milestone;
-  const visa = (lead.visa_type || '').toLowerCase().includes('ifv') || (lead.visa_type || '').toLowerCase().includes('innovator')
-    ? 'Innovator Founder Visa' : 'Global Talent Visa';
+  // The milestone KEY is fixed across the CRM (payments, pipeline, reports).
+  // Only the label shown to the client follows the visa route.
+  const IFV_MILESTONE_LABELS: Record<string, string> = {
+    kickstart: 'Kickstart',
+    profile_building: 'Business Plan Stage',
+    endorsement: 'Endorsement Submission',
+    post_approval: 'Final Balance',
+  };
+  const gtvLabel = MILESTONE_META[payment.milestone]?.label || payment.milestone;
+  const milestone = visaKindOf(lead.visa_type) === 'ifv'
+    ? (IFV_MILESTONE_LABELS[payment.milestone] || gtvLabel)
+    : gtvLabel;
+  const kind = visaKindOf(lead.visa_type);
+  const visa = kind === 'ifv' ? 'Innovator Founder Visa' : 'Global Talent Visa';
   const isPaid = payment.status === 'paid';
   const dateStr = new Date(payment.paid_at || payment.created_at || Date.now())
     .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
