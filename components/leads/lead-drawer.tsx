@@ -19,6 +19,7 @@ import { IndustrySelector, IndustryChip } from '@/components/shared/industry-chi
 import { initials, avatarColor, formatMoney, timeAgo, scoreColor, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { DocEditorModal } from '@/components/leads/doc-editor-modal';
+import { VisaRouteTab } from '@/components/leads/visa-route-tab';
 
 interface Props {
   leadId: string | null;
@@ -29,7 +30,7 @@ interface Props {
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, createFollowUp, role, memberNameById, canViewPayments, canSendEmails, workspace, user: appUser } = useApp();
   const pl = usePipelines(workspace.id);
-  const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups' | 'emails' | 'roadmap'>('overview');
+  const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups' | 'emails' | 'roadmap' | 'route'>('overview');
   const [emailLog, setEmailLog] = useState<EmailLogEntry[] | null>(null);
   const [leadEmails, setLeadEmails] = useState<LeadEmailRow[] | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -258,9 +259,9 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
               </div>
 
               <div className="flex items-center gap-1 mx-6 mt-5 p-1 rounded-md bg-surface-2 w-fit">
-                {(['overview', 'notes', 'followups', ...(canViewPayments ? ['payments'] as const : []), ...(canSendEmails ? (['emails', 'roadmap'] as const) : [])] as const).map((t) => (
+                {(['overview', 'route', 'notes', 'followups', ...(canViewPayments ? ['payments'] as const : []), ...(canSendEmails ? (['emails', 'roadmap'] as const) : [])] as const).map((t) => (
                   <button key={t} onClick={() => setTab(t)} className={cn('px-3 py-1.5 rounded-md text-[12.5px] font-medium', tab === t ? 'bg-surface shadow-sm' : 'text-muted hover:bg-surface')}>
-                    {t === 'followups' ? 'Follow-ups' : t === 'emails' ? 'Emails' : t === 'roadmap' ? 'Roadmap' : t.charAt(0).toUpperCase() + t.slice(1)}
+                    {t === 'followups' ? 'Follow-ups' : t === 'emails' ? 'Emails' : t === 'roadmap' ? 'Roadmap' : t === 'route' ? 'Visa route' : t.charAt(0).toUpperCase() + t.slice(1)}
                     {t === 'notes' && notes.length > 0 ? ` · ${notes.length}` : ''}
                     {t === 'followups' && pendingFollowUps > 0 ? ` · ${pendingFollowUps}` : ''}
                     {t === 'payments' && leadPayments.length > 0 ? ` · ${leadPayments.length}` : ''}
@@ -677,6 +678,20 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-2">Template email history</div>
                     <EmailHistory log={emailLog} memberNameById={memberNameById} />
                   </div>
+                )}
+
+                {tab === 'route' && effectiveLead && (
+                  <VisaRouteTab
+                    lead={effectiveLead}
+                    canEdit={canSendEmails}
+                    onSwitch={async (next) => {
+                      // Persist immediately: the route drives documents and the
+                      // case journey, so it should never sit in unsaved state.
+                      await updateLead(lead.id, { visa_type: next });
+                      setPendingLead((prev) => { const { visa_type: _drop, ...rest } = prev; return rest; });
+                      toast.success(next === 'ifv' ? 'Moved to the Innovator Founder Visa' : 'Moved to the Global Talent Visa');
+                    }}
+                  />
                 )}
 
                 {tab === 'roadmap' && (
