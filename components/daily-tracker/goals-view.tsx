@@ -8,8 +8,12 @@
 // review closes the loop every Monday.
 //
 // Two access levels, enforced in the database by RLS as well as here:
-//   member  sees and manages only their own goals, tasks and reviews
-//   admin   sees everyone, and can set goals or assign tasks to anyone
+//   everyone      sees and manages only THEIR OWN goals, tasks and reviews
+//   super admin   sees every person, and can set goals or assign tasks to
+//                 anyone. Membership of that group lives in the
+//                 goal_super_admins table, seeded with the founder's address,
+//                 so it is not tied to the workspace 'admin' role — a normal
+//                 admin still only sees themselves.
 //
 // The design bet: goal trackers die when people have to type numbers. So any
 // KPI that CAN be computed from CRM data IS computed — revenue from payments,
@@ -26,7 +30,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   Target, CalendarDays, ClipboardCheck, Plus, X, ChevronRight, Check,
-  Loader2, Trash2, Sparkles, ArrowRight,
+  Loader2, Trash2, Sparkles, ArrowRight, ListChecks, Copy,
 } from 'lucide-react';
 
 // ── metric catalogue ────────────────────────────────────────────────────────
@@ -60,6 +64,11 @@ interface Review {
   id?: string; user_id: string; week_start: string;
   wins: string | null; blockers: string | null; next_focus: string | null;
   manager_note: string | null; submitted_at: string | null;
+}
+interface OneLiner {
+  user_id: string; headline: string | null; detail: string | null;
+  score: number; submitted: boolean;
+  wins: string | null; blockers: string | null; next_focus: string | null;
 }
 interface WeekRow {
   user_id: string; tasks_planned: number; tasks_done: number; tasks_carried: number;
@@ -95,10 +104,23 @@ export function GoalsView() {
     members: { user_id: string; full_name: string; role: string; status: string }[];
   };
   const { workspace, user, role, members } = app;
-  const isAdmin = role === 'admin';
   const supabase = useMemo(() => createClient(), []);
 
-  const [view, setView] = useState<'week' | 'goals' | 'review'>('week');
+  // Only the super admin sees other people. This is confirmed against the
+  // database rather than assumed from the workspace role, so the UI can never
+  // promise visibility that RLS will then refuse.
+  const [isSuper, setIsSuper] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc('is_goal_super_admin');
+      if (!cancelled && !error) setIsSuper(data === true);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase]);
+  const isAdmin = isSuper;
+
+  const [view, setView] = useState<'week' | 'goals' | 'review' | 'summary'>('week');
   const [weekStart, setWeekStart] = useState<Date>(() => mondayOf(new Date()));
   const [loading, setLoading] = useState(true);
 
@@ -108,6 +130,7 @@ export function GoalsView() {
   const [summary, setSummary] = useState<WeekRow[]>([]);
   const [autoVals, setAutoVals] = useState<Record<string, Record<string, number>>>({});
   const [review, setReview] = useState<Review | null>(null);
+  const [oneLiners, setOneLiners] = useState<OneLiner[]>([]);
 
   const [openCell, setOpenCell] = useState<string | null>(null);
   const [goalModal, setGoalModal] = useState(false);
@@ -116,10 +139,10 @@ export function GoalsView() {
   // A member only ever sees themselves; an admin sees the whole active team.
   const people = useMemo(() => {
     const active = (members || []).filter((m) => m.status !== 'paused');
-    const list = isAdmin ? active : active.filter((m) => m.user_id === user.id);
+    const list = isSuper ? active : active.filter((m) => m.user_id === user.id);
     if (!list.length) return [{ user_id: user.id, full_name: user.name, role, status: 'active' }];
     return list;
-  }, [members, isAdmin, user.id, user.name, role]);
+  }, [members, isSuper, user.id, user.name, role]);
 
   const days = useMemo(() => Array.from({ length: 6 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const todayStr = ymd(new Date());
@@ -132,12 +155,13 @@ export function GoalsView() {
     const ws = workspace.id;
     const from = ymd(weekStart), to = ymd(addDays(weekStart, 5));
 
-    const [a, g, t, s, m] = await Promise.all([
+    const [a, g, t, s, m, o] = await Promise.all([
       supabase.from('goal_areas').select('*').eq('workspace_id', ws).order('sort_order'),
       supabase.from('goals').select('*').eq('workspace_id', ws).eq('status', 'active'),
       supabase.from('goal_tasks').select('*').eq('workspace_id', ws).gte('task_date', from).lte('task_date', to),
       supabase.rpc('goal_week_summary', { p_workspace_id: ws, p_week_start: from }),
       supabase.rpc('goal_metrics', { p_workspace_id: ws, p_from: monthStart, p_to: monthEnd }),
+      supabase.rpc('goal_week_oneliners', { p_workspace_id: ws, p_week_start: from }),
     ]);
 
     if (a.data) setAreas(a.data as Area[]);
@@ -151,6 +175,7 @@ export function GoalsView() {
       }
       setAutoVals(map);
     }
+    if (o.data) setOneLiners(o.data as OneLiner[]);
     if (s.error) console.error('[goals] week summary:', s.error.message);
     setLoading(false);
   }, [supabase, workspace.id, weekStart, monthStart, monthEnd]);
@@ -245,7 +270,8 @@ export function GoalsView() {
       {/* ── toolbar ── */}
       <div className="flex items-center gap-2 flex-wrap mb-4">
         <div className="inline-flex gap-0.5 p-0.5 rounded-lg bg-surface-2">
-          {([['week', 'Week', CalendarDays], ['goals', 'Goals', Target], ['review', 'Weekly review', ClipboardCheck]] as const).map(([k, label, Icon]) => (
+          {([['week', 'Week', CalendarDays], ['goals', 'Goals', Target],
+             ['review', 'Weekly review', ClipboardCheck], ['summary', 'Monday summary', ListChecks]] as const).map(([k, label, Icon]) => (
             <button key={k} onClick={() => setView(k)}
               className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition',
                 view === k ? 'bg-surface shadow-sm text-ink' : 'text-muted hover:text-ink')}>
@@ -297,6 +323,14 @@ export function GoalsView() {
                 toast.success('Goal removed');
               }}
               onAdd={() => setGoalModal(true)}
+            />
+          )}
+
+          {view === 'summary' && (
+            <SummaryPanel
+              people={people} oneLiners={oneLiners} summary={summary}
+              weekLabel={weekLabel} isSuper={isSuper}
+              onOpenPerson={(uid) => { setFocusUser(uid); setView('review'); }}
             />
           )}
 
@@ -396,7 +430,7 @@ function WeekBoard({
                     const key = `${p.user_id}|${ds}`;
                     const isOpen = openCell === key;
                     return (
-                      <button key={ds} onClick={() => setOpenCell(isOpen ? null : key)}
+                      <button key={ds} onClick={() => { setDraft(''); setOpenCell(isOpen ? null : key); }}
                         className={cn('flex-1 min-w-[88px] border-r border-border-2 last:border-r-0 p-2 text-left transition-colors',
                           ds === todayStr && 'bg-[#F7F8FF]', isOpen && 'bg-[#EEF0FF] shadow-[inset_0_-2px_0_#4F46E5]',
                           !isOpen && 'hover:bg-surface-2')}>
@@ -473,10 +507,12 @@ function WeekBoard({
 
                     <div className="px-4 pb-3.5 pt-1">
                       <input
-                        value={openCell === `${p.user_id}|${open}` ? draft : ''}
+                        key={`${p.user_id}|${open}`}
+                        value={draft}
                         onChange={(e) => setDraft(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && draft.trim()) { addTask(p.user_id, open, draft); setDraft(''); }
+                          if (e.key === 'Escape') setDraft('');
                         }}
                         placeholder={`Add a task for ${p.full_name.split(' ')[0]} and press Enter`}
                         className="w-full text-[12.5px] px-3 py-2 rounded-lg border border-dashed border-border bg-white outline-none focus:border-[#4F46E5]"
@@ -944,6 +980,149 @@ function GoalModal({
             {busy ? 'Saving…' : 'Save goal'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MONDAY SUMMARY — the document the review meeting actually runs off.
+//
+// One line per person, built from real numbers rather than recollection, plus
+// the team totals. "Copy for the meeting" puts the whole thing on the
+// clipboard as plain text so it can be pasted into WhatsApp or an agenda.
+// ═══════════════════════════════════════════════════════════════════════════
+function SummaryPanel({
+  people, oneLiners, summary, weekLabel, isSuper, onOpenPerson,
+}: {
+  people: { user_id: string; full_name: string }[];
+  oneLiners: OneLiner[]; summary: WeekRow[];
+  weekLabel: string; isSuper: boolean;
+  onOpenPerson: (uid: string) => void;
+}) {
+  const nameOf = (uid: string) => people.find((p) => p.user_id === uid)?.full_name || 'Unknown';
+  const rows = oneLiners
+    .filter((o) => people.some((p) => p.user_id === o.user_id))
+    .sort((a, b) => b.score - a.score);
+
+  const totals = summary.reduce(
+    (acc, s) => ({
+      planned: acc.planned + Number(s.tasks_planned),
+      done: acc.done + Number(s.tasks_done),
+      carried: acc.carried + Number(s.tasks_carried),
+      revenue: acc.revenue + Number(s.revenue),
+      calls: acc.calls + Number(s.calls),
+      conv: acc.conv + Number(s.hot_conv),
+      submitted: acc.submitted + (s.review_submitted ? 1 : 0),
+    }),
+    { planned: 0, done: 0, carried: 0, revenue: 0, calls: 0, conv: 0, submitted: 0 },
+  );
+  const teamRate = pctOf(totals.done, totals.planned);
+
+  const copyAll = async () => {
+    const lines = [
+      `Migrizo — week of ${weekLabel}`,
+      `Team: ${totals.done}/${totals.planned} tasks (${teamRate}%) · ${fmt(totals.revenue, 'gbp')} booked · ${totals.conv} converted · ${totals.calls} calls`,
+      '',
+      ...rows.map((o) => {
+        const bits = [`${nameOf(o.user_id)}: ${o.headline || 'nothing recorded'}`];
+        if (o.detail) bits.push(`  (${o.detail})`);
+        if (o.next_focus) bits.push(`  Next: ${o.next_focus.replace(/\s+/g, ' ').trim()}`);
+        return bits.join('\n');
+      }),
+    ];
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      toast.success('Summary copied — paste it into the meeting notes');
+    } catch { toast.error('Could not copy'); }
+  };
+
+  return (
+    <div>
+      {/* team headline */}
+      <div className="card overflow-hidden">
+        <div className="px-4 py-3 border-b border-border-2 flex items-center gap-2.5 flex-wrap">
+          <div>
+            <div className="text-[14.5px] font-semibold">Week of {weekLabel}</div>
+            <div className="text-[11.5px] text-faint mt-0.5">
+              {isSuper ? 'Whole team' : 'Your week'} · every figure below is computed from the CRM
+            </div>
+          </div>
+          <button onClick={() => void copyAll()} className="btn btn-outline btn-sm ml-auto">
+            <Copy className="w-3.5 h-3.5" /> Copy for the meeting
+          </button>
+        </div>
+
+        <div className="grid gap-x-6 gap-y-3 px-4 py-3.5" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))' }}>
+          {([
+            ['Tasks done', `${totals.done}/${totals.planned}`, tone(teamRate)],
+            ['Completion', `${teamRate}%`, tone(teamRate)],
+            ['Carried over', String(totals.carried), totals.carried > 0 ? '#B0791B' : '#2F9E68'],
+            ['Revenue booked', fmt(totals.revenue, 'gbp'), '#1D1D1F'],
+            ['Converted', String(totals.conv), '#1D1D1F'],
+            ['Calls made', String(totals.calls), '#1D1D1F'],
+            ['Reviews in', `${totals.submitted}/${summary.length}`, totals.submitted === summary.length ? '#2F9E68' : '#B0791B'],
+          ] as const).map(([label, value, c]) => (
+            <div key={label}>
+              <div className="text-[10px] font-extrabold tracking-[0.06em] uppercase text-faint">{label}</div>
+              <div className="text-[19px] font-bold mt-0.5" style={{ color: c }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* one line per person */}
+      <div className="text-[10.5px] font-extrabold tracking-[0.08em] uppercase text-faint mt-6 mb-2.5">
+        {isSuper ? 'Person by person' : 'Your week'}
+      </div>
+      <div className="card">
+        {rows.length ? rows.map((o) => (
+          <button key={o.user_id} onClick={() => onOpenPerson(o.user_id)}
+            className="w-full text-left px-4 py-3.5 border-b border-border-2 last:border-b-0 hover:bg-surface-2 transition-colors">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-[10px] flex items-center justify-center text-white text-[11.5px] font-bold flex-shrink-0"
+                style={{ background: colourFor(o.user_id) }}>{initials(nameOf(o.user_id))}</div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="text-[13.5px] font-semibold">{nameOf(o.user_id)}</span>
+                  {!o.submitted && (
+                    <span className="text-[9.5px] font-bold tracking-wide px-1.5 py-0.5 rounded bg-[#FFF4E5] text-[#B0791B]">
+                      REVIEW PENDING
+                    </span>
+                  )}
+                </div>
+                <div className="text-[12.5px] text-ink-2 mt-1 leading-relaxed">
+                  {o.headline || 'Nothing recorded this week'}
+                </div>
+                {o.detail && <div className="text-[11.5px] text-faint mt-1">{o.detail}</div>}
+                {o.next_focus && (
+                  <div className="text-[12px] text-ink-2 mt-2 pl-2.5 border-l-2 border-[#DDE1F5] leading-relaxed">
+                    <span className="text-faint">Next week: </span>{o.next_focus}
+                  </div>
+                )}
+                {o.blockers && (
+                  <div className="text-[12px] mt-1.5 pl-2.5 border-l-2 border-[#F0C9A0] leading-relaxed">
+                    <span className="text-faint">Blocked on: </span>{o.blockers}
+                  </div>
+                )}
+              </div>
+              <div className="text-right flex-shrink-0">
+                <div className="text-[17px] font-bold" style={{ color: tone(o.score) }}>{o.score}%</div>
+                <div className="text-[10px] text-faint">tasks</div>
+              </div>
+            </div>
+          </button>
+        )) : (
+          <div className="px-4 py-10 text-center text-[13px] text-muted">
+            Nothing recorded for this week yet.
+          </div>
+        )}
+      </div>
+
+      <div className="text-[12px] text-muted leading-relaxed mt-4 px-1">
+        <Sparkles className="w-3.5 h-3.5 inline mr-1 align-[-2px] text-[#4F46E5]" />
+        Sorted by task completion, highest first. Every headline is generated from real activity, so the meeting starts
+        from facts rather than from everyone recalling their own week. Click a person to open their full review.
       </div>
     </div>
   );
