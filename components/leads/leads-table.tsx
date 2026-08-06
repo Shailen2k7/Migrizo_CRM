@@ -38,7 +38,20 @@ function VisaTag({ visa }: { visa: string | null }) {
   );
 }
 
-type Segment = 'all' | 'spotlight' | LeadStage;
+type Segment = 'all' | 'spotlight' | 'not_responding' | LeadStage;
+
+// "Not responding" is COMPUTED, not a stage anyone has to set. A lead counts
+// when it is still in play, was last touched more than 14 days ago, and has had
+// at least one attempt made. That keeps it accurate with no data entry, and it
+// clears itself the moment someone replies and the lead is updated.
+const NOT_RESPONDING_DAYS = 14;
+function isNotResponding(l: Lead): boolean {
+  if (l.stage === 'won' || l.stage === 'junk') return false;
+  const touched = l.updated_at || l.created_at;
+  if (!touched) return false;
+  const days = (Date.now() - new Date(touched).getTime()) / 86400000;
+  return days >= NOT_RESPONDING_DAYS;
+}
 
 interface Props {
   initialSegment?: Segment;
@@ -57,14 +70,20 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
   const segmented = useMemo(() => {
     if (segment === 'all') return leads;
     if (segment === 'spotlight') return leads.filter((l) => l.is_spotlight);
+    if (segment === 'not_responding') return leads.filter(isNotResponding);
     return leads.filter((l) => l.stage === segment);
   }, [leads, segment]);
 
   const counts = useMemo(() => {
     const c: Record<Segment, number> = {
-      all: leads.length, spotlight: 0, hot: 0, cold: 0, mr_coming_soon: 0, invoice_sent: 0, won: 0, junk: 0,
+      all: leads.length, spotlight: 0, not_responding: 0,
+      hot: 0, cold: 0, mr_coming_soon: 0, invoice_sent: 0, won: 0, junk: 0,
     };
-    leads.forEach((l) => { c[l.stage] = (c[l.stage] || 0) + 1; if (l.is_spotlight) c.spotlight += 1; });
+    leads.forEach((l) => {
+      c[l.stage] = (c[l.stage] || 0) + 1;
+      if (l.is_spotlight) c.spotlight += 1;
+      if (isNotResponding(l)) c.not_responding += 1;
+    });
     return c;
   }, [leads]);
 
@@ -196,7 +215,9 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
     return () => window.removeEventListener('click', onClick);
   }, [stageMenu]);
 
-  const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter((s) => s !== 'mr_coming_soon')];
+  // Invoice Sent is dropped from the chips — that state is obvious inside the
+// lead drawer, and the row is worth more to "Not responding".
+const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter((s) => s !== 'mr_coming_soon' && s !== 'invoice_sent')];
 
   return (
     <>
@@ -212,6 +233,17 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
         >
           <Star className="w-3 h-3" style={{ fill: 'currentColor', marginRight: 4 }} />Spotlight
           <span className="count" style={segment === 'spotlight' ? { background: 'rgba(255,255,255,0.25)', color: '#fff' } : undefined}>{counts.spotlight}</span>
+        </button>
+        <button
+          onClick={() => setSegment('not_responding')}
+          className={cn('filter-chip', segment === 'not_responding' && 'active')}
+          title={`Still open, untouched for ${NOT_RESPONDING_DAYS}+ days`}
+          style={segment === 'not_responding'
+            ? { background: '#EA580C', color: '#fff', borderColor: '#EA580C' }
+            : { background: '#FFF3EA', color: '#9A3412', borderColor: '#FBD7BC' }}
+        >
+          <span className="chip-dot" style={{ background: '#EA580C', marginRight: 4 }} />Not Responding
+          <span className="count" style={segment === 'not_responding' ? { background: 'rgba(255,255,255,0.25)', color: '#fff' } : undefined}>{counts.not_responding}</span>
         </button>
         {segments.map((s) => {
           const meta = s === 'all' ? null : STAGE_META[s];

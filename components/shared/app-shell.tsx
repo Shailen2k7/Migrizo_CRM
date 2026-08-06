@@ -7,6 +7,8 @@ import { AppProvider } from '@/components/shared/app-provider';
 import { Sidebar } from '@/components/sidebar';
 import { CooBanner } from '@/components/shared/coo-banner';
 import { LeadDrawer } from '@/components/leads/lead-drawer';
+import { MeetingAlerts } from '@/components/meetings/meeting-alerts';
+import { FollowUpAlerts } from '@/components/meetings/followup-alerts';
 import { AddLeadDialog } from '@/components/leads/add-lead-dialog';
 import { ImportDialog } from '@/components/leads/import-dialog';
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog';
@@ -82,6 +84,12 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
         <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
         <RecordPaymentDialog open={paymentOpen} onClose={() => setPaymentOpen(false)} presetLeadId={paymentLeadId} />
         <LeadDrawer leadId={drawerLeadId} onClose={() => setDrawerLeadId(null)} onRecordPayment={(id) => { setDrawerLeadId(null); ui.openRecordPayment(id); }} />
+
+        {/* Alert watchers. These render nothing — they poll for upcoming
+            meetings and due follow-ups and sound the chime. They live in the
+            shell so they run on every page, not only on Meetings. */}
+        <MeetingAlerts workspaceId={workspace.id} />
+        <FollowUpAlerts workspaceId={workspace.id} onOpenLead={(id) => setDrawerLeadId(id)} />
       </UIContext.Provider>
     </AppProvider>
   );

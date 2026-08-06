@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 
 function LeadsPageInner() {
   const params = useSearchParams();
-  const seg = (params.get('segment') as 'all' | 'hot' | 'cold' | 'mr_coming_soon' | 'invoice_sent' | 'won' | 'junk') || 'all';
+  const seg = (params.get('segment') as 'all' | 'spotlight' | 'not_responding' | 'hot' | 'cold' | 'mr_coming_soon' | 'invoice_sent' | 'won' | 'junk') || 'all';
   const { leads, payments } = useApp();
   const ui = useUI();
 
