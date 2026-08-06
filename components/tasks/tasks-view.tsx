@@ -25,7 +25,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/components/shared/app-provider';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { Loader2, Check, X, ChevronLeft, ChevronRight, Lock, Users } from 'lucide-react';
+import { Loader2, Check, X, ChevronLeft, ChevronRight, Lock, Users, AlertTriangle } from 'lucide-react';
 
 type Scope = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type Status = 'todo' | 'doing' | 'blocked' | 'done';
@@ -79,6 +79,21 @@ function Avatar({ name, id, size = 22 }: { name: string; id: string; size?: numb
   );
 }
 
+
+// Turn a Postgres/Supabase message into something a person can act on.
+// The session expiring is by far the most common cause of a sudden run of
+// failures, and it needs a different instruction from a permissions problem.
+function describeError(msg: string): string {
+  const m = (msg || '').toLowerCase();
+  if (m.includes('jwt') || m.includes('token') || m.includes('expired') || m.includes('refresh')) {
+    return 'Your session expired. Refresh the page and sign in again — nothing you saved has been lost.';
+  }
+  if (m.includes('policy') || m.includes('row-level')) return 'You do not have permission to change that one.';
+  if (m.includes('fetch') || m.includes('network')) return 'Lost connection. Check your internet and try again.';
+  if (m.includes('does not exist') || m.includes('relation')) return 'The tasks table is missing — migration 039 has not been run yet.';
+  return `Could not save: ${msg}`;
+}
+
 export function TasksView() {
   const app = useApp() as unknown as {
     workspace: { id: string };
@@ -107,6 +122,10 @@ export function TasksView() {
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  // Set when a request fails. Shown as a banner rather than silently emptying
+  // the screen, with a retry the person can press.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(0);
   const [fWho, setFWho] = useState<string>('all');
   const [grouped, setGrouped] = useState(true);
   const [newOwner, setNewOwner] = useState(user.id);
@@ -142,7 +161,16 @@ export function TasksView() {
       q = q.eq('scope', scope).eq('period_key', periodKey);
     }
     const { data, error } = await q.order('sort_order').order('created_at');
-    if (error) toast.error(`Could not load: ${error.message}`);
+    if (error) {
+      // NEVER clear what is on screen because a fetch failed. The rows are
+      // still in the database; only the request failed. Wiping them here made
+      // it look like the work had been lost.
+      console.error('[tasks] load failed:', error);
+      setLoadError(error.message);
+      setLoading(false);
+      return;
+    }
+    setLoadError(null);
     setRows((data as Row[]) || []);
     setLoading(false);
   }, [supabase, workspace.id, scope, periodKey, curDay]);
@@ -187,28 +215,37 @@ export function TasksView() {
       title: clean, status: 'todo', created_by: user.id,
     }).select().single();
     if (error) {
+      console.error('[tasks] add failed:', error);
       setRows((p) => p.filter((x) => x.id !== optimistic.id));
-      toast.error(`Could not add: ${error.message}`);
+      setDraft(clean);           // give the typing back, do not lose it
+      toast.error(describeError(error.message));
       return;
     }
     setRows((p) => p.map((x) => (x.id === optimistic.id ? (data as Row) : x)));
   };
 
   const patch = async (id: string, changes: Partial<Row>) => {
+    // A row still being created has a temporary id and no database row yet.
+    // Sending an update for it would fail on an invalid uuid, so wait.
+    if (id.startsWith('tmp-')) { toast.error('Still saving that one — try again in a moment'); return; }
     const before = rows.find((x) => x.id === id);
     setRows((p) => p.map((x) => (x.id === id ? { ...x, ...changes } : x)));
+    setSaving((n) => n + 1);
     const { error } = await supabase.from('task_board').update(changes).eq('id', id);
+    setSaving((n) => n - 1);
     if (error) {
+      console.error('[tasks] save failed:', error);
       if (before) setRows((p) => p.map((x) => (x.id === id ? before : x)));
-      toast.error(error.message.includes('policy') ? 'You cannot change this one' : 'Could not save');
+      toast.error(describeError(error.message));
     }
   };
 
   const remove = async (id: string) => {
+    if (id.startsWith('tmp-')) { toast.error('Still saving that one — try again in a moment'); return; }
     const before = rows;
     setRows((p) => p.filter((x) => x.id !== id));
     const { error } = await supabase.from('task_board').delete().eq('id', id);
-    if (error) { setRows(before); toast.error('Could not delete'); }
+    if (error) { console.error('[tasks] delete failed:', error); setRows(before); toast.error(describeError(error.message)); }
   };
 
   // ── period navigation ─────────────────────────────────────────────────────
@@ -247,11 +284,18 @@ export function TasksView() {
               : 'Type a task, press Enter. That is it.'}
           </div>
         </div>
-        {isSuper && (
-          <span className="ml-auto inline-flex items-center gap-1.5 text-[11.5px] text-faint">
-            <Users className="w-3.5 h-3.5" /> You see everyone
-          </span>
-        )}
+        <span className="ml-auto inline-flex items-center gap-3">
+          {saving > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-[11.5px] text-faint">
+              <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+            </span>
+          )}
+          {isSuper && (
+            <span className="inline-flex items-center gap-1.5 text-[11.5px] text-faint">
+              <Users className="w-3.5 h-3.5" /> You see everyone
+            </span>
+          )}
+        </span>
       </div>
 
       {/* ── tabs ── */}
@@ -264,6 +308,25 @@ export function TasksView() {
           </button>
         ))}
       </div>
+
+      {/* A failed request never empties the screen — it says so, and offers a retry. */}
+      {loadError && (
+        <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-lg mt-3 text-[12.5px]"
+          style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C' }}>
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-px" />
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold">Could not reach the server</div>
+            <div className="mt-0.5 opacity-90">
+              {describeError(loadError)} Anything already saved is safe in the database — it is only this screen that could not refresh.
+            </div>
+          </div>
+          <button onClick={() => void load()}
+            className="text-[12px] font-semibold px-2.5 py-1.5 rounded-md flex-shrink-0"
+            style={{ background: '#fff', border: '1px solid #FECACA' }}>
+            Try again
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-20 text-[13px] text-muted">
