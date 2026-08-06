@@ -4,12 +4,11 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { DailyTrackerView } from '@/components/daily-tracker/daily-tracker-view';
 import { FollowUpsView } from '@/components/daily-tracker/followups-view';
-import { GoalsView } from '@/components/daily-tracker/goals-view';
-import { Activity, CalendarClock, Target } from 'lucide-react';
+import { Activity, CalendarClock } from 'lucide-react';
 import { useApp } from '@/components/shared/app-provider';
 import { isFollowUpOverdue, isFollowUpToday } from '@/lib/types';
 
-type Tab = 'daily' | 'followups' | 'goals';
+type Tab = 'daily' | 'followups';
 
 export default function DailyTrackerPage() {
   const [tab, setTab] = useState<Tab>('daily');
@@ -34,15 +33,9 @@ export default function DailyTrackerPage() {
             <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-semibold" style={{ background: '#FEE2E2', color: '#B91C1C' }}>{urgentFollowUps}</span>
           )}
         </button>
-        <button
-          onClick={() => setTab('goals')}
-          className={cn('inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-[13px] font-medium transition', tab === 'goals' ? 'bg-surface shadow-sm text-ink' : 'text-muted hover:text-ink')}
-        >
-          <Target className="w-3.5 h-3.5" /> Goals &amp; KPIs
-        </button>
       </div>
 
-      {tab === 'daily' ? <DailyTrackerView /> : tab === 'followups' ? <FollowUpsView /> : <GoalsView />}
+      {tab === 'daily' ? <DailyTrackerView /> : <FollowUpsView />}
     </div>
   );
 }
