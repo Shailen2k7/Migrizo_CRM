@@ -3,6 +3,12 @@ MIGRIZO CRM — WHATSAPP DIAGNOSTICS + PERFORMANCE
 
 WHAT THIS FIXES
 ---------------
+0. Secret mismatch tolerance. The webhook now trims whitespace off the
+   Netlify value (a trailing newline on paste is the #1 cause of 401s)
+   and repairs secrets mangled by the URL, e.g. a "+" that arrives as a
+   space. When it still does not match, the log records the LENGTH and
+   first/last two characters of both sides so you can see the
+   difference without ever exposing the key.
 1. You could not tell WHY inbound WhatsApp messages were not arriving.
    Now the system tells you, in one sentence.
 2. The inbox felt slow and the connection pill said "Not connected"

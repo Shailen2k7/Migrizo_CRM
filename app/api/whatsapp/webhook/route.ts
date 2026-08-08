@@ -85,15 +85,51 @@ export async function POST(req: NextRequest) {
     log.payload = payload;
     log.event_type = payload ? str(payload.type) : null;
 
-    const secret = process.env.WHATSAPP_WEBHOOK_SECRET || process.env.INBOUND_WEBHOOK_SECRET;
-    const given = req.nextUrl.searchParams.get('key') || req.headers.get('x-webhook-secret');
-    if (!secret || given !== secret) {
+    // ── secret comparison, made forgiving of the two ways this always breaks ──
+    //
+    // 1. Netlify env values pick up a trailing newline or space on paste. The
+    //    value looks identical in the UI and never matches. Hence .trim().
+    //
+    // 2. If the secret contains + / or =, putting it raw in a query string
+    //    corrupts it: "+" decodes to a space. So we compare the decoded form,
+    //    the raw form, and the space-back-to-plus repair of the raw form, and
+    //    accept any of the three.
+    //
+    // Interakt cannot send custom headers, so ?key= is the only channel — which
+    // is exactly why it has to be robust.
+    const secret = (process.env.WHATSAPP_WEBHOOK_SECRET || process.env.INBOUND_WEBHOOK_SECRET || '').trim();
+    const rawGiven = (
+      req.nextUrl.searchParams.get('key') ??
+      req.headers.get('x-webhook-secret') ??
+      req.headers.get('x-interakt-secret') ??
+      ''
+    ).trim();
+
+    const candidates = new Set<string>();
+    if (rawGiven) {
+      candidates.add(rawGiven);
+      candidates.add(rawGiven.replace(/ /g, '+'));   // undo query-string mangling
+      try { candidates.add(decodeURIComponent(rawGiven).trim()); } catch { /* not encoded */ }
+    }
+    const matched = secret !== '' && candidates.has(secret);
+
+    if (!matched) {
       log.outcome = 'unauthorized';
-      log.detail = !secret
-        ? 'WHATSAPP_WEBHOOK_SECRET is not set on this deploy'
-        : given
-          ? 'secret supplied but did not match'
-          : 'no key query param and no x-webhook-secret header';
+      if (!secret) {
+        log.detail = 'WHATSAPP_WEBHOOK_SECRET is not set on this deploy';
+      } else if (!rawGiven) {
+        log.detail = 'no key query param and no secret header on the request';
+      } else {
+        // Enough of a fingerprint to spot the difference, not enough to be a
+        // leak: lengths plus first and last two characters of each.
+        const fp = (v: string) => `len ${v.length} "${v.slice(0, 2)}…${v.slice(-2)}"`;
+        log.detail =
+          `secret supplied but did not match. Netlify has ${fp(secret)}, ` +
+          `Interakt sent ${fp(rawGiven)}. ` +
+          (secret.length !== rawGiven.length
+            ? 'Lengths differ — likely a truncated paste, or the secret was regenerated in Interakt after you copied it.'
+            : 'Same length, different content — likely a character mangled by the URL, or a different secret entirely.');
+      }
       return NextResponse.json({ ok: false }, { status: 401 });
     }
 
@@ -340,17 +376,25 @@ async function record(admin: SupabaseClient, log: LogRow): Promise<void> {
 // the fastest manual check that a deploy has the right secret: open the URL in
 // a browser and you should see { ok: true }.
 export async function GET(req: NextRequest) {
-  const secret = process.env.WHATSAPP_WEBHOOK_SECRET || process.env.INBOUND_WEBHOOK_SECRET;
-  const given = req.nextUrl.searchParams.get('key');
+  const secret = (process.env.WHATSAPP_WEBHOOK_SECRET || process.env.INBOUND_WEBHOOK_SECRET || '').trim();
+  const rawGiven = (req.nextUrl.searchParams.get('key') ?? '').trim();
+
   if (!secret) {
-    return NextResponse.json(
-      { ok: false, reason: 'secret_not_set_on_this_deploy' },
-      { status: 401 }
-    );
+    return NextResponse.json({ ok: false, reason: 'secret_not_set_on_this_deploy' }, { status: 401 });
   }
-  if (given !== secret) {
+  if (!rawGiven) {
+    return NextResponse.json({ ok: false, reason: 'no_key_param' }, { status: 401 });
+  }
+
+  const candidates = new Set([rawGiven, rawGiven.replace(/ /g, '+')]);
+  try { candidates.add(decodeURIComponent(rawGiven).trim()); } catch { /* not encoded */ }
+
+  if (!candidates.has(secret)) {
+    // Same fingerprint as the POST path, so pasting the URL into a browser tells
+    // you whether the key is right before Interakt ever calls.
+    const fp = (v: string) => ({ length: v.length, starts: v.slice(0, 2), ends: v.slice(-2) });
     return NextResponse.json(
-      { ok: false, reason: given ? 'secret_mismatch' : 'no_key_param' },
+      { ok: false, reason: 'secret_mismatch', netlify: fp(secret), you_sent: fp(rawGiven) },
       { status: 401 }
     );
   }
