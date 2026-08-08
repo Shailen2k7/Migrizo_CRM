@@ -20,7 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search, Clock, Lock, Check, CheckCheck, AlertCircle, Zap, Paperclip, Smile,
   FileText, ChevronDown, PanelLeft, PanelRight, Columns, Maximize2, Minimize2,
-  ExternalLink, Crown, Loader2, Bot, Pause, Play, Square, ShieldCheck,
+  ExternalLink, Crown, Loader2, Bot, Pause, Play, Square, ShieldCheck, Plus,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/components/shared/app-provider';
@@ -28,6 +28,7 @@ import { initials, avatarColor, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import LeadPanel, { type SeqState } from '@/components/whatsapp/lead-panel';
 import TemplatePicker from '@/components/whatsapp/template-picker';
+import NewConversation from '@/components/whatsapp/new-conversation';
 import {
   formatLeft, windowLeftMs, windowState, WINDOW_META,
   type WaConversation, type WaMessage, type WaTemplate, type WaSettings, type WaStats,
@@ -84,6 +85,7 @@ export default function WhatsAppPage() {
   const [retrying, setRetrying] = useState(false);
   const [sending, setSending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [newConvOpen, setNewConvOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<'info' | 'activity'>('info');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [, setTick] = useState(0);
@@ -401,6 +403,15 @@ export default function WhatsAppPage() {
   }
 
   // ── derived ───────────────────────────────────────────────────────────────
+  // The New Conversation picker needs to know whether a lead's 24-hour window is
+  // still open, which lives on the conversation row. Pass a lookup rather than
+  // making that modal re-query what this page already has.
+  const lastInboundByConversation = useMemo(() => {
+    const m: Record<string, string | null> = {};
+    convs.forEach((c) => { m[c.id] = c.last_inbound_at; });
+    return m;
+  }, [convs]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return convs.filter((c) => {
@@ -489,6 +500,15 @@ export default function WhatsAppPage() {
           hideList ? 'w-0 border-r-0' : 'w-[330px] border-[#E8EAF0]'
         )}>
           <div className="w-[330px] flex-shrink-0 border-b border-[#E8EAF0] px-[14px] pb-[11px] pt-[14px]">
+            {/* The only way to start an outbound conversation. Deliberately the
+                most prominent control in the column — the inbox was reply-only
+                until this existed. */}
+            <button
+              onClick={() => setNewConvOpen(true)}
+              className="mb-[10px] flex w-full items-center justify-center gap-2 rounded-lg bg-[#25A25A] px-3 py-[10px] text-[13.4px] font-semibold text-white transition hover:bg-[#1B7A44]"
+            >
+              <Plus className="h-[16px] w-[16px]" /> New conversation
+            </button>
             <div className="relative mb-[10px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-faint" />
               <input
@@ -796,6 +816,20 @@ export default function WhatsAppPage() {
         sending={sending}
         onClose={() => setPickerOpen(false)}
         onSend={(t, values) => { setPickerOpen(false); send('', { code: t.code, values }); }}
+      />
+
+      <NewConversation
+        open={newConvOpen}
+        workspaceId={workspace.id}
+        templates={templates}
+        lastInboundByConversation={lastInboundByConversation}
+        onClose={() => setNewConvOpen(false)}
+        onSent={async (conversationId) => {
+          // Refresh first, then select — selecting an id that is not in the list
+          // yet would render an empty thread for a beat.
+          await reload();
+          if (conversationId) setActiveId(conversationId);
+        }}
       />
     </div>
   );

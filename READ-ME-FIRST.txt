@@ -1,204 +1,154 @@
-MIGRIZO CRM — WHATSAPP DIAGNOSTICS + PERFORMANCE
-=================================================
+MIGRIZO CRM — PHASE 2A: PHONE AUDIT + NEW CONVERSATION
+=======================================================
 
-WHAT THIS FIXES
----------------
-0. Secret mismatch tolerance. The webhook now trims whitespace off the
-   Netlify value (a trailing newline on paste is the #1 cause of 401s)
-   and repairs secrets mangled by the URL, e.g. a "+" that arrives as a
-   space. When it still does not match, the log records the LENGTH and
-   first/last two characters of both sides so you can see the
-   difference without ever exposing the key.
-1. You could not tell WHY inbound WhatsApp messages were not arriving.
-   Now the system tells you, in one sentence.
-2. The inbox felt slow and the connection pill said "Not connected"
-   for several seconds before snapping to your number.
-   Both causes are fixed.
+WHAT THIS ADDS
+--------------
+1. A reachability audit of every lead in your CRM — how many you can
+   actually message on WhatsApp, and why the rest you cannot.
+2. A "New conversation" button in the WhatsApp inbox: pick a lead,
+   pick an approved template, send. The inbox was reply-only until
+   now; this is what makes it an outbound channel.
 
 
-HOW TO INSTALL (2 minutes)
---------------------------
-STEP 1 — Drag these two folders into the root of your GitHub repo.
-         Say yes to replacing files. Nothing outside app/ and
-         supabase/migrations/ is touched.
+HOW TO INSTALL
+--------------
+STEP 1 — Drag these three folders into your repo root, replacing:
 
            app/
+           components/
            supabase/
 
          Files added:
-           app/api/whatsapp/diagnose/route.ts          (NEW)
-           supabase/migrations/042_whatsapp_webhook_log.sql  (NEW)
-         Files replaced:
-           app/api/whatsapp/webhook/route.ts
+           components/whatsapp/new-conversation.tsx           (NEW)
+           supabase/migrations/043_whatsapp_outbound_start.sql (NEW)
+         File replaced:
            app/(app)/whatsapp/page.tsx
 
-STEP 2 — In Supabase → SQL Editor, paste and run:
-           supabase/migrations/042_whatsapp_webhook_log.sql
-         It is safe to run twice.
+STEP 2 — Supabase → SQL Editor → run:
+           supabase/migrations/043_whatsapp_outbound_start.sql
+         Read-only, creates no tables, safe to run twice.
 
-STEP 3 — Let Netlify finish deploying.
-
-STEP 4 — Open this in a browser tab while logged into the CRM:
-           https://<your-domain>/api/whatsapp/diagnose
-
-         Read the "next_action" field at the top. That is your answer.
+STEP 3 — Let Netlify deploy, then open /whatsapp and click
+         "New conversation".
 
 
-WHAT THE DIAGNOSTIC TELLS YOU
------------------------------
-It checks the chain in order and reports the FIRST broken link:
+THE AUDIT — READ THIS BEFORE BUILDING SEQUENCES
+-----------------------------------------------
+The strip along the top of the New Conversation screen is the answer
+to "is outbound worth it at scale?":
 
-  env       Are INTERAKT_API_KEY and WHATSAPP_WEBHOOK_SECRET actually
-            on this deploy? (Reports set/not-set and length only.
-            Never the value.)
-  settings  Is there a settings row, is your number saved, is it
-            connected, is dry_run still on?
-  inbound   Has Interakt EVER called your webhook? This is the one
-            that matters right now. Four possible verdicts:
+  reachable        valid number, not opted out, no thread yet
+  already talking  valid number, conversation already exists
+  no number        phone field is empty
+  bad number       phone field has something, but not a valid
+                   WhatsApp number (wrong digit count, junk text)
+  opted out        replied STOP/NO — never messaged again, ever
 
-              NO_CALLS      Interakt has never reached the URL.
-                            Wrong URL, or the message-event
-                            checkboxes are not ticked in Interakt.
-              ALL_REJECTED  Interakt is calling but every call is a
-                            401. The secret in the ?key= does not
-                            match Netlify.
-              NO_INBOUND    Interakt is calling and authenticating,
-                            but has never sent a message_received
-                            event. The inbound checkbox is off.
-              HEALTHY       Inbound is arriving and being recorded.
+Every lead lands in exactly one bucket and the buckets sum to your
+total. If they ever stop summing, the classification has a hole.
 
-  templates How many templates exist and how many Meta has approved.
-  traffic   Messages in/out/failed, and — importantly — whether any
-            conversations landed under a DIFFERENT workspace_id than
-            the one you log into. Those are invisible to you and no
-            normal query would ever surface them.
+You can also run it directly:
 
+  select jsonb_pretty(public.whatsapp_phone_audit('<your-workspace-id>'));
 
-THE WEBHOOK LOG
----------------
-Migration 042 adds whatsapp_webhook_log. Every request that hits the
-webhook is now recorded there — including the ones rejected with 401
-and the ones that error — with the raw Interakt payload.
+That returns the same counts plus:
+  reachable_by_stage   is your outbound audience actually cold leads,
+                       or people already deep in the pipeline?
+  unusable_examples    up to 25 of the rejected numbers. This is the
+                       actionable part — most are one missing digit
+                       or a stray country code, and seeing them is
+                       what makes them fixable.
 
-Read it directly any time:
+Why this matters: a 5-message sequence across 2,000 leads and across
+300 leads are different businesses. Meta charges per conversation and
+quality rating punishes sending to numbers that are not on WhatsApp.
+Know the real number before committing to the sequence engine.
 
-  select received_at, event_type, outcome, detail, phone
-    from whatsapp_webhook_log
-   order by received_at desc
-   limit 30;
-
-Outcomes: unauthorized | bad_json | handled | ignored | error
-
-The log auto-limits itself to 14 days via whatsapp_webhook_log_prune().
-Reads are campaign-admin only — it contains phone numbers and message
-text.
-
-Important: the webhook still works fine if you deploy the code before
-running the migration. The log insert fails silently in that case;
-message handling is unaffected.
+"Reachable" here means exactly what the send route accepts — both use
+whatsapp_normalize_phone() from migration 040. There is deliberately
+no second definition of "valid" that could drift from the first.
 
 
-PERFORMANCE CHANGES
--------------------
-1. Load waterfall removed.
-   The page used to await templates+settings, THEN await
-   conversations+stats — two full round trips before showing real
-   data. That is why the pill sat on "Not connected". Now all four
-   requests go out together.
+NEW CONVERSATION — HOW IT BEHAVES
+---------------------------------
+Two steps: who, then what.
 
-2. Idle clock stopped.
-   A setState fired every second, forever, re-rendering the whole
-   page including every list row and the open thread — even on an
-   empty inbox. Now the clock only runs when a 24-hour window is
-   actually counting down, and only ticks per second when seconds
-   are visible on screen (under one hour left); otherwise every 30
-   seconds.
+STEP 1, pick a lead. Search by name, number or email. Filter by
+stage. "Sendable only" is on by default.
 
-     Idle re-renders per 10 min, empty inbox:      600  ->  0
-     Idle re-renders per 10 min, one 10h window:   600  ->  20
+  Design decision: unsendable leads are SHOWN, greyed out, with the
+  reason — not hidden. If they were hidden, searching for a client and
+  getting nothing would mean either "not in your CRM" or "no valid
+  number" or "opted out" — three different problems that look
+  identical. A greyed row saying "Opted out" answers it immediately.
 
-3. Websocket no longer rebuilt on every click.
-   Selecting a conversation used to tear down the realtime channel
-   and open a new one. Events landing during the swap were lost.
-   The channel is now created once per page.
+STEP 2, pick what to send.
 
-4. Delivery receipts coalesced.
-   A burst of receipts fired two queries per receipt — sending to 50
-   leads meant ~100 round trips in a few seconds and a visibly
-   thrashing list. Now one refresh per 250ms.
+  - Only APPROVED templates are listed. Draft ones are excluded
+    because selecting one would just produce a Meta rejection at send
+    time. All 11 of yours are draft right now, so this list will be
+    empty with an explanatory note until Meta approves them.
 
-5. Optimistic send — the Send button no longer makes you wait.
-   Before: you watched four sequential round trips before the box
-   even cleared. POST -> API route (plus possible Netlify cold
-   start) -> DB insert -> Interakt HTTP call -> response, THEN a
-   full 400-row thread refetch, THEN a conversation refresh, THEN
-   a stats refresh. All of it in front of you.
+  - "Free-form message" appears ONLY if that lead already messaged
+    you and the 24-hour window is still open. Meta does not allow
+    opening a cold conversation with free text. The screen states
+    which of the two reasons applies rather than just disabling the
+    option.
 
-   Now the bubble appears the instant you hit Send and the box
-   clears immediately. The network work happens behind you and only
-   the tick state waits on the server — which is what WhatsApp
-   itself does. The Send button is no longer disabled mid-flight,
-   so you can keep typing the next line.
+  - Variables prefill: {{1}} is the lead's first name, matching the
+    convention across all 11 templates. Titles are stripped, so
+    "Dr. Vikram Rao" gives "Vikram", not "Dr.".
 
-   Reconciliation is race-safe: if the realtime channel delivers
-   the real row before our own POST response returns, the
-   placeholder is replaced rather than duplicated. A failed send
-   marks the bubble red AND puts your text back in the box, so it
-   can never silently eat what you typed. 9/9 unit tests cover
-   these races, including a lead replying with the same word you
-   just sent.
+  - Live preview shows the exact message that lands on their phone.
 
-6. The UI stops lying.
-   - The pill shows "Checking..." while settings load, instead of
-     "Not connected".
-   - A failed query now renders a red error box with the actual
-     message, a Try again button, and a link to the diagnostic —
-     instead of "No conversations yet", which sends you looking in
-     the wrong place.
-   - The spinner can no longer spin forever: the loading flag is
-     cleared in a finally block.
+Escape steps back from step 2 to step 1 before it closes the dialog —
+losing a filled-in template because you wanted to change the
+recipient would be maddening.
+
+After sending, the list refreshes and the new thread opens
+automatically.
 
 
 VERIFICATION DONE BEFORE SHIPPING
 ---------------------------------
-  Migration 042 applied twice on PostgreSQL 16 against the real
+  Migration 043 applied twice on PostgreSQL 16 against the real
     schema — clean both times (idempotent).
-  Both new plpgsql function bodies executed, not just created
-    (plpgsql bodies are not validated at CREATE time).
-  All four inbound verdict branches triggered and asserted.
-  Retention function tested: deletes old rows, floors at 1 day.
-  whatsapp_webhook_health() refuses correctly when the caller is not
-    a campaign admin, and returns the full report when they are.
+  Fixture of 8 leads covering every bucket: valid Indian mobile,
+    international (+65 8123 4567), 00-prefixed (00919876543210),
+    null phone, blank phone, junk phone, opted out, already talking.
+  Buckets sum to total exactly (11 = 11).
+  International and 00-prefixed numbers normalise correctly and are
+    NOT mangled into Indian numbers.
+  Picker ordering asserted: sendable first, then never-contacted
+    before already-talking, then score descending.
+  Filters asserted: stage, visa type, search by name / phone digits /
+    email, only_sendable on and off.
+  Limit clamping asserted: 0 clamps to 1, 100000 clamps to 500.
+  null and '' arguments both behave as "no filter".
+  RLS isolation asserted: a user who is not a workspace member gets
+    zero rows from the picker and null from the audit.
+  Live suppression asserted: suppressing a number immediately moves
+    it out of reachable and into opted_out, and the picker flips that
+    lead to unsendable with the reason.
   npx tsc --noEmit          clean
-  npx next build            green
-  /api/whatsapp/diagnose, /send, /test-connection, /webhook and
-    /whatsapp all present in the route manifest.
-  Countdown interval logic: 9/9 unit tests pass, including the
-    exactly-one-hour boundary.
-  Optimistic-send reconciliation: 9/9 unit tests pass, covering
-    both response-first and realtime-first orderings, failure,
-    conversation-switch mid-send, rapid double send, and duplicate
-    realtime delivery. One real bug was found and fixed this way:
-    an inbound message with the same text used to replace your own
-    outbound bubble.
-  Secret comparison: 15/15 unit tests pass, covering trailing
-    newline, leading/trailing space, "+" mangled to a space,
-    percent-encoding, truncated paste, and case sensitivity.
+  npx next build            green, /whatsapp now 18.5 kB
 
 
-WHAT IS STILL OUTSTANDING
--------------------------
-- Turn OFF Interakt's built-in auto-reply. That "Welcome to Migrizo"
-  message was sent by Interakt, not by your CRM. It will never appear
-  in your inbox, it burns the 24-hour window before your team sees
-  the lead, and it means the customer's phone and your CRM
-  permanently disagree.
-- Submit your 11 templates in Interakt for Meta approval.
-- TURN OFF DRY RUN. This is why your messages are not reaching
-  anyone right now:
-      update whatsapp_settings set dry_run = false;
-  Dry-run logs the message and deliberately never calls Interakt.
-  The amber line under the composer says so.
-- There is still no "New conversation" button. Cold outbound is
-  blocked by Meta until templates are approved, so that screen is
-  the next build once approval lands.
+WHAT TO DO NEXT
+---------------
+1. Run the audit. Send me the numbers — reachable, no_number,
+   bad_number. That decides the shape of the sequence engine.
+2. Look at unusable_examples. If most are fixable typos, cleaning
+   them is the highest-return hour you will spend on this project.
+3. Submit the 11 templates in Interakt. Nothing cold can go out
+   until Meta approves at least one.
+
+Still outstanding from the Phase 2 list:
+  - WhatsApp sequences (migration 044): the 5-message cold sequence
+    over 25 days, reusing the queue-and-drain shape from email.
+  - Make Pause / Resume / Stop real — they are still placeholders
+    that show a toast.
+  - Daily cap ramp + auto-pause watchdog.
+  - Sidebar unread badge.
+  - Real Activity tab reading actual activity rows.
+  - Saved replies, attachments, click-to-call.
