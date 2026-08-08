@@ -21,6 +21,7 @@ import {
   Search, Clock, Lock, Check, CheckCheck, AlertCircle, Zap, Paperclip, Smile,
   FileText, ChevronDown, PanelLeft, PanelRight, Columns, Maximize2, Minimize2,
   ExternalLink, Crown, Loader2, Bot, Pause, Play, Square, ShieldCheck, Plus,
+  MessageSquare, Settings2,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/components/shared/app-provider';
@@ -29,12 +30,23 @@ import { toast } from 'sonner';
 import LeadPanel, { type SeqState } from '@/components/whatsapp/lead-panel';
 import TemplatePicker from '@/components/whatsapp/template-picker';
 import NewConversation from '@/components/whatsapp/new-conversation';
+import SequencesTab, { type SeqOverviewRow } from '@/components/whatsapp/sequences-tab';
+import TemplatesTab from '@/components/whatsapp/templates-tab';
+import SettingsTab from '@/components/whatsapp/settings-tab';
 import {
   formatLeft, windowLeftMs, windowState, WINDOW_META,
   type WaConversation, type WaMessage, type WaTemplate, type WaSettings, type WaStats,
 } from '@/lib/whatsapp/types';
 
 type Filter = 'all' | 'unread' | 'attention' | 'open' | 'failed';
+type TabKey = 'inbox' | 'sequences' | 'templates' | 'settings';
+
+const SUB_TABS: Array<[TabKey, string, React.ReactNode]> = [
+  ['inbox', 'Inbox', <MessageSquare key="i" className="h-[14px] w-[14px]" />],
+  ['sequences', 'Sequences', <Zap key="s" className="h-[14px] w-[14px]" />],
+  ['templates', 'Templates', <FileText key="t" className="h-[14px] w-[14px]" />],
+  ['settings', 'Settings', <Settings2 key="g" className="h-[14px] w-[14px]" />],
+];
 const FILTERS: [Filter, string][] = [
   ['all', 'All'], ['unread', 'Unread'], ['attention', 'Needs reply'], ['open', 'Open'], ['failed', 'Failed'],
 ];
@@ -86,6 +98,34 @@ export default function WhatsAppPage() {
   const [sending, setSending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [newConvOpen, setNewConvOpen] = useState(false);
+
+  // ── sub-tabs: Inbox · Sequences · Templates · Settings ───────────────────
+  // Kept in the URL (?tab=) so a refresh or a shared link lands on the same
+  // screen, without useSearchParams' prerender constraints.
+  const [tab, setTabState] = useState<TabKey>('inbox');
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t === 'sequences' || t === 'templates' || t === 'settings') setTabState(t);
+  }, []);
+  const setTab = useCallback((t: TabKey) => {
+    setTabState(t);
+    const u = new URL(window.location.href);
+    if (t === 'inbox') u.searchParams.delete('tab'); else u.searchParams.set('tab', t);
+    window.history.replaceState(null, '', u.toString());
+  }, []);
+
+  // Sequence overview backs the Sequences tab AND the lead panel's step count.
+  const [overview, setOverview] = useState<SeqOverviewRow[]>([]);
+  const loadOverview = useCallback(async () => {
+    const { data } = await supabase.rpc('whatsapp_sequence_overview', { p_workspace_id: workspace.id });
+    setOverview((data ?? []) as SeqOverviewRow[]);
+  }, [supabase, workspace.id]);
+  useEffect(() => { loadOverview(); }, [loadOverview]);
+
+  // The active lead's enrollment, so Pause/Resume/Stop in the panel are real.
+  const [enrollment, setEnrollment] = useState<{
+    id: string; status: string; current_step: number; seq_id: string; seq_name: string;
+  } | null>(null);
   const [panelTab, setPanelTab] = useState<'info' | 'activity'>('info');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [, setTick] = useState(0);
@@ -265,6 +305,7 @@ export default function WhatsAppPage() {
   // ── keyboard ──────────────────────────────────────────────────────────────
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (tab !== 'inbox') return;   // layout shortcuts belong to the inbox
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === '[') { e.preventDefault(); setHideList((v) => !v); }
@@ -277,7 +318,7 @@ export default function WhatsAppPage() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [hideList, hidePanel]);
+  }, [hideList, hidePanel, tab]);
 
   // ── actions ───────────────────────────────────────────────────────────────
   // OPTIMISTIC SEND.
@@ -396,10 +437,25 @@ export default function WhatsAppPage() {
     loadConvs();
   }
 
-  function seqAction(a: 'pause' | 'resume' | 'stop') {
-    // Sequences land in 041. The control is here now so the rule — a reply never
-    // stops anything, a human does — is visible from day one.
-    toast(`Sequence ${a === 'pause' ? 'pause' : a === 'resume' ? 'resume' : 'stop'} arrives with sequences (041)`);
+  // The panel's Pause/Resume/Stop act on the real enrollment. The rule stands:
+  // a reply never stops anything — these three buttons are the only way.
+  async function seqAction(a: 'pause' | 'resume' | 'stop') {
+    if (!enrollment) {
+      toast('This lead is not in a sequence — enrol them from the Sequences tab');
+      return;
+    }
+    const { data, error } = await supabase.rpc('whatsapp_enrollment_action', {
+      p_enrollment_id: enrollment.id, p_action: a,
+    });
+    if (error) { toast.error(error.message); return; }
+    const next = String(data);
+    setEnrollment({ ...enrollment, status: next });
+    loadOverview();
+    toast.success(
+      next === 'paused' ? 'Sequence paused for this lead'
+        : next === 'active' ? 'Sequence resumed — next send inside the window'
+        : 'Stopped — this lead gets nothing further from the sequence'
+    );
   }
 
   // ── derived ───────────────────────────────────────────────────────────────
@@ -455,7 +511,43 @@ export default function WhatsAppPage() {
   const wLeft = active ? windowLeftMs(active.last_inbound_at) : 0;
   const focusOn = hideList && hidePanel;
 
-  const seqState: SeqState = active?.suppressed ? 'stopped' : 'none';
+  // Enrollment lookup for the lead panel — one tiny query per selected lead.
+  useEffect(() => {
+    const leadId = activeLead?.id;
+    if (!leadId) { setEnrollment(null); return; }
+    let alive = true;
+    (async () => {
+      const { data } = await supabase
+        .from('whatsapp_sequence_enrollments')
+        .select('id, status, current_step, sequence:whatsapp_sequences(id, name)')
+        .eq('lead_id', leadId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (!alive) return;
+      const row = (data ?? [])[0] as {
+        id: string; status: string; current_step: number;
+        sequence: { id: string; name: string } | { id: string; name: string }[] | null;
+      } | undefined;
+      const seq = Array.isArray(row?.sequence) ? row?.sequence[0] : row?.sequence;
+      setEnrollment(row
+        ? { id: row.id, status: row.status, current_step: row.current_step,
+            seq_id: seq?.id ?? '', seq_name: seq?.name ?? 'Sequence' }
+        : null);
+    })();
+    return () => { alive = false; };
+  }, [activeLead?.id, supabase]);
+
+  const seqState: SeqState = enrollment
+    ? (enrollment.status === 'active' ? 'active'
+       : enrollment.status === 'paused' ? 'paused'
+       : 'stopped')
+    : (active?.suppressed ? 'stopped' : 'none');
+  const seqSteps = overview.find((o) => o.id === enrollment?.seq_id)?.step_count ?? null;
+  const seqLabel = enrollment
+    ? `${enrollment.seq_name} · ${
+        enrollment.status === 'completed' ? 'completed'
+          : `step ${enrollment.current_step}${seqSteps ? `/${seqSteps}` : ''}`}`
+    : 'No sequence';
 
   // memberNameById returns "You" for the signed-in user — correct as a label, but
   // it makes a nonsense avatar ("YO"), so fall back to the real name.
@@ -468,31 +560,76 @@ export default function WhatsAppPage() {
   // ── render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-[calc(100vh-56px)] flex-col bg-[#EEF0F4]">
-      {/* top bar */}
+      {/* top bar: title · sub-tabs · context controls */}
       <div className="flex h-[58px] flex-shrink-0 items-center gap-3 border-b border-[#E8EAF0] bg-white px-5">
         <h1 className="m-0 text-[16px] font-semibold tracking-[-.025em]">WhatsApp</h1>
-        <span className="text-[12.6px] text-muted">
-          {stats ? `${stats.conversations} conversations · ${stats.unread} unread` : '—'}
-        </span>
+
+        <nav className="ml-1 flex items-center gap-[3px] rounded-full border border-[#E8EAF0] bg-[#F5F6F9] p-[3px]">
+          {SUB_TABS.map(([k, label, icon]) => (
+            <button
+              key={k}
+              onClick={() => setTab(k)}
+              className={cn(
+                'inline-flex items-center gap-[6px] rounded-full px-[13px] py-[6px] text-[12.6px] font-semibold transition',
+                tab === k
+                  ? 'bg-white text-[#1B7A44] shadow-[0_1px_2px_rgba(20,24,40,.08)]'
+                  : 'text-muted hover:text-ink'
+              )}
+            >
+              {icon}{label}
+            </button>
+          ))}
+        </nav>
+
+        {tab === 'inbox' && (
+          <span className="hidden text-[12.6px] text-muted lg:inline">
+            {stats ? `${stats.conversations} conversations · ${stats.unread} unread` : ''}
+          </span>
+        )}
+
         <div className="ml-auto flex items-center gap-[9px]">
-          <Toggle on={hideList} onClick={() => setHideList((v) => !v)} title="Conversation list  ([)"><Columns className="h-[18px] w-[18px]" /></Toggle>
-          <Toggle on={hidePanel} onClick={() => setHidePanel((v) => !v)} title="Lead panel  (])"><PanelRight className="h-[18px] w-[18px]" /></Toggle>
-          <button
-            onClick={() => { const all = focusOn; setHideList(!all); setHidePanel(!all); }}
-            title="Focus mode  (F)"
-            className={cn(
-              'inline-flex flex-shrink-0 items-center gap-[7px] rounded-full border px-[13px] py-[7px] text-[12.4px] font-semibold transition',
-              focusOn ? 'border-ink bg-ink text-white' : 'border-[#DDE0E9] bg-white text-ink-2 hover:border-[#2FB463] hover:bg-[#EDFAF1] hover:text-[#1B7A44]'
-            )}
-          >
-            {focusOn ? <Minimize2 className="h-[14px] w-[14px]" /> : <Maximize2 className="h-[14px] w-[14px]" />}
-            {focusOn ? 'Exit focus' : 'Focus'}
-          </button>
-          <span className="h-[22px] w-px bg-[#E8EAF0]" />
+          {tab === 'inbox' && (
+            <>
+              <Toggle on={hideList} onClick={() => setHideList((v) => !v)} title="Conversation list  ([)"><Columns className="h-[18px] w-[18px]" /></Toggle>
+              <Toggle on={hidePanel} onClick={() => setHidePanel((v) => !v)} title="Lead panel  (])"><PanelRight className="h-[18px] w-[18px]" /></Toggle>
+              <button
+                onClick={() => { const all = focusOn; setHideList(!all); setHidePanel(!all); }}
+                title="Focus mode  (F)"
+                className={cn(
+                  'inline-flex flex-shrink-0 items-center gap-[7px] rounded-full border px-[13px] py-[7px] text-[12.4px] font-semibold transition',
+                  focusOn ? 'border-ink bg-ink text-white' : 'border-[#DDE0E9] bg-white text-ink-2 hover:border-[#2FB463] hover:bg-[#EDFAF1] hover:text-[#1B7A44]'
+                )}
+              >
+                {focusOn ? <Minimize2 className="h-[14px] w-[14px]" /> : <Maximize2 className="h-[14px] w-[14px]" />}
+                {focusOn ? 'Exit focus' : 'Focus'}
+              </button>
+              <span className="h-[22px] w-px bg-[#E8EAF0]" />
+            </>
+          )}
           <ConnectionPill settings={settings} loading={loading} />
         </div>
       </div>
 
+      {tab === 'sequences' && (
+        <SequencesTab
+          workspaceId={workspace.id}
+          templates={templates}
+          leads={leads}
+          overview={overview}
+          reloadOverview={loadOverview}
+        />
+      )}
+      {tab === 'templates' && <TemplatesTab templates={templates} />}
+      {tab === 'settings' && (
+        <SettingsTab
+          workspaceId={workspace.id}
+          settings={settings}
+          stats={stats}
+          onSettingsChanged={reload}
+        />
+      )}
+
+      {tab === 'inbox' && (
       <div className="flex min-h-0 flex-1">
         {/* conversation list */}
         <div className={cn(
@@ -798,7 +935,7 @@ export default function WhatsAppPage() {
               tab={panelTab}
               onTab={setPanelTab}
               seqState={seqState}
-              seqLabel="WhatsApp sequence"
+              seqLabel={seqLabel}
               onSeq={seqAction}
               onMail={() => toast('Opens the email composer')}
               onCall={() => toast('Click-to-call arrives in Stage 3')}
@@ -807,7 +944,9 @@ export default function WhatsAppPage() {
           )}
         </div>
       </div>
+      )}
 
+      {tab === 'inbox' && (<>
       <TemplatePicker
         open={pickerOpen}
         templates={templates}
@@ -831,6 +970,7 @@ export default function WhatsAppPage() {
           if (conversationId) setActiveId(conversationId);
         }}
       />
+      </>)}
     </div>
   );
 }

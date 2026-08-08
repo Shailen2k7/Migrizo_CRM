@@ -1,154 +1,92 @@
-MIGRIZO CRM — PHASE 2A: PHONE AUDIT + NEW CONVERSATION
-=======================================================
+MIGRIZO — PHASE 2B: THE SEQUENCE ENGINE + 4-TAB WHATSAPP MODULE
+================================================================
 
-WHAT THIS ADDS
---------------
-1. A reachability audit of every lead in your CRM — how many you can
-   actually message on WhatsApp, and why the rest you cannot.
-2. A "New conversation" button in the WhatsApp inbox: pick a lead,
-   pick an approved template, send. The inbox was reply-only until
-   now; this is what makes it an outbound channel.
+WHAT THIS IS
+  WhatsApp is now a full module with four sub-tabs:
 
+    Inbox      what you had, plus real Pause/Resume/Stop per lead
+    Sequences  build automation as a numbered step list — pick a
+               template, set "wait N days", drag to reorder, enrol
+               a filtered batch, watch progress per lead
+    Templates  all 13 with live Meta status and copy-for-Interakt
+    Settings   dry-run switch, daily cap, send window, connection
+               health, and a "Run now" button for the engine
+
+  Underneath: migration 047 — the queue-and-drain sending engine
+  with the send window, global + per-sequence daily caps, opt-out
+  triggers, and retry logic, all enforced in Postgres.
 
 HOW TO INSTALL
---------------
-STEP 1 — Drag these three folders into your repo root, replacing:
+  1. Drag app/, components/, supabase/ into your repo root,
+     replacing files. Let Netlify deploy.
+  2. Supabase → SQL Editor → run:
+       supabase/migrations/047_whatsapp_sequences.sql
+     Safe to run twice.
+  3. Set up the cron (one time): in cron-job.org (or wherever your
+     other crons live) add, every 10 minutes:
+       POST https://crm.migrizo.com/api/whatsapp/sequences/drain
+       header  x-cron-secret: <your CRON_SECRET>
+     Until the cron exists, the "Run now" button in Settings does
+     the same thing by hand.
 
-           app/
-           components/
-           supabase/
+FIRST TEST (10 minutes, fully safe — dry-run is still on)
+  1. WhatsApp → Sequences → New sequence.
+  2. Add 2 steps: Cold 1 (sends on enrol), Cold 2 wait 4 days.
+  3. Save → Activate.
+  4. Enrol leads → search your own test lead → "Only enrol the
+     first 1" → check the maths line → Enrol.
+  5. Settings → Run now. You should see "1 sent (dry-run)".
+  6. Sequences tab: your lead shows step 1/2, next send in 4 days.
+  7. Nothing reached any phone. When Meta approves the templates
+     and you're ready: Settings → turn dry-run OFF.
 
-         Files added:
-           components/whatsapp/new-conversation.tsx           (NEW)
-           supabase/migrations/043_whatsapp_outbound_start.sql (NEW)
-         File replaced:
-           app/(app)/whatsapp/page.tsx
+THE RULES THE ENGINE ENFORCES (in Postgres, not in the browser)
+  * Send window: default 10:00–19:00 IST. Outside it, the engine
+    claims nothing; anything scheduled later rolls to next opening.
+  * Global daily cap: one number for ALL sends, because Meta
+    rate-limits the phone number, not your sequences.
+  * Per-sequence daily limit: optional, can only lower the global.
+  * STOP/NO: the suppression trigger stops every enrollment for
+    that number instantly. Claim re-checks at send time too.
+  * A reply NEVER stops a sequence (your rule). It flags the lead
+    ("replied" chip) and the thread; a human decides.
+  * Edits apply going forward: each lead remembers only how many
+    steps they received; the next one comes from the current list.
+  * 3 consecutive send failures stop that enrollment and surface
+    the error on the row.
+  * Crash-safety: claims carry a 10-minute lease, rows are written
+    before Interakt is called, overlapping crons skip locked rows.
 
-STEP 2 — Supabase → SQL Editor → run:
-           supabase/migrations/043_whatsapp_outbound_start.sql
-         Read-only, creates no tables, safe to run twice.
-
-STEP 3 — Let Netlify deploy, then open /whatsapp and click
-         "New conversation".
-
-
-THE AUDIT — READ THIS BEFORE BUILDING SEQUENCES
------------------------------------------------
-The strip along the top of the New Conversation screen is the answer
-to "is outbound worth it at scale?":
-
-  reachable        valid number, not opted out, no thread yet
-  already talking  valid number, conversation already exists
-  no number        phone field is empty
-  bad number       phone field has something, but not a valid
-                   WhatsApp number (wrong digit count, junk text)
-  opted out        replied STOP/NO — never messaged again, ever
-
-Every lead lands in exactly one bucket and the buckets sum to your
-total. If they ever stop summing, the classification has a hole.
-
-You can also run it directly:
-
-  select jsonb_pretty(public.whatsapp_phone_audit('<your-workspace-id>'));
-
-That returns the same counts plus:
-  reachable_by_stage   is your outbound audience actually cold leads,
-                       or people already deep in the pipeline?
-  unusable_examples    up to 25 of the rejected numbers. This is the
-                       actionable part — most are one missing digit
-                       or a stray country code, and seeing them is
-                       what makes them fixable.
-
-Why this matters: a 5-message sequence across 2,000 leads and across
-300 leads are different businesses. Meta charges per conversation and
-quality rating punishes sending to numbers that are not on WhatsApp.
-Know the real number before committing to the sequence engine.
-
-"Reachable" here means exactly what the send route accepts — both use
-whatsapp_normalize_phone() from migration 040. There is deliberately
-no second definition of "valid" that could drift from the first.
-
-
-NEW CONVERSATION — HOW IT BEHAVES
----------------------------------
-Two steps: who, then what.
-
-STEP 1, pick a lead. Search by name, number or email. Filter by
-stage. "Sendable only" is on by default.
-
-  Design decision: unsendable leads are SHOWN, greyed out, with the
-  reason — not hidden. If they were hidden, searching for a client and
-  getting nothing would mean either "not in your CRM" or "no valid
-  number" or "opted out" — three different problems that look
-  identical. A greyed row saying "Opted out" answers it immediately.
-
-STEP 2, pick what to send.
-
-  - Only APPROVED templates are listed. Draft ones are excluded
-    because selecting one would just produce a Meta rejection at send
-    time. All 11 of yours are draft right now, so this list will be
-    empty with an explanatory note until Meta approves them.
-
-  - "Free-form message" appears ONLY if that lead already messaged
-    you and the 24-hour window is still open. Meta does not allow
-    opening a cold conversation with free text. The screen states
-    which of the two reasons applies rather than just disabling the
-    option.
-
-  - Variables prefill: {{1}} is the lead's first name, matching the
-    convention across all 11 templates. Titles are stripped, so
-    "Dr. Vikram Rao" gives "Vikram", not "Dr.".
-
-  - Live preview shows the exact message that lands on their phone.
-
-Escape steps back from step 2 to step 1 before it closes the dialog —
-losing a filled-in template because you wanted to change the
-recipient would be maddening.
-
-After sending, the list refreshes and the new thread opens
-automatically.
-
+DESIGN
+  The reference (Sowtek unified inbox) drives the new look: pill
+  sub-tabs, white cards on the grey canvas, circular quick-action
+  row and label/value pairs on the contact panel, interaction-
+  history list, status chips everywhere. Channel icons for email/
+  social were deliberately NOT copied — dead buttons make a
+  product feel worse, and this module is WhatsApp-only today.
 
 VERIFICATION DONE BEFORE SHIPPING
----------------------------------
-  Migration 043 applied twice on PostgreSQL 16 against the real
-    schema — clean both times (idempotent).
-  Fixture of 8 leads covering every bucket: valid Indian mobile,
-    international (+65 8123 4567), 00-prefixed (00919876543210),
-    null phone, blank phone, junk phone, opted out, already talking.
-  Buckets sum to total exactly (11 = 11).
-  International and 00-prefixed numbers normalise correctly and are
-    NOT mangled into Indian numbers.
-  Picker ordering asserted: sendable first, then never-contacted
-    before already-talking, then score descending.
-  Filters asserted: stage, visa type, search by name / phone digits /
-    email, only_sendable on and off.
-  Limit clamping asserted: 0 clamps to 1, 100000 clamps to 500.
-  null and '' arguments both behave as "no filter".
-  RLS isolation asserted: a user who is not a workspace member gets
-    zero rows from the picker and null from the audit.
-  Live suppression asserted: suppressing a number immediately moves
-    it out of reachable and into opted_out, and the picker flips that
-    lead to unsendable with the reason.
-  npx tsc --noEmit          clean
-  npx next build            green, /whatsapp now 18.5 kB
+  Migration 047 applied twice on PostgreSQL 16 — clean both times.
+  Window clamp: all 5 boundary cases exact (03:30→10:00 same day,
+    14:00 unchanged, 19:00→next 10:00, 22:45→next 10:00,
+    09:59:59→10:00).
+  Step save renumbers 1..N and rejects forged template ids.
+  Enrol preview counts == enrol results; re-enrol is a no-op;
+    suppressed and bad-phone leads excluded.
+  Claim: lease prevents double-claim; global cap 2 with 3 due
+    claims exactly 2; per-sequence limit 1 claims exactly 1 and
+    defers the rest to tomorrow's window.
+  Advance: success walks step 1→2→completed with 4-day scheduling;
+    3 failures → stopped with the error recorded.
+  Suppression trigger stops enrollments instantly; inbound-reply
+    trigger flags has_replied and does NOT change status.
+  Full drain cycle simulated with real message recording:
+    provenance (sequence_step = "<seq>:<n>") feeds the per-seq
+    cap query; second same-day cycle correctly claims 0.
+  npx tsc --noEmit clean; next build green — /whatsapp 30.4 kB
+    with /api/whatsapp/sequences/{enroll,drain} in the manifest.
 
-
-WHAT TO DO NEXT
----------------
-1. Run the audit. Send me the numbers — reachable, no_number,
-   bad_number. That decides the shape of the sequence engine.
-2. Look at unusable_examples. If most are fixable typos, cleaning
-   them is the highest-return hour you will spend on this project.
-3. Submit the 11 templates in Interakt. Nothing cold can go out
-   until Meta approves at least one.
-
-Still outstanding from the Phase 2 list:
-  - WhatsApp sequences (migration 044): the 5-message cold sequence
-    over 25 days, reusing the queue-and-drain shape from email.
-  - Make Pause / Resume / Stop real — they are still placeholders
-    that show a toast.
-  - Daily cap ramp + auto-pause watchdog.
-  - Sidebar unread badge.
-  - Real Activity tab reading actual activity rows.
-  - Saved replies, attachments, click-to-call.
+STILL AHEAD (Phase 2C)
+  Sidebar unread badge · real Activity tab from activity rows ·
+  saved replies · attachments · click-to-call · daily cap ramp
+  automation (30→60→100 as quality holds).

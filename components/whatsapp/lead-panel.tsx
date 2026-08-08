@@ -1,14 +1,16 @@
 'use client';
 
 // =============================================================================
-// LEAD PANEL — the right-hand card.
+// LEAD PANEL — the right-hand contact card, in the unified-inbox language:
+// avatar hero, a row of circular quick actions, label/value info rows, and an
+// interaction-history-style activity list.
 //
-// Collapsible: the parent renders it with `off` and the width animates to 0.
-// Content sits inside a fixed-width inner div so it clips cleanly instead of
+// Collapsible: the parent renders it with `collapsed` and the width animates to
+// 0. Content sits inside a fixed-width inner div so it clips cleanly instead of
 // reflowing on the way out.
 // =============================================================================
-import { Mail, Phone, Smartphone, Briefcase, MapPin, Crown, Pause, Play, Square } from 'lucide-react';
-import { initials, avatarColor } from '@/lib/utils';
+import { Mail, Phone, Smartphone, Briefcase, MapPin, Crown, Pause, Play, Square, MessageCircle } from 'lucide-react';
+import { initials, avatarColor, cn } from '@/lib/utils';
 import { formatLeft, windowLeftMs, windowState, WINDOW_META } from '@/lib/whatsapp/types';
 import type { WaConversation } from '@/lib/whatsapp/types';
 import type { Lead } from '@/lib/types';
@@ -49,37 +51,42 @@ export default function LeadPanel({
 
   return (
     <aside
-      className={[
+      className={cn(
         'flex-shrink-0 overflow-y-auto overflow-x-hidden rounded-[14px] border border-[#E8EAF0] bg-white',
         'shadow-[0_1px_2px_rgba(20,24,40,.06)] transition-[width,margin,border-width,opacity] duration-200 ease-out',
-        collapsed ? 'w-0 ml-0 border-0 opacity-0' : 'w-[330px] ml-[14px] opacity-100',
-      ].join(' ')}
+        collapsed ? 'w-0 ml-0 border-0 opacity-0' : 'w-[330px] ml-[14px] opacity-100'
+      )}
       aria-hidden={collapsed}
     >
       <div className="w-[328px]">
         {/* hero */}
-        <div className="px-5 pb-[18px] pt-[26px] text-center">
+        <div className="px-5 pb-[16px] pt-[24px] text-center">
           <div
-            className="mx-auto mb-[13px] flex h-[76px] w-[76px] items-center justify-center rounded-full text-[25px] font-bold text-white shadow-[0_8px_22px_-8px_rgba(20,24,40,.45)]"
+            className="mx-auto mb-[12px] flex h-[72px] w-[72px] items-center justify-center rounded-full text-[24px] font-bold text-white shadow-[0_8px_22px_-8px_rgba(20,24,40,.45)]"
             style={{ background: avatarColor(conv.lead_name) }}
           >
             {initials(conv.lead_name)}
           </div>
-          <h3 className="m-0 mb-[5px] text-[19px] font-semibold tracking-[-.03em] text-indigo-600">
+          <h3 className="m-0 mb-[4px] text-[18px] font-semibold tracking-[-.03em] text-indigo-600">
             {conv.lead_name}
           </h3>
-          {role && <div className="text-[13.6px] text-ink-2">{role}</div>}
-          <div className="mt-[9px] inline-flex items-center gap-[7px] text-[13px] font-medium text-ink">
-            <Crown className="h-[15px] w-[15px] text-[#EAB308]" />
+          {role && <div className="text-[13.2px] text-ink-2">{role}</div>}
+          <div className="mt-[7px] inline-flex items-center gap-[6px] text-[12.6px] font-medium text-ink">
+            <Crown className="h-[14px] w-[14px] text-[#EAB308]" />
             {ownerName}
           </div>
-        </div>
 
-        <div className="px-5 pb-[18px]">
+          {/* quick actions — the circular row from the reference design */}
+          <div className="mt-[14px] flex items-center justify-center gap-[10px]">
+            <Quick title="Call" onClick={onCall}><Phone /></Quick>
+            <Quick title="WhatsApp thread" active><MessageCircle /></Quick>
+            <Quick title={email ? 'Send email' : 'No email on file'} onClick={email ? onMail : undefined} disabled={!email}><Mail /></Quick>
+          </div>
+
           <button
             onClick={onMail}
             disabled={!email}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#25A25A] px-3 py-[11px] text-[14px] font-semibold text-white transition hover:bg-[#1B7A44] disabled:opacity-40"
+            className="mt-[14px] flex w-full items-center justify-center gap-2 rounded-lg bg-[#25A25A] px-3 py-[10px] text-[13.6px] font-semibold text-white transition hover:bg-[#1B7A44] disabled:opacity-40"
           >
             <Mail className="h-[15px] w-[15px]" /> Send Mail
           </button>
@@ -90,10 +97,10 @@ export default function LeadPanel({
             <button
               key={t}
               onClick={() => onTab(t)}
-              className={[
-                '-mb-px border-b-2 pb-3 pt-[11px] text-[13.8px] font-semibold transition',
-                tab === t ? 'border-[#25A25A] text-[#1B7A44]' : 'border-transparent text-muted hover:text-ink-2',
-              ].join(' ')}
+              className={cn(
+                '-mb-px border-b-2 pb-3 pt-[10px] text-[13.6px] font-semibold transition',
+                tab === t ? 'border-[#25A25A] text-[#1B7A44]' : 'border-transparent text-muted hover:text-ink-2'
+              )}
             >
               {t === 'info' ? 'Information' : 'Activity'}
             </button>
@@ -103,19 +110,19 @@ export default function LeadPanel({
         {tab === 'info' ? (
           <>
             <Section title="Basic Info">
-              <Row icon={<Mail />} value={email || 'No email on file'} muted={!email} truncate
-                   action={email ? { label: 'Mail', icon: <Mail />, onClick: onMail } : undefined} />
-              <Row icon={<Smartphone />} value={lead?.phone || conv.phone_e164} num
-                   action={{ label: 'Call', icon: <Phone />, onClick: onCall }} />
-              {role && <Row icon={<Briefcase />} value={role} />}
-              {lead?.source && <Row icon={<MapPin />} value={lead.source} />}
+              <Pair icon={<Mail />} label="Email" value={email || 'Not on file'} muted={!email}
+                    action={email ? { label: 'Mail', onClick: onMail } : undefined} />
+              <Pair icon={<Smartphone />} label="Phone" value={lead?.phone || conv.phone_e164} num
+                    action={{ label: 'Call', onClick: onCall }} />
+              {role && <Pair icon={<Briefcase />} label="Profile" value={role} />}
+              {lead?.source && <Pair icon={<MapPin />} label="Source" value={lead.source} />}
             </Section>
 
             <Section title="Sequence">
               <div className="rounded-[11px] border border-[#E8EAF0] bg-[#F5F6F9] p-[14px]">
                 <div className="mb-[11px] flex items-center justify-between gap-2">
-                  <b className="text-[13.2px] font-semibold">{seqLabel}</b>
-                  <span className={`inline-flex rounded-full border px-[9px] py-[3px] text-[11px] font-semibold ${CHIP[seqState]}`}>
+                  <b className="min-w-0 flex-1 truncate text-[13px] font-semibold" title={seqLabel}>{seqLabel}</b>
+                  <span className={cn('inline-flex flex-shrink-0 rounded-full border px-[9px] py-[3px] text-[11px] font-semibold', CHIP[seqState])}>
                     {seqState}
                   </span>
                 </div>
@@ -123,7 +130,7 @@ export default function LeadPanel({
                   {seqState === 'active' ? (
                     <SeqBtn onClick={() => onSeq('pause')}><Pause className="h-[13px] w-[13px]" />Pause</SeqBtn>
                   ) : (
-                    <SeqBtn onClick={() => onSeq('resume')} disabled={seqState === 'none'}>
+                    <SeqBtn onClick={() => onSeq('resume')} disabled={seqState === 'none' || seqState === 'stopped'}>
                       <Play className="h-[13px] w-[13px]" />Resume
                     </SeqBtn>
                   )}
@@ -136,17 +143,13 @@ export default function LeadPanel({
                 </p>
               </div>
 
-              <div className="mt-[13px] flex items-start justify-between gap-3 py-[6px] text-[13.2px]">
-                <span className="text-muted">Email sequence</span>
-                <span className="text-[12.8px] font-medium text-muted">Blocked · one channel</span>
-              </div>
-              <div className="flex items-start justify-between gap-3 py-[6px] text-[13.2px]">
+              <div className="mt-[13px] flex items-start justify-between gap-3 py-[6px] text-[13px]">
                 <span className="text-muted">24-hour window</span>
                 <span className="text-[12.8px] font-semibold" style={{ color: meta.colour }}>
-                  {w === 'shut' ? 'Closed' : formatLeft(leftMs)}
+                  {w === 'shut' ? 'Closed — template only' : formatLeft(leftMs)}
                 </span>
               </div>
-              <div className="mt-[10px] h-[6px] overflow-hidden rounded-full bg-[#EDEFF3]">
+              <div className="mt-[8px] h-[6px] overflow-hidden rounded-full bg-[#EDEFF3]">
                 <span className="block h-full rounded-full transition-[width] duration-500"
                       style={{ width: `${pct}%`, background: meta.colour }} />
               </div>
@@ -162,15 +165,17 @@ export default function LeadPanel({
             )}
           </>
         ) : (
-          <Section title="Recent activity">
-            <div className="relative pl-[19px] before:absolute before:bottom-[6px] before:left-[4.5px] before:top-[6px] before:w-[1.5px] before:bg-[#DDE0E9] before:content-['']">
-              <Dot tone={conv.needs_attention ? 'hi' : 'plain'}
-                   title={conv.last_direction === 'in' ? 'WhatsApp reply received' : 'Message delivered'}
-                   sub={conv.needs_attention ? 'Awaiting your reply' : 'Handled'} />
-              <Dot tone="plain" title={seqLabel} sub={`Sequence ${seqState}`} />
-              <Dot tone="plain" title="Conversation started"
-                   sub={conv.last_message_at ? new Date(conv.last_message_at).toLocaleDateString() : '—'} />
-            </div>
+          <Section title="Interaction history">
+            <History
+              icon={<MessageCircle />}
+              tone={conv.needs_attention ? 'in' : 'out'}
+              title={conv.last_direction === 'in' ? 'WhatsApp reply received' : 'Message delivered'}
+              sub={conv.needs_attention ? 'Awaiting your reply' : 'Handled'}
+              when={conv.last_message_at}
+            />
+            <History icon={<Play />} tone="plain" title={seqLabel} sub={`Sequence ${seqState}`} when={null} />
+            <History icon={<Smartphone />} tone="plain" title="Conversation started"
+                     sub={conv.phone_e164} when={conv.last_message_at} />
           </Section>
         )}
       </div>
@@ -178,42 +183,84 @@ export default function LeadPanel({
   );
 }
 
+// ── bits ────────────────────────────────────────────────────────────────────
+function Quick({ children, title, onClick, disabled, active }: {
+  children: React.ReactNode; title: string; onClick?: () => void; disabled?: boolean; active?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick} disabled={disabled} title={title}
+      className={cn(
+        'flex h-[38px] w-[38px] items-center justify-center rounded-full border transition [&>svg]:h-[15px] [&>svg]:w-[15px]',
+        active
+          ? 'border-[#D7F3E1] bg-[#EDFAF1] text-[#1B7A44]'
+          : 'border-[#E8EAF0] bg-white text-ink-2 hover:border-[#2FB463] hover:bg-[#EDFAF1] hover:text-[#1B7A44]',
+        disabled && 'cursor-not-allowed opacity-35 hover:border-[#E8EAF0] hover:bg-white hover:text-ink-2'
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="border-b border-[#E8EAF0] px-5 py-[18px] last:border-b-0">
-      <h4 className="m-0 mb-[14px] text-[14px] font-bold tracking-[-.02em] text-ink">{title}</h4>
+    <div className="border-b border-[#E8EAF0] px-5 py-[16px] last:border-b-0">
+      <h4 className="m-0 mb-[12px] text-[13.6px] font-bold tracking-[-.02em] text-ink">{title}</h4>
       {children}
     </div>
   );
 }
 
-function Row({ icon, value, action, muted, num, truncate }: {
-  icon: React.ReactNode; value: string; muted?: boolean; num?: boolean; truncate?: boolean;
-  action?: { label: string; icon: React.ReactNode; onClick: () => void };
+/** Label on the left, value on the right — the reference design's info rows. */
+function Pair({ icon, label, value, action, muted, num }: {
+  icon: React.ReactNode; label: string; value: string; muted?: boolean; num?: boolean;
+  action?: { label: string; onClick: () => void };
 }) {
   return (
-    <div className="flex items-start gap-[13px] py-2">
-      <span className="flex w-[19px] flex-shrink-0 justify-center pt-px text-ink-2 [&>svg]:h-[17px] [&>svg]:w-[17px]">
-        {icon}
-      </span>
+    <div className="flex items-center gap-[10px] border-b border-[#F0F1F5] py-[9px] last:border-b-0">
+      <span className="flex w-[18px] flex-shrink-0 justify-center text-ink-2 [&>svg]:h-[15px] [&>svg]:w-[15px]">{icon}</span>
+      <span className="w-[52px] flex-shrink-0 text-[12.2px] text-muted">{label}</span>
       <span
         title={value}
-        className={[
-          'min-w-0 flex-1 text-[13.4px] leading-[1.5]',
-          muted ? 'text-faint' : 'text-ink',
-          num ? 'tabular-nums' : '',
-          truncate ? 'truncate' : 'break-words',
-        ].join(' ')}
+        className={cn('min-w-0 flex-1 truncate text-right text-[13px]',
+          muted ? 'text-faint' : 'font-medium text-ink', num && 'tabular-nums')}
       >
         {value}
       </span>
       {action && (
         <button
           onClick={action.onClick}
-          className="inline-flex flex-shrink-0 items-center gap-[5px] rounded-full border border-[#D7F3E1] bg-[#EDFAF1] px-[10px] py-1 text-[11.4px] font-semibold text-[#1B7A44] transition hover:bg-[#D7F3E1] [&>svg]:h-[11px] [&>svg]:w-[11px]"
+          className="flex-shrink-0 rounded-full border border-[#D7F3E1] bg-[#EDFAF1] px-[10px] py-[3px] text-[11.2px] font-semibold text-[#1B7A44] transition hover:bg-[#D7F3E1]"
         >
-          {action.icon}{action.label}
+          {action.label}
         </button>
+      )}
+    </div>
+  );
+}
+
+function History({ icon, title, sub, when, tone }: {
+  icon: React.ReactNode; title: string; sub: string; when: string | null; tone: 'in' | 'out' | 'plain';
+}) {
+  return (
+    <div className="flex items-start gap-[11px] border-b border-[#F0F1F5] py-[10px] last:border-b-0">
+      <span className={cn(
+        'mt-[1px] flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-[9px] border [&>svg]:h-[13px] [&>svg]:w-[13px]',
+        tone === 'in' ? 'border-[#D7F3E1] bg-[#EDFAF1] text-[#1B7A44]'
+          : tone === 'out' ? 'border-[#DDE5FB] bg-[#EEF2FE] text-[#3B5BDB]'
+          : 'border-[#E8EAF0] bg-[#F5F6F9] text-ink-2'
+      )}>
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <b className="block truncate text-[12.8px] font-semibold">{title}</b>
+        <span className="mt-[1px] block truncate text-[11.4px] text-muted">{sub}</span>
+      </span>
+      {when && (
+        <span className="flex-shrink-0 text-[10.8px] tabular-nums text-faint">
+          {new Date(when).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+        </span>
       )}
     </div>
   );
@@ -228,20 +275,5 @@ function SeqBtn({ children, onClick, disabled }: { children: React.ReactNode; on
     >
       {children}
     </button>
-  );
-}
-
-function Dot({ title, sub, tone }: { title: string; sub: string; tone: 'hi' | 'plain' }) {
-  return (
-    <div className="relative pb-[15px] last:pb-0">
-      <span
-        className="absolute left-[-18.5px] top-1 h-[10px] w-[10px] rounded-full border-2"
-        style={tone === 'hi'
-          ? { borderColor: '#25A25A', background: '#25A25A' }
-          : { borderColor: '#DDE0E9', background: '#fff' }}
-      />
-      <b className="block text-[13px] font-semibold">{title}</b>
-      <span className="mt-[2px] block text-[11.6px] text-muted">{sub}</span>
-    </div>
   );
 }
