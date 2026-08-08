@@ -1,111 +1,164 @@
-MIGRIZO — WHATSAPP STAGE 1  ·  COMPLETE (migration + engine + inbox UI)
-=======================================================================
+MIGRIZO CRM — WHATSAPP DIAGNOSTICS + PERFORMANCE
+=================================================
 
-UPLOAD TO GITHUB
-----------------
-1. github.com -> your repo -> Add file -> Upload files
-2. Drag in these FOUR folders together:   app   components   lib   supabase
-3. GitHub keeps the paths and touches only the 12 files below.
-   It never deletes anything already in your repo.
-4. Commit message:  "WhatsApp Stage 1 - Interakt engine + inbox"
+WHAT THIS FIXES
+---------------
+1. You could not tell WHY inbound WhatsApp messages were not arriving.
+   Now the system tells you, in one sentence.
+2. The inbox felt slow and the connection pill said "Not connected"
+   for several seconds before snapping to your number.
+   Both causes are fixed.
 
-THE 12 FILES
-------------
-NEW  supabase/migrations/040_whatsapp.sql          tables, functions, RLS
-NEW  lib/whatsapp/types.ts                         shared types + window helpers
-NEW  lib/whatsapp/phone.ts                         phone normalisation
-NEW  lib/whatsapp/interakt.ts                      the Interakt adapter
-NEW  app/api/whatsapp/send/route.ts                send one message
-NEW  app/api/whatsapp/webhook/route.ts             Interakt -> CRM
-NEW  app/api/whatsapp/test-connection/route.ts     credential check
-NEW  app/(app)/whatsapp/page.tsx                   the inbox
-NEW  components/whatsapp/lead-panel.tsx            right-hand lead card
-NEW  components/whatsapp/template-picker.tsx       template + live preview
-UPD  components/sidebar.tsx                        adds the WhatsApp nav item
-UPD  lib/supabase/middleware.ts                    ONE line: adds
-                                                   '/api/whatsapp/webhook'
-                                                   to PUBLIC_PATHS
 
-  NOTE on the two UPD files: if your live versions differ from these, do NOT
-  overwrite them. Just make the change by hand — sidebar.tsx gets one NAV entry,
-  middleware.ts gets one string in the PUBLIC_PATHS array.
+HOW TO INSTALL (2 minutes)
+--------------------------
+STEP 1 — Drag these two folders into the root of your GitHub repo.
+         Say yes to replacing files. Nothing outside app/ and
+         supabase/migrations/ is touched.
 
-AFTER THE UPLOAD
-----------------
-1. Supabase SQL editor: run supabase/migrations/040_whatsapp.sql
-   Run it TWICE. The second run must be silent.
-   (Safe to re-run even if you ran an earlier copy — it is idempotent.)
+           app/
+           supabase/
 
-2. Seed the 11 templates:
-      select public.whatsapp_seed_templates('YOUR_WORKSPACE_ID');
-      -- 11 the first time, 0 after that
+         Files added:
+           app/api/whatsapp/diagnose/route.ts          (NEW)
+           supabase/migrations/042_whatsapp_webhook_log.sql  (NEW)
+         Files replaced:
+           app/api/whatsapp/webhook/route.ts
+           app/(app)/whatsapp/page.tsx
 
-3. Save your number:
-      update public.whatsapp_settings
-         set phone_e164     = '918976543210',
-             display_number = '+91 89765 43210',
-             waba_id        = 'YOUR_WABA_ID',
-             connected      = true
-       where workspace_id   = 'YOUR_WORKSPACE_ID';
+STEP 2 — In Supabase → SQL Editor, paste and run:
+           supabase/migrations/042_whatsapp_webhook_log.sql
+         It is safe to run twice.
 
-4. Netlify -> Environment variables:
-      INTERAKT_API_KEY         = Secret Key from Interakt
-                                 (Settings -> Developer Setting)
-      WHATSAPP_WEBHOOK_SECRET  = any long random string you invent
+STEP 3 — Let Netlify finish deploying.
 
-5. Netlify -> Deploys -> Trigger deploy -> Clear cache and deploy site
+STEP 4 — Open this in a browser tab while logged into the CRM:
+           https://<your-domain>/api/whatsapp/diagnose
 
-6. Interakt -> Webhooks, paste and enable all events:
-      https://crm.migrizo.com/api/whatsapp/webhook?key=YOUR_SECRET
+         Read the "next_action" field at the top. That is your answer.
 
-7. Supabase -> Database -> Replication: confirm whatsapp_messages and
-   whatsapp_conversations are in the supabase_realtime publication.
-   (Migration 040 adds them automatically; this is just a sanity check.)
-   Without this the inbox still works, it just needs a refresh to show
-   new messages.
 
-WHAT YOU WILL SEE
------------------
-A new "WhatsApp" item in the sidebar (admins only). The inbox is empty until
-the first message exists — that is correct, not a bug.
+WHAT THE DIAGNOSTIC TELLS YOU
+-----------------------------
+It checks the chain in order and reports the FIRST broken link:
 
-DRY RUN IS ON. Every send is logged with the exact payload it would have
-posted to Interakt, and nothing reaches WhatsApp. Turn it off only when you
-are ready:
-      update public.whatsapp_settings set dry_run = false
-       where workspace_id = 'YOUR_WORKSPACE_ID';
+  env       Are INTERAKT_API_KEY and WHATSAPP_WEBHOOK_SECRET actually
+            on this deploy? (Reports set/not-set and length only.
+            Never the value.)
+  settings  Is there a settings row, is your number saved, is it
+            connected, is dry_run still on?
+  inbound   Has Interakt EVER called your webhook? This is the one
+            that matters right now. Four possible verdicts:
 
-FIRST TEST (browser console on any CRM page, F12)
--------------------------------------------------
-  await fetch('/api/whatsapp/test-connection',{method:'POST'}).then(r=>r.json())
-  -> {ok:true}   ("unauthorized" means the wrong key field in Interakt)
+              NO_CALLS      Interakt has never reached the URL.
+                            Wrong URL, or the message-event
+                            checkboxes are not ticked in Interakt.
+              ALL_REJECTED  Interakt is calling but every call is a
+                            401. The secret in the ?key= does not
+                            match Netlify.
+              NO_INBOUND    Interakt is calling and authenticating,
+                            but has never sent a message_received
+                            event. The inbound checkbox is off.
+              HEALTHY       Inbound is arriving and being recorded.
 
-  await fetch('/api/whatsapp/send',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({phone:'+91 89765 43210',
-      templateCode:'migrizo_cold_01', values:{'1':'Shailen'}})
-  }).then(r=>r.json())
-  -> {ok:true, dryRun:true, messageId, conversationId}
+  templates How many templates exist and how many Meta has approved.
+  traffic   Messages in/out/failed, and — importantly — whether any
+            conversations landed under a DIFFERENT workspace_id than
+            the one you log into. Those are invisible to you and no
+            normal query would ever surface them.
 
-Then open /whatsapp — the conversation should be there.
 
-THE INBOX
----------
-Three columns, each collapses on its own:
-  topbar toggles, or  [  list   ]  lead panel   F  focus (hides both)
-Shortcuts are ignored while you are typing a message.
+THE WEBHOOK LOG
+---------------
+Migration 042 adds whatsapp_webhook_log. Every request that hits the
+webhook is now recorded there — including the ones rejected with 401
+and the ones that error — with the raw Interakt payload.
 
-RULES ENFORCED
---------------
-  A reply flags the conversation and notifies the owner. It never stops a
-  sequence — Pause / Resume / Stop are manual, in the lead panel.
-  STOP or NO suppresses the number forever, moves the lead to Junk, and exits
-  every sequence on WhatsApp AND email.
-  Free-form is blocked outside the 24-hour window, in the UI and again on the
-  server.
+Read it directly any time:
 
-NOT YET BUILT (Stage 2)
------------------------
-  Sequences and the daily cap ramp, attachments, saved replies, click-to-call.
-  The sequence controls are visible but currently show a note; they wire up
-  with migration 041.
+  select received_at, event_type, outcome, detail, phone
+    from whatsapp_webhook_log
+   order by received_at desc
+   limit 30;
+
+Outcomes: unauthorized | bad_json | handled | ignored | error
+
+The log auto-limits itself to 14 days via whatsapp_webhook_log_prune().
+Reads are campaign-admin only — it contains phone numbers and message
+text.
+
+Important: the webhook still works fine if you deploy the code before
+running the migration. The log insert fails silently in that case;
+message handling is unaffected.
+
+
+PERFORMANCE CHANGES
+-------------------
+1. Load waterfall removed.
+   The page used to await templates+settings, THEN await
+   conversations+stats — two full round trips before showing real
+   data. That is why the pill sat on "Not connected". Now all four
+   requests go out together.
+
+2. Idle clock stopped.
+   A setState fired every second, forever, re-rendering the whole
+   page including every list row and the open thread — even on an
+   empty inbox. Now the clock only runs when a 24-hour window is
+   actually counting down, and only ticks per second when seconds
+   are visible on screen (under one hour left); otherwise every 30
+   seconds.
+
+     Idle re-renders per 10 min, empty inbox:      600  ->  0
+     Idle re-renders per 10 min, one 10h window:   600  ->  20
+
+3. Websocket no longer rebuilt on every click.
+   Selecting a conversation used to tear down the realtime channel
+   and open a new one. Events landing during the swap were lost.
+   The channel is now created once per page.
+
+4. Delivery receipts coalesced.
+   A burst of receipts fired two queries per receipt — sending to 50
+   leads meant ~100 round trips in a few seconds and a visibly
+   thrashing list. Now one refresh per 250ms.
+
+5. The UI stops lying.
+   - The pill shows "Checking..." while settings load, instead of
+     "Not connected".
+   - A failed query now renders a red error box with the actual
+     message, a Try again button, and a link to the diagnostic —
+     instead of "No conversations yet", which sends you looking in
+     the wrong place.
+   - The spinner can no longer spin forever: the loading flag is
+     cleared in a finally block.
+
+
+VERIFICATION DONE BEFORE SHIPPING
+---------------------------------
+  Migration 042 applied twice on PostgreSQL 16 against the real
+    schema — clean both times (idempotent).
+  Both new plpgsql function bodies executed, not just created
+    (plpgsql bodies are not validated at CREATE time).
+  All four inbound verdict branches triggered and asserted.
+  Retention function tested: deletes old rows, floors at 1 day.
+  whatsapp_webhook_health() refuses correctly when the caller is not
+    a campaign admin, and returns the full report when they are.
+  npx tsc --noEmit          clean
+  npx next build            green
+  /api/whatsapp/diagnose, /send, /test-connection, /webhook and
+    /whatsapp all present in the route manifest.
+  Countdown interval logic: 9/9 unit tests pass, including the
+    exactly-one-hour boundary.
+
+
+WHAT IS STILL OUTSTANDING
+-------------------------
+- Turn OFF Interakt's built-in auto-reply. That "Welcome to Migrizo"
+  message was sent by Interakt, not by your CRM. It will never appear
+  in your inbox, it burns the 24-hour window before your team sees
+  the lead, and it means the customer's phone and your CRM
+  permanently disagree.
+- Submit your 11 templates in Interakt for Meta approval.
+- Set dry_run = false after your first successful real send.
+- There is still no "New conversation" button. Cold outbound is
+  blocked by Meta until templates are approved, so that screen is
+  the next build once approval lands.

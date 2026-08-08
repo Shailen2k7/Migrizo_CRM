@@ -80,6 +80,8 @@ export default function WhatsAppPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const [sending, setSending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<'info' | 'activity'>('info');
@@ -99,18 +101,35 @@ export default function WhatsAppPage() {
     if (typeof window !== 'undefined' && window.innerWidth < 1440) setHidePanel(true);
   }, []);
 
-  // the window countdown has to move on its own
+  // The window countdown has to move on its own — but a blanket 1-second
+  // setState re-rendered the entire page (up to 300 list rows plus the whole
+  // thread) once a second, forever, on an idle screen. That was the sluggishness.
+  //
+  // Now the clock only runs when something is actually counting down, and only
+  // as fast as the display needs: seconds are visible below one hour, so tick
+  // every second there and every 30 seconds otherwise. Nothing open, no timer.
+  const needSeconds = convs.some((c) => {
+    const left = windowLeftMs(c.last_inbound_at);
+    return left > 0 && left < 3600_000;
+  });
+  const anyOpen = convs.some((c) => windowLeftMs(c.last_inbound_at) > 0);
   useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    if (!anyOpen) return;
+    const t = setInterval(() => setTick((n) => n + 1), needSeconds ? 1000 : 30_000);
     return () => clearInterval(t);
-  }, []);
+  }, [anyOpen, needSeconds]);
 
   // ── data ──────────────────────────────────────────────────────────────────
+  // loadError is deliberately separate from `loading`. A spinner that never
+  // resolves, or an empty state that says "no conversations yet" when the query
+  // actually failed, is worse than an error — it sends you looking in the wrong
+  // place. Every failure path below sets this and the list renders it.
   const loadConvs = useCallback(async () => {
     const { data, error } = await supabase.rpc('whatsapp_conversations_list', {
       p_workspace_id: workspace.id, p_limit: 300,
     });
-    if (error) { toast.error(`Couldn't load conversations: ${error.message}`); return; }
+    if (error) { setLoadError(error.message); return; }
+    setLoadError(null);
     setConvs((data || []) as WaConversation[]);
   }, [supabase, workspace.id]);
 
@@ -119,22 +138,38 @@ export default function WhatsAppPage() {
     if (data) setStats(data as WaStats);
   }, [supabase, workspace.id]);
 
+  // One parallel batch, not two sequential ones. The old code awaited templates
+  // and settings, THEN awaited conversations and stats — two full round trips to
+  // Supabase before the first pixel of real data. On a Netlify cold start that
+  // is why the connection pill sat on "Not connected" for seconds before
+  // snapping into place. Four requests, one wait.
+  const reload = useCallback(async () => {
+    const [tRes, sRes] = await Promise.all([
+      supabase.from('whatsapp_templates').select('*')
+        .eq('workspace_id', workspace.id).eq('active', true).order('track').order('step_no'),
+      supabase.from('whatsapp_settings').select('*').eq('workspace_id', workspace.id).maybeSingle(),
+      loadConvs(),
+      loadStats(),
+    ]);
+    setTemplates((tRes.data || []) as WaTemplate[]);
+    setSettings((sRes.data || null) as WaSettings | null);
+    if (sRes.error) setLoadError(sRes.error.message);
+  }, [supabase, workspace.id, loadConvs, loadStats]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [{ data: t }, { data: s }] = await Promise.all([
-        supabase.from('whatsapp_templates').select('*')
-          .eq('workspace_id', workspace.id).eq('active', true).order('track').order('step_no'),
-        supabase.from('whatsapp_settings').select('*').eq('workspace_id', workspace.id).maybeSingle(),
-      ]);
-      if (!alive) return;
-      setTemplates((t || []) as WaTemplate[]);
-      setSettings((s || null) as WaSettings | null);
-      await Promise.all([loadConvs(), loadStats()]);
-      if (alive) setLoading(false);
+      try {
+        await reload();
+      } catch (e) {
+        // A thrown error here used to leave the spinner turning forever.
+        if (alive) setLoadError(e instanceof Error ? e.message : 'Unknown error');
+      } finally {
+        if (alive) setLoading(false);
+      }
     })();
     return () => { alive = false; };
-  }, [supabase, workspace.id, loadConvs, loadStats]);
+  }, [reload]);
 
   // first conversation once the list arrives
   useEffect(() => {
@@ -158,6 +193,23 @@ export default function WhatsAppPage() {
     return () => { alive = false; };
   }, [activeId, supabase]);
 
+  // Read the selected conversation through a ref so the realtime channel does
+  // not need activeId in its dependency list. It previously did, which meant
+  // every click in the list tore down the websocket and opened a new one —
+  // slow, and events landing during the swap were lost.
+  const activeIdRef = useRef<string | null>(null);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
+  // A burst of delivery receipts used to fire two queries per receipt. Sending
+  // to 50 leads meant 100 round trips in a few seconds and a list that visibly
+  // thrashed. Coalesce into one refresh per 250ms instead.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queueRefresh = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => { loadConvs(); loadStats(); }, 250);
+  }, [loadConvs, loadStats]);
+  useEffect(() => () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); }, []);
+
   // realtime: new messages and status changes, no refresh required
   useEffect(() => {
     const ch = supabase
@@ -167,21 +219,24 @@ export default function WhatsAppPage() {
         (payload) => {
           const row = payload.new as WaMessage | undefined;
           if (!row) return;
-          if (row.conversation_id === activeId) {
+          if (row.conversation_id === activeIdRef.current) {
             setMsgs((prev) => {
               const i = prev.findIndex((m) => m.id === row.id);
               if (i === -1) return [...prev, row];
+              // Same row, same status — skip the state write so React does not
+              // re-render the thread for a no-op update.
+              if (prev[i].status === row.status && prev[i].body === row.body) return prev;
               const next = [...prev]; next[i] = row; return next;
             });
           }
-          loadConvs(); loadStats();
+          queueRefresh();
         })
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'whatsapp_conversations', filter: `workspace_id=eq.${workspace.id}` },
-        () => { loadConvs(); loadStats(); })
+        () => queueRefresh())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [supabase, workspace.id, activeId, loadConvs, loadStats]);
+  }, [supabase, workspace.id, queueRefresh]);
 
   // stick to the bottom as the thread grows
   useEffect(() => {
@@ -329,7 +384,7 @@ export default function WhatsAppPage() {
             {focusOn ? 'Exit focus' : 'Focus'}
           </button>
           <span className="h-[22px] w-px bg-[#E8EAF0]" />
-          <ConnectionPill settings={settings} />
+          <ConnectionPill settings={settings} loading={loading} />
         </div>
       </div>
 
@@ -364,7 +419,39 @@ export default function WhatsAppPage() {
 
           <div className="w-[330px] flex-1 overflow-y-auto p-[6px]">
             {loading && <div className="p-8 text-center text-[13px] text-muted"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></div>}
-            {!loading && filtered.length === 0 && (
+
+            {/* A failed query must never be dressed up as an empty inbox. */}
+            {!loading && loadError && (
+              <div className="m-[10px] rounded-xl border border-[#F8D6D6] bg-[#FEEFEF] p-[14px]">
+                <div className="mb-[7px] flex items-center gap-[7px] text-[13px] font-semibold text-[#B02B2B]">
+                  <AlertCircle className="h-[15px] w-[15px] flex-shrink-0" />
+                  Couldn&apos;t load conversations
+                </div>
+                <p className="m-0 mb-[11px] break-words text-[11.8px] leading-[1.55] text-[#8E2A2A]">
+                  {loadError}
+                </p>
+                <button
+                  onClick={async () => {
+                    setRetrying(true);
+                    try { await reload(); } finally { setRetrying(false); }
+                  }}
+                  disabled={retrying}
+                  className="w-full rounded-lg border border-[#E8B4B4] bg-white px-3 py-2 text-[12.4px] font-semibold text-[#B02B2B] transition hover:bg-[#FEEFEF] disabled:opacity-50"
+                >
+                  {retrying ? 'Retrying…' : 'Try again'}
+                </button>
+                <a
+                  href="/api/whatsapp/diagnose"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-[7px] block text-center text-[11.4px] font-medium text-[#8E2A2A] underline"
+                >
+                  Run the full diagnostic
+                </a>
+              </div>
+            )}
+
+            {!loading && !loadError && filtered.length === 0 && (
               <p className="px-[18px] py-10 text-center text-[13px] text-muted">
                 {convs.length === 0 ? 'No conversations yet. They appear here the moment a lead replies.' : 'Nothing matches that filter.'}
               </p>
@@ -627,7 +714,18 @@ function Toggle({ on, onClick, title, children }: { on: boolean; onClick: () => 
   );
 }
 
-function ConnectionPill({ settings }: { settings: WaSettings | null }) {
+// While settings are in flight this used to render "Not connected", which reads
+// as a real failure rather than "we don't know yet". A neutral checking state
+// costs one prop and stops the pill lying during a cold start.
+function ConnectionPill({ settings, loading }: { settings: WaSettings | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <span className="inline-flex items-center gap-[7px] rounded-full border border-[#DDE0E9] bg-[#F5F6F9] px-3 py-[6px] text-[11.6px] font-semibold text-muted">
+        <Loader2 className="h-[11px] w-[11px] animate-spin" />
+        Checking…
+      </span>
+    );
+  }
   const ok = settings?.connected && !settings?.sending_paused;
   return (
     <span className={cn('inline-flex items-center gap-[7px] rounded-full border px-3 py-[6px] text-[11.6px] font-semibold',
