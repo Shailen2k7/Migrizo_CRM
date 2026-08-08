@@ -93,6 +93,9 @@ export default function WhatsAppPage() {
   const [hidePanel, setHidePanel] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  // Counter for optimistic message ids. A counter, not a timestamp — two sends
+  // inside the same millisecond would collide on Date.now().
+  const tempSeq = useRef(0);
 
   const active = convs.find((c) => c.id === activeId) || null;
   const activeLead = active?.lead_id ? leads.find((l) => l.id === active.lead_id) : undefined;
@@ -222,11 +225,24 @@ export default function WhatsAppPage() {
           if (row.conversation_id === activeIdRef.current) {
             setMsgs((prev) => {
               const i = prev.findIndex((m) => m.id === row.id);
-              if (i === -1) return [...prev, row];
-              // Same row, same status — skip the state write so React does not
-              // re-render the thread for a no-op update.
-              if (prev[i].status === row.status && prev[i].body === row.body) return prev;
-              const next = [...prev]; next[i] = row; return next;
+              if (i >= 0) {
+                // Same row, same status — skip the state write so React does not
+                // re-render the thread for a no-op update.
+                if (prev[i].status === row.status && prev[i].body === row.body) return prev;
+                const next = [...prev]; next[i] = row; return next;
+              }
+              // Realtime can beat our own POST response back to the browser. If
+              // this is the real row for a message we optimistically painted,
+              // replace the placeholder — appending would show it twice.
+              //
+              // row.direction must be checked too: a lead replying with the same
+              // word we just sent ("Hey") would otherwise swallow our own bubble.
+              if (row.direction === 'out') {
+                const t = prev.findIndex((m) =>
+                  m.id.startsWith('tmp_') && m.direction === 'out' && m.body === row.body);
+                if (t >= 0) { const next = [...prev]; next[t] = row; return next; }
+              }
+              return [...prev, row];
             });
           }
           queueRefresh();
@@ -262,35 +278,113 @@ export default function WhatsAppPage() {
   }, [hideList, hidePanel]);
 
   // ── actions ───────────────────────────────────────────────────────────────
-  async function send(body: string, template?: { code: string; values: Record<string, string> }) {
+  // OPTIMISTIC SEND.
+  //
+  // The old flow made you watch four sequential round trips before the textarea
+  // even cleared: POST -> API route (plus a possible Netlify cold start) -> DB
+  // insert -> Interakt HTTP call -> response, then a full 400-row thread refetch,
+  // then a conversation list refresh, then a stats refresh. Every one of those
+  // was in front of the human.
+  //
+  // Now the bubble appears the instant you hit Send, the box clears, and the
+  // network work happens behind you. WhatsApp itself does exactly this — the
+  // tick state, not the bubble, is what waits on the server.
+  //
+  // The temporary row carries status 'queued', which renders as the single grey
+  // tick already handled below. When the server answers we swap the temp row for
+  // the real id so the realtime channel's later status updates land on the right
+  // message instead of creating a duplicate.
+  const send = useCallback(async (
+    body: string,
+    template?: { code: string; values: Record<string, string> },
+  ) => {
     if (!active) return;
+    const conversationId = active.id;
+    const tempId = `tmp_${tempSeq.current++}`;
+    const text = template ? body : body.trim();
+    if (!text) return;
+
+    const optimistic: WaMessage = {
+      id: tempId,
+      workspace_id: workspace.id,
+      conversation_id: conversationId,
+      lead_id: active.lead_id,
+      direction: 'out',
+      body: text,
+      template_code: template?.code ?? null,
+      template_category: null,
+      variables: template?.values ?? null,
+      provider_msg_id: null,
+      status: 'queued',
+      error_code: null,
+      error_detail: null,
+      sent_by: app.user?.id ?? null,
+      sequence_step: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // 1. Paint immediately. Nothing below this line blocks the UI.
+    setMsgs((prev) => [...prev, optimistic]);
+    setDrafts((d) => ({ ...d, [conversationId]: '' }));
+    if (textarea.current) { textarea.current.value = ''; textarea.current.style.height = 'auto'; }
     setSending(true);
+
     try {
       const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          conversationId: active.id,
-          ...(template ? { templateCode: template.code, values: template.values } : { body }),
+          conversationId,
+          ...(template ? { templateCode: template.code, values: template.values } : { body: text }),
         }),
       });
       const json = await res.json();
+
+      // 2. Reconcile the placeholder in place. No thread refetch — the realtime
+      //    channel already carries the authoritative row, and refetching 400
+      //    messages to learn about one is what made the list flicker.
+      setMsgs((prev) => {
+        const i = prev.findIndex((m) => m.id === tempId);
+        if (i === -1) return prev;                 // conversation switched, drop it
+        const next = [...prev];
+        if (json.ok && json.messageId) {
+          // If realtime already delivered the real row, remove the placeholder
+          // rather than ending up with the message twice.
+          if (prev.some((m) => m.id === json.messageId)) { next.splice(i, 1); return next; }
+          next[i] = { ...next[i], id: json.messageId, status: 'sent' };
+        } else {
+          next[i] = {
+            ...next[i],
+            status: 'failed',
+            error_code: json.reason ?? 'send_failed',
+            error_detail: json.detail ?? null,
+          };
+        }
+        return next;
+      });
+
       if (!json.ok) {
         toast.error(json.detail || json.reason || 'Send failed');
-      } else {
-        toast.success(json.dryRun ? 'Sent — dry-run, nothing left the CRM' : 'Sent');
-        setDrafts((d) => ({ ...d, [active.id]: '' }));
-        if (textarea.current) { textarea.current.value = ''; textarea.current.style.height = 'auto'; }
+        // Put the text back so a failed send never silently eats what you typed.
+        setDrafts((d) => ({ ...d, [conversationId]: template ? (d[conversationId] ?? '') : text }));
+      } else if (json.dryRun) {
+        toast.warning('Dry-run is on — this was logged but never left the CRM');
       }
-      const { data } = await supabase.rpc('whatsapp_thread', { p_conversation_id: active.id, p_limit: 400 });
-      setMsgs((data || []) as WaMessage[]);
-      loadConvs(); loadStats();
+
+      queueRefresh();
     } catch (e) {
+      setMsgs((prev) => prev.map((m) => (
+        m.id === tempId
+          ? { ...m, status: 'failed', error_code: 'network', error_detail: (e as Error).message }
+          : m
+      )));
       toast.error(`Send failed: ${(e as Error).message}`);
+      setDrafts((d) => ({ ...d, [conversationId]: text }));
     } finally {
       setSending(false);
     }
-  }
+  }, [active, workspace.id, app.user?.id, queueRefresh]);
 
   async function toggleClosed() {
     if (!active) return;
@@ -650,12 +744,16 @@ export default function WhatsAppPage() {
                         <span className="ml-auto whitespace-nowrap pr-3 text-[11.4px] text-faint">
                           Free-form allowed for <b className="tabular-nums text-muted">{formatLeft(wLeft)}</b>
                         </span>
+                        {/* No longer disabled while a send is in flight. The
+                            message is already on screen and the box is already
+                            clear, so blocking the button would only stop you
+                            typing the next line — which is exactly what made
+                            this feel slow. Only an empty box disables it. */}
                         <button
-                          disabled={sending || !(drafts[active.id] || '').trim()}
+                          disabled={!(drafts[active.id] || '').trim()}
                           onClick={() => { const v = (drafts[active.id] || '').trim(); if (v) send(v); }}
                           className="inline-flex flex-shrink-0 items-center gap-[7px] rounded-full bg-[#25A25A] px-[22px] py-[9px] text-[13.2px] font-semibold text-white transition hover:bg-[#1B7A44] disabled:bg-[#A8D9BC]"
                         >
-                          {sending ? <Loader2 className="h-[15px] w-[15px] animate-spin" /> : null}
                           Send
                         </button>
                       </div>

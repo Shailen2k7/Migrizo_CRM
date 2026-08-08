@@ -127,7 +127,28 @@ PERFORMANCE CHANGES
    leads meant ~100 round trips in a few seconds and a visibly
    thrashing list. Now one refresh per 250ms.
 
-5. The UI stops lying.
+5. Optimistic send — the Send button no longer makes you wait.
+   Before: you watched four sequential round trips before the box
+   even cleared. POST -> API route (plus possible Netlify cold
+   start) -> DB insert -> Interakt HTTP call -> response, THEN a
+   full 400-row thread refetch, THEN a conversation refresh, THEN
+   a stats refresh. All of it in front of you.
+
+   Now the bubble appears the instant you hit Send and the box
+   clears immediately. The network work happens behind you and only
+   the tick state waits on the server — which is what WhatsApp
+   itself does. The Send button is no longer disabled mid-flight,
+   so you can keep typing the next line.
+
+   Reconciliation is race-safe: if the realtime channel delivers
+   the real row before our own POST response returns, the
+   placeholder is replaced rather than duplicated. A failed send
+   marks the bubble red AND puts your text back in the box, so it
+   can never silently eat what you typed. 9/9 unit tests cover
+   these races, including a lead replying with the same word you
+   just sent.
+
+6. The UI stops lying.
    - The pill shows "Checking..." while settings load, instead of
      "Not connected".
    - A failed query now renders a red error box with the actual
@@ -154,6 +175,15 @@ VERIFICATION DONE BEFORE SHIPPING
     /whatsapp all present in the route manifest.
   Countdown interval logic: 9/9 unit tests pass, including the
     exactly-one-hour boundary.
+  Optimistic-send reconciliation: 9/9 unit tests pass, covering
+    both response-first and realtime-first orderings, failure,
+    conversation-switch mid-send, rapid double send, and duplicate
+    realtime delivery. One real bug was found and fixed this way:
+    an inbound message with the same text used to replace your own
+    outbound bubble.
+  Secret comparison: 15/15 unit tests pass, covering trailing
+    newline, leading/trailing space, "+" mangled to a space,
+    percent-encoding, truncated paste, and case sensitivity.
 
 
 WHAT IS STILL OUTSTANDING
@@ -164,7 +194,11 @@ WHAT IS STILL OUTSTANDING
   the lead, and it means the customer's phone and your CRM
   permanently disagree.
 - Submit your 11 templates in Interakt for Meta approval.
-- Set dry_run = false after your first successful real send.
+- TURN OFF DRY RUN. This is why your messages are not reaching
+  anyone right now:
+      update whatsapp_settings set dry_run = false;
+  Dry-run logs the message and deliberately never calls Interakt.
+  The amber line under the composer says so.
 - There is still no "New conversation" button. Cold outbound is
   blocked by Meta until templates are approved, so that screen is
   the next build once approval lands.
