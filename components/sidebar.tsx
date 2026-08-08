@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Megaphone, ListChecks } from 'lucide-react';
+import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Megaphone, ListChecks, MessageCircle } from 'lucide-react';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
@@ -35,6 +35,7 @@ const NAV: NavItem[] = [
   // putting these two lines back:
   //   { href: '/my-queue', label: 'My Queue', icon: Target },
   //   { href: '/lead-engine', label: 'Lead Engine', icon: Zap, adminOnly: true },
+  { href: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, adminOnly: true, newUntil: '2026-08-20' },
   { href: '/campaigns', label: 'Campaigns', icon: Megaphone, adminOnly: true, newUntil: '2026-08-08' },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];

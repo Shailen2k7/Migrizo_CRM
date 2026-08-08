@@ -1,0 +1,111 @@
+MIGRIZO — WHATSAPP STAGE 1  ·  COMPLETE (migration + engine + inbox UI)
+=======================================================================
+
+UPLOAD TO GITHUB
+----------------
+1. github.com -> your repo -> Add file -> Upload files
+2. Drag in these FOUR folders together:   app   components   lib   supabase
+3. GitHub keeps the paths and touches only the 12 files below.
+   It never deletes anything already in your repo.
+4. Commit message:  "WhatsApp Stage 1 - Interakt engine + inbox"
+
+THE 12 FILES
+------------
+NEW  supabase/migrations/040_whatsapp.sql          tables, functions, RLS
+NEW  lib/whatsapp/types.ts                         shared types + window helpers
+NEW  lib/whatsapp/phone.ts                         phone normalisation
+NEW  lib/whatsapp/interakt.ts                      the Interakt adapter
+NEW  app/api/whatsapp/send/route.ts                send one message
+NEW  app/api/whatsapp/webhook/route.ts             Interakt -> CRM
+NEW  app/api/whatsapp/test-connection/route.ts     credential check
+NEW  app/(app)/whatsapp/page.tsx                   the inbox
+NEW  components/whatsapp/lead-panel.tsx            right-hand lead card
+NEW  components/whatsapp/template-picker.tsx       template + live preview
+UPD  components/sidebar.tsx                        adds the WhatsApp nav item
+UPD  lib/supabase/middleware.ts                    ONE line: adds
+                                                   '/api/whatsapp/webhook'
+                                                   to PUBLIC_PATHS
+
+  NOTE on the two UPD files: if your live versions differ from these, do NOT
+  overwrite them. Just make the change by hand — sidebar.tsx gets one NAV entry,
+  middleware.ts gets one string in the PUBLIC_PATHS array.
+
+AFTER THE UPLOAD
+----------------
+1. Supabase SQL editor: run supabase/migrations/040_whatsapp.sql
+   Run it TWICE. The second run must be silent.
+   (Safe to re-run even if you ran an earlier copy — it is idempotent.)
+
+2. Seed the 11 templates:
+      select public.whatsapp_seed_templates('YOUR_WORKSPACE_ID');
+      -- 11 the first time, 0 after that
+
+3. Save your number:
+      update public.whatsapp_settings
+         set phone_e164     = '918976543210',
+             display_number = '+91 89765 43210',
+             waba_id        = 'YOUR_WABA_ID',
+             connected      = true
+       where workspace_id   = 'YOUR_WORKSPACE_ID';
+
+4. Netlify -> Environment variables:
+      INTERAKT_API_KEY         = Secret Key from Interakt
+                                 (Settings -> Developer Setting)
+      WHATSAPP_WEBHOOK_SECRET  = any long random string you invent
+
+5. Netlify -> Deploys -> Trigger deploy -> Clear cache and deploy site
+
+6. Interakt -> Webhooks, paste and enable all events:
+      https://crm.migrizo.com/api/whatsapp/webhook?key=YOUR_SECRET
+
+7. Supabase -> Database -> Replication: confirm whatsapp_messages and
+   whatsapp_conversations are in the supabase_realtime publication.
+   (Migration 040 adds them automatically; this is just a sanity check.)
+   Without this the inbox still works, it just needs a refresh to show
+   new messages.
+
+WHAT YOU WILL SEE
+-----------------
+A new "WhatsApp" item in the sidebar (admins only). The inbox is empty until
+the first message exists — that is correct, not a bug.
+
+DRY RUN IS ON. Every send is logged with the exact payload it would have
+posted to Interakt, and nothing reaches WhatsApp. Turn it off only when you
+are ready:
+      update public.whatsapp_settings set dry_run = false
+       where workspace_id = 'YOUR_WORKSPACE_ID';
+
+FIRST TEST (browser console on any CRM page, F12)
+-------------------------------------------------
+  await fetch('/api/whatsapp/test-connection',{method:'POST'}).then(r=>r.json())
+  -> {ok:true}   ("unauthorized" means the wrong key field in Interakt)
+
+  await fetch('/api/whatsapp/send',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({phone:'+91 89765 43210',
+      templateCode:'migrizo_cold_01', values:{'1':'Shailen'}})
+  }).then(r=>r.json())
+  -> {ok:true, dryRun:true, messageId, conversationId}
+
+Then open /whatsapp — the conversation should be there.
+
+THE INBOX
+---------
+Three columns, each collapses on its own:
+  topbar toggles, or  [  list   ]  lead panel   F  focus (hides both)
+Shortcuts are ignored while you are typing a message.
+
+RULES ENFORCED
+--------------
+  A reply flags the conversation and notifies the owner. It never stops a
+  sequence — Pause / Resume / Stop are manual, in the lead panel.
+  STOP or NO suppresses the number forever, moves the lead to Junk, and exits
+  every sequence on WhatsApp AND email.
+  Free-form is blocked outside the 24-hour window, in the UI and again on the
+  server.
+
+NOT YET BUILT (Stage 2)
+-----------------------
+  Sequences and the daily cap ramp, attachments, saved replies, click-to-call.
+  The sequence controls are visible but currently show a note; they wire up
+  with migration 041.
