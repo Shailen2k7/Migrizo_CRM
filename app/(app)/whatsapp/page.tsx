@@ -20,12 +20,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search, Clock, Lock, Check, CheckCheck, AlertCircle, Zap, Paperclip, Smile,
   FileText, ChevronDown, PanelLeft, PanelRight, Columns, Maximize2, Minimize2,
-  ExternalLink, Crown, Loader2, Bot, Pause, Play, Square, ShieldCheck, Plus,
+  ExternalLink, Loader2, Bot, Pause, Play, Square, ShieldCheck, Plus, Send as SendIcon,
   MessageSquare, Settings2,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/components/shared/app-provider';
-import { initials, avatarColor, cn } from '@/lib/utils';
+import { initials, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import LeadPanel, { type SeqState } from '@/components/whatsapp/lead-panel';
 import TemplatePicker from '@/components/whatsapp/template-picker';
@@ -549,43 +549,36 @@ export default function WhatsAppPage() {
           : `step ${enrollment.current_step}${seqSteps ? `/${seqSteps}` : ''}`}`
     : 'No sequence';
 
-  // memberNameById returns "You" for the signed-in user — correct as a label, but
-  // it makes a nonsense avatar ("YO"), so fall back to the real name.
-  const senderName = useCallback((id: string | null) => {
-    if (!id) return 'Migrizo';
-    const n = memberNameById(id);
-    return !n || n === 'You' ? (app.user.name || 'Migrizo') : n;
-  }, [memberNameById, app.user.name]);
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-[calc(100vh-56px)] flex-col bg-[#EEF0F4]">
-      {/* top bar: title · sub-tabs · context controls */}
-      <div className="flex h-[58px] flex-shrink-0 items-center gap-3 border-b border-[#E8EAF0] bg-white px-5">
-        <h1 className="m-0 text-[16px] font-semibold tracking-[-.025em]">WhatsApp</h1>
+      {/* top bar — the approved design: wordmark · centred segmented tabs · presence pill */}
+      <div className="relative flex h-[56px] flex-shrink-0 items-center gap-3 border-b border-[#E8EAF0] bg-white px-[18px]">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-[15px] font-bold tracking-tight text-[#0F1728]">WhatsApp</span>
+          <span className="text-[#E8EAF0]">|</span>
+          <span className="truncate text-[15px] font-medium text-[#7A8095]">
+            {SUB_TABS.find(([k]) => k === tab)?.[1] ?? 'Inbox'}
+          </span>
+        </div>
 
-        <nav className="ml-1 flex items-center gap-[3px] rounded-full border border-[#E8EAF0] bg-[#F5F6F9] p-[3px]">
-          {SUB_TABS.map(([k, label, icon]) => (
+        <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center rounded-[10px] bg-[#F4F5F8] p-[3px] shadow-[inset_0_1px_2px_rgba(20,24,40,.02)] md:flex">
+          {SUB_TABS.map(([k, label]) => (
             <button
               key={k}
               onClick={() => setTab(k)}
               className={cn(
-                'inline-flex items-center gap-[6px] rounded-full px-[13px] py-[6px] text-[12.6px] font-semibold transition',
+                'rounded-[7px] px-4 py-[6px] text-[12.5px] transition-all duration-150 ease-in-out',
                 tab === k
-                  ? 'bg-white text-[#1B7A44] shadow-[0_1px_2px_rgba(20,24,40,.08)]'
-                  : 'text-muted hover:text-ink'
+                  ? 'bg-white font-semibold text-[#0F1728] shadow-[0_1px_2px_rgba(20,24,40,.06)]'
+                  : 'font-medium text-[#7A8095] hover:text-[#0F1728]'
               )}
             >
-              {icon}{label}
+              {label}
             </button>
           ))}
         </nav>
-
-        {tab === 'inbox' && (
-          <span className="hidden text-[12.6px] text-muted lg:inline">
-            {stats ? `${stats.conversations} conversations · ${stats.unread} unread` : ''}
-          </span>
-        )}
 
         <div className="ml-auto flex items-center gap-[9px]">
           {tab === 'inbox' && (
@@ -634,41 +627,43 @@ export default function WhatsAppPage() {
         {/* conversation list */}
         <div className={cn(
           'flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-r bg-white transition-[width,border-width] duration-200 ease-out',
-          hideList ? 'w-0 border-r-0' : 'w-[330px] border-[#E8EAF0]'
+          hideList ? 'w-0 border-r-0' : 'w-[340px] border-[#E8EAF0]'
         )}>
-          <div className="w-[330px] flex-shrink-0 border-b border-[#E8EAF0] px-[14px] pb-[11px] pt-[14px]">
+          <div className="flex w-[340px] flex-shrink-0 flex-col gap-3 border-b border-[#E8EAF0] p-4">
             {/* The only way to start an outbound conversation. Deliberately the
                 most prominent control in the column — the inbox was reply-only
                 until this existed. */}
             <button
               onClick={() => setNewConvOpen(true)}
-              className="mb-[10px] flex w-full items-center justify-center gap-2 rounded-lg bg-[#25A25A] px-3 py-[10px] text-[13.4px] font-semibold text-white transition hover:bg-[#1B7A44]"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#25A25A] py-2 text-[13px] font-semibold text-white transition-colors duration-150 hover:bg-[#1f874b]"
             >
-              <Plus className="h-[16px] w-[16px]" /> New conversation
+              <Plus className="h-4 w-4" /> New conversation
             </button>
-            <div className="relative mb-[10px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-faint" />
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7A8095]" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search name, number or message…"
-                className="w-full rounded-[10px] border border-[#DDE0E9] bg-[#F5F6F9] py-[9.5px] pl-[35px] pr-3 text-[13.2px] outline-none transition focus:border-[#2FB463] focus:bg-white focus:shadow-[0_0_0_3px_#EDFAF1]"
+                placeholder="Search conversations…"
+                className="w-full rounded-md border border-[#E8EAF0] py-[7px] pl-9 pr-3 text-[13px] outline-none transition-all duration-150 placeholder:text-[#7A8095] focus:border-[#25A25A] focus:ring-1 focus:ring-[#25A25A]"
               />
             </div>
             <div className="flex flex-wrap gap-[6px]">
               {FILTERS.map(([k, l]) => (
                 <button key={k} onClick={() => setFilter(k)}
                   className={cn(
-                    'inline-flex items-center gap-[5px] rounded-full border px-[10px] py-[5px] text-[11.6px] font-medium transition',
-                    filter === k ? 'border-[#25A25A] bg-[#25A25A] text-white' : 'border-[#DDE0E9] bg-[#F5F6F9] text-ink-2 hover:bg-[#EDEFF3]'
+                    'inline-flex items-center gap-[5px] rounded-full border px-[10px] py-1 text-[11.5px] font-medium transition-colors duration-150',
+                    filter === k
+                      ? 'border-[#25A25A] bg-[#25A25A] text-white'
+                      : 'border-[#E8EAF0] bg-[#F4F5F8] text-[#45464c] hover:bg-[#EDEFF3]'
                   )}>
-                  {l}<b className="text-[10.4px] font-bold opacity-60">{counts[k]}</b>
+                  {l}<b className="text-[10px] font-bold opacity-60">{counts[k]}</b>
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="w-[330px] flex-1 overflow-y-auto p-[6px]">
+          <div className="w-[340px] flex-1 overflow-y-auto">
             {loading && <div className="p-8 text-center text-[13px] text-muted"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></div>}
 
             {/* A failed query must never be dressed up as an empty inbox. */}
@@ -710,43 +705,41 @@ export default function WhatsAppPage() {
             {filtered.map((c) => {
               const st = windowState(c.last_inbound_at);
               const meta = WINDOW_META[st];
+              const on = activeId === c.id;
               return (
                 <button key={c.id} onClick={() => setActiveId(c.id)}
                   className={cn(
-                    'relative mb-px flex w-full gap-3 rounded-xl border p-[12px_11px] text-left transition',
-                    activeId === c.id ? 'border-[#D7F3E1] bg-[#EDFAF1]' : 'border-transparent hover:bg-[#F5F6F9]'
+                    'block w-full p-3 text-left transition-colors duration-150',
+                    on
+                      ? 'border-l-[3px] border-l-[#25A25A] bg-[#EDFAF1]'
+                      : 'border-l-[3px] border-l-transparent hover:bg-[#F9FAFB]'
                   )}>
-                  <span className="flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-full text-[15px] font-semibold text-white"
-                        style={{ background: avatarColor(c.lead_name) }}>
-                    {initials(c.lead_name)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline gap-2">
-                      <span className={cn('truncate text-[13.8px] tracking-[-.015em]', c.unread_count ? 'font-bold' : 'font-semibold')}>
-                        {c.lead_name}
-                      </span>
-                      <span className="ml-auto flex-shrink-0 text-[10.6px] font-medium text-faint">{fmtRel(c.last_message_at)}</span>
+                  <span className="mb-1 flex items-baseline justify-between gap-2">
+                    <span className={cn(
+                      'flex min-w-0 items-center gap-[7px] truncate text-[13.5px] text-[#0F1728]',
+                      c.unread_count ? 'font-bold' : on ? 'font-semibold' : 'font-medium'
+                    )}>
+                      {c.lead_name}
+                      {c.suppressed && <span className="h-[6px] w-[6px] flex-shrink-0 rounded-full bg-[#B02B2B]" title="Opted out" />}
+                      {!c.suppressed && c.needs_attention && <span className="h-[6px] w-[6px] flex-shrink-0 rounded-full bg-[#F0A020]" title="Needs reply" />}
                     </span>
-                    <span className="mt-[3px] flex items-center gap-2">
-                      <span className={cn('flex-1 truncate text-[12.4px] leading-[1.4]', c.unread_count ? 'text-ink-2' : 'text-muted')}>
-                        {c.last_direction === 'out' ? 'You: ' : ''}{c.last_preview || '—'}
-                      </span>
+                    <span className="flex flex-shrink-0 items-center gap-[6px]">
                       {c.unread_count > 0 && (
-                        <span className="flex h-[18px] min-w-[18px] flex-shrink-0 items-center justify-center rounded-full bg-[#25A25A] px-[5px] text-[10px] font-bold text-white">
+                        <span className="flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-[#25A25A] px-1 text-[9.5px] font-bold text-white">
                           {c.unread_count}
                         </span>
                       )}
-                    </span>
-                    <span className="mt-[7px] flex items-center gap-[7px] text-[10.8px] font-medium text-faint">
-                      {c.needs_attention && <span className="h-[6px] w-[6px] flex-shrink-0 rounded-full bg-[#F0A020]" />}
-                      <span className="inline-flex items-center gap-[5px]" style={{ color: meta.colour }}>
-                        <span className="h-[6px] w-[6px] rounded-full" style={{ background: meta.colour }} />
-                        {c.suppressed ? 'Opted out' : meta.label}
-                      </span>
-                      <span className="opacity-40">·</span>
-                      <span>{memberNameById(c.owner_id)}</span>
+                      <span className="text-[11px] text-[#7A8095]">{fmtRel(c.last_message_at)}</span>
                     </span>
                   </span>
+                  <span className={cn('block truncate text-[12px]', c.unread_count ? 'text-[#45464c]' : 'text-[#7A8095]')}>
+                    {c.last_direction === 'out' ? 'You: ' : ''}{c.last_preview || '—'}
+                  </span>
+                  {st !== 'shut' && !c.suppressed && (
+                    <span className="mt-[3px] block text-[10.5px] font-medium" style={{ color: meta.colour }}>
+                      Window {formatLeft(windowLeftMs(c.last_inbound_at))}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -766,65 +759,53 @@ export default function WhatsAppPage() {
               </div>
             ) : (
               <>
-                {/* header */}
-                <div className="flex flex-shrink-0 items-center gap-[13px] border-b border-[#E8EAF0] bg-white px-[18px] py-[15px]">
-                  <span className="flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-full text-[15px] font-semibold text-white"
-                        style={{ background: avatarColor(active.lead_name) }}>
-                    {initials(active.lead_name)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[16px] font-semibold leading-[1.25] tracking-[-.02em]">{active.lead_name}</div>
-                    <div className="mt-[3px] flex items-center gap-[6px] text-[12.8px] text-ink-2">
-                      <Crown className="h-[14px] w-[14px] text-[#EAB308]" />
-                      {memberNameById(active.owner_id)}
+                {/* header — 56px, quiet, per the approved design */}
+                <div className="flex h-[56px] flex-shrink-0 items-center justify-between border-b border-[#E8EAF0] bg-white px-6">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#E9EDFF] text-[13px] font-semibold text-[#3323cc]">
+                      {initials(active.lead_name)}
+                    </span>
+                    <div className="min-w-0">
+                      <h2 className="m-0 truncate text-[14px] font-semibold leading-tight text-[#0F1728]">{active.lead_name}</h2>
+                      <span className="block truncate text-[11px] text-[#7A8095]">
+                        {[active.visa_type?.toUpperCase(), memberNameById(active.owner_id)].filter(Boolean).join(' · ')}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex flex-shrink-0 items-center gap-[9px]">
-                    <span className="inline-flex flex-shrink-0 items-center gap-[7px] whitespace-nowrap rounded-full border px-3 py-[6px] text-[11.8px] font-semibold"
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <span className="inline-flex items-center gap-[6px] whitespace-nowrap rounded-full border px-[10px] py-1 text-[11.5px] font-semibold"
                           style={{
-                            background: wState === 'shut' ? '#EDEFF3' : wState === 'open' ? '#EDFAF1' : wState === 'warn' ? '#FEF6E6' : '#FEEFEF',
-                            borderColor: wState === 'shut' ? '#DDE0E9' : wState === 'open' ? '#D7F3E1' : wState === 'warn' ? '#F8E2B8' : '#F8D6D6',
+                            background: wState === 'shut' ? '#F4F5F8' : wState === 'open' ? '#EDFAF1' : wState === 'warn' ? '#FEF6E6' : '#FEEFEF',
+                            borderColor: wState === 'shut' ? '#E8EAF0' : wState === 'open' ? '#D7F3E1' : wState === 'warn' ? '#F8E2B8' : '#F8D6D6',
                             color: wMeta.colour,
                           }}>
-                      {wState === 'shut' ? <Lock className="h-[13px] w-[13px]" /> : <Clock className="h-[13px] w-[13px]" />}
-                      {wState === 'shut' ? 'Window shut' : `Window ${wMeta.label.toLowerCase()}`}
-                      {wState !== 'shut' && <span className="min-w-[52px] text-right tabular-nums">{formatLeft(wLeft)}</span>}
+                      {wState === 'shut' ? <Lock className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                      {wState === 'shut' ? 'Window closed' : formatLeft(wLeft)}
                     </span>
                     <button onClick={toggleClosed}
-                      className={cn('rounded-full border px-3 py-[7px] text-[12.4px] font-semibold transition',
-                        active.status === 'closed'
-                          ? 'border-[#DDE0E9] bg-white text-ink-2 hover:bg-[#F5F6F9]'
-                          : 'border-[#2FB463] bg-white text-[#1B7A44] hover:bg-[#EDFAF1]')}>
-                      {active.status === 'closed' ? 'Reopen' : 'Mark as Closed'}
+                      className="rounded-md border border-[#E8EAF0] bg-white px-3 py-[5px] text-[12px] font-medium text-[#45464c] transition-colors hover:text-[#0F1728]">
+                      {active.status === 'closed' ? 'Reopen' : 'Mark as closed'}
                     </button>
                     {active.lead_id && (
                       <a href={`/leads?lead=${active.lead_id}`} title="Open lead record"
-                         className="flex h-[34px] w-[34px] items-center justify-center rounded-full border border-[#E8EAF0] text-muted transition hover:bg-[#F5F6F9] hover:text-ink">
-                        <ExternalLink className="h-4 w-4" />
+                         className="flex h-8 w-8 items-center justify-center rounded-md text-[#7A8095] transition-colors hover:bg-[#F4F5F8] hover:text-[#0F1728]">
+                        <ExternalLink className="h-[18px] w-[18px]" />
                       </a>
                     )}
                   </div>
                 </div>
 
                 {/* messages */}
-                <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FA] px-[26px] pb-4 pt-2">
+                <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-[#FAFBFC] p-6">
                   {groups.map((g, gi) =>
                     g.kind === 'day' ? (
-                      <div key={`d${gi}`} className="my-[18px] flex items-center gap-[14px]">
-                        <span className="flex-1 border-t border-dashed border-[#DDE0E9]" />
-                        <span className="rounded-full bg-[#EDEFF3] px-[15px] py-[5px] text-[11.5px] font-semibold text-ink-2">{g.label}</span>
-                        <span className="flex-1 border-t border-dashed border-[#DDE0E9]" />
+                      <div key={`d${gi}`} className="my-2 text-center text-[11px] font-medium uppercase tracking-widest text-[#7A8095]">
+                        {g.label}
                       </div>
                     ) : (
-                      <div key={`g${gi}`} className="mb-5">
+                      <div key={`g${gi}`} className={cn('flex flex-col gap-1', g.dir === 'out' ? 'items-end' : 'items-start')}>
                         {g.items.map((m, i) => (
-                          <MessageLine
-                            key={m.id}
-                            m={m}
-                            first={i === 0}
-                            who={m.direction === 'in' ? active.lead_name : senderName(m.sent_by)}
-                            colour={m.direction === 'in' ? avatarColor(active.lead_name) : '#4F46E5'}
-                          />
+                          <MessageLine key={m.id} m={m} last={i === g.items.length - 1} />
                         ))}
                       </div>
                     )
@@ -835,7 +816,7 @@ export default function WhatsAppPage() {
                 </div>
 
                 {/* composer */}
-                <div className="flex-shrink-0 bg-white px-[18px] pb-4 pt-[14px]">
+                <div className="flex-shrink-0 border-t border-[#E8EAF0] bg-white p-4">
                   {active.suppressed ? (
                     <div className="flex items-center gap-3 rounded-xl border border-[#F8D6D6] bg-[#FEEFEF] px-4 py-[15px]">
                       <ShieldCheck className="h-5 w-5 flex-shrink-0 text-[#B02B2B]" />
@@ -864,12 +845,12 @@ export default function WhatsAppPage() {
                       </button>
                     </div>
                   ) : (
-                    <div className="overflow-hidden rounded-xl border border-[#DDE0E9] bg-white transition focus-within:border-[#2FB463] focus-within:shadow-[0_0_0_3px_#EDFAF1]">
+                    <div className="rounded-lg border border-[#E8EAF0] transition-all duration-150 focus-within:border-[#25A25A] focus-within:ring-1 focus-within:ring-[#25A25A]">
                       <textarea
                         ref={textarea}
                         rows={1}
                         defaultValue={drafts[active.id] || ''}
-                        placeholder="Type a message here…"
+                        placeholder={`Reply to ${firstName(active.lead_name)}…`}
                         onInput={(e) => {
                           const el = e.currentTarget;
                           el.style.height = 'auto';
@@ -883,36 +864,37 @@ export default function WhatsAppPage() {
                             if (v && !sending) send(v);
                           }
                         }}
-                        className="block max-h-[130px] w-full resize-none border-0 px-[17px] pb-2 pt-[14px] text-[14.4px] leading-[1.6] outline-none"
+                        className="block max-h-[130px] min-h-[60px] w-full resize-none border-0 bg-transparent p-3 text-[13px] leading-[1.6] outline-none placeholder:text-[#7A8095]"
                       />
-                      <div className="flex items-center gap-[3px] px-3 pb-[10px] pt-2">
-                        <button onClick={() => setPickerOpen(true)}
-                          className="inline-flex items-center gap-[6px] rounded-lg px-[10px] py-[7px] text-[12.4px] font-semibold text-muted transition hover:bg-[#F5F6F9] hover:text-ink-2">
-                          <Zap className="h-[17px] w-[17px]" /> Template
-                        </button>
-                        <button onClick={() => toast('Attachments arrive in Stage 2')}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-[#F5F6F9] hover:text-ink-2">
-                          <Paperclip className="h-[17px] w-[17px]" />
-                        </button>
-                        <button onClick={() => toast('Emoji picker arrives in Stage 2')}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-[#F5F6F9] hover:text-ink-2">
-                          <Smile className="h-[17px] w-[17px]" />
-                        </button>
-                        <span className="ml-auto whitespace-nowrap pr-3 text-[11.4px] text-faint">
-                          Free-form allowed for <b className="tabular-nums text-muted">{formatLeft(wLeft)}</b>
-                        </span>
-                        {/* No longer disabled while a send is in flight. The
-                            message is already on screen and the box is already
-                            clear, so blocking the button would only stop you
-                            typing the next line — which is exactly what made
-                            this feel slow. Only an empty box disables it. */}
-                        <button
-                          disabled={!(drafts[active.id] || '').trim()}
-                          onClick={() => { const v = (drafts[active.id] || '').trim(); if (v) send(v); }}
-                          className="inline-flex flex-shrink-0 items-center gap-[7px] rounded-full bg-[#25A25A] px-[22px] py-[9px] text-[13.2px] font-semibold text-white transition hover:bg-[#1B7A44] disabled:bg-[#A8D9BC]"
-                        >
-                          Send
-                        </button>
+                      <div className="flex items-center justify-between rounded-b-lg border-t border-[#E8EAF0] bg-[#FAFBFC] p-2">
+                        <div className="flex gap-1">
+                          <button onClick={() => setPickerOpen(true)} title="Send an approved template"
+                            className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728]">
+                            <Zap className="h-[18px] w-[18px]" />
+                          </button>
+                          <button onClick={() => toast('Attachments arrive in Stage 2')}
+                            className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728]">
+                            <Paperclip className="h-[18px] w-[18px]" />
+                          </button>
+                          <button onClick={() => toast('Emoji picker arrives in Stage 2')}
+                            className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728]">
+                            <Smile className="h-[18px] w-[18px]" />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="whitespace-nowrap text-[11px] text-[#7A8095]">
+                            Free-form for <b className="font-semibold tabular-nums text-[#45464c]">{formatLeft(wLeft)}</b>
+                          </span>
+                          {/* Not disabled while a send is in flight — the bubble is
+                              already on screen; only an empty box disables it. */}
+                          <button
+                            disabled={!(drafts[active.id] || '').trim()}
+                            onClick={() => { const v = (drafts[active.id] || '').trim(); if (v) send(v); }}
+                            className="flex items-center gap-2 rounded-md bg-[#131b2d] px-4 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#2a3040] disabled:opacity-40"
+                          >
+                            Send <SendIcon className="h-[13px] w-[13px]" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -936,6 +918,9 @@ export default function WhatsAppPage() {
               onTab={setPanelTab}
               seqState={seqState}
               seqLabel={seqLabel}
+              seqName={enrollment?.seq_name ?? null}
+              seqStep={enrollment?.current_step ?? null}
+              seqTotal={seqSteps}
               onSeq={seqAction}
               onMail={() => toast('Opens the email composer')}
               onCall={() => toast('Click-to-call arrives in Stage 3')}
@@ -1000,11 +985,12 @@ function ConnectionPill({ settings, loading }: { settings: WaSettings | null; lo
   }
   const ok = settings?.connected && !settings?.sending_paused;
   return (
-    <span className={cn('inline-flex items-center gap-[7px] rounded-full border px-3 py-[6px] text-[11.6px] font-semibold',
-      ok ? 'border-[#D7F3E1] bg-[#EDFAF1] text-[#1B7A44]' : 'border-[#F8E2B8] bg-[#FEF6E6] text-[#A25D07]')}>
-      <span className={cn('h-[6px] w-[6px] rounded-full', ok ? 'bg-[#2FB463]' : 'bg-[#F0A020]')} />
+    <span className={cn(
+      'inline-flex items-center gap-2 rounded-full border bg-white px-3 py-[6px] text-[12px] font-semibold tabular-nums',
+      ok ? 'border-[#E8EAF0] text-[#0F1728]' : 'border-[#F8E2B8] text-[#A25D07]'
+    )}>
+      <span className={cn('h-2 w-2 rounded-full', ok ? 'bg-[#25A25A]' : 'bg-[#F0A020]')} />
       {settings?.display_number || 'Not connected'}
-      {settings?.quality_rating ? ` · ${settings.quality_rating}` : ''}
       {settings?.sending_paused ? ' · PAUSED' : ''}
     </span>
   );
@@ -1019,48 +1005,45 @@ function StatusTick({ status }: { status: WaMessage['status'] }) {
   return null;
 }
 
-function MessageLine({ m, first, who, colour }: { m: WaMessage; first: boolean; who: string; colour: string }) {
+// One bubble in the approved geometry: asymmetric corners, quiet shadow, meta
+// line (time + ticks) under the LAST bubble of a group only.
+function MessageLine({ m, last }: { m: WaMessage; last: boolean }) {
   const out = m.direction === 'out';
   const bad = m.status === 'failed';
   return (
-    <div className={cn('mb-[6px] flex', out && 'flex-row-reverse')}>
-      <div className="flex w-[76px] flex-shrink-0 flex-col items-center gap-[7px] pt-[2px]">
-        {first && (
-          <span className="flex h-[38px] w-[38px] items-center justify-center rounded-full text-[13.5px] font-semibold text-white"
-                style={{ background: colour }}>
-            {initials(who)}
-          </span>
-        )}
-        {out && <span className="flex items-center justify-center"><StatusTick status={m.status} /></span>}
-        <span className="whitespace-nowrap text-[11px] font-medium tabular-nums text-faint">{fmtTime(m.created_at)}</span>
-      </div>
-      <div className={cn('flex min-w-0 flex-1 flex-col gap-2', out && 'items-end')}>
-        {first && <div className="text-[14.5px] font-semibold tracking-[-.015em] text-ink">{who}</div>}
-        <div className={cn(
-          'max-w-[min(640px,74%)] rounded-[18px] px-[17px] py-[13px] text-[14.6px] leading-[1.6]',
-          out
-            ? bad
-              ? 'bg-[#FEEFEF] text-[#5A1919] shadow-[0_0_0_1px_rgba(232,85,85,.25)]'
-              : 'bg-[#D7F5D3] text-[#123321]'
-            : 'bg-white text-ink shadow-[0_1px_2px_rgba(20,24,40,.07),0_0_0_1px_rgba(20,24,40,.03)]'
-        )}>
-          {m.template_code && (
-            <span className="mb-2 inline-flex items-center gap-[5px] rounded bg-[rgba(27,122,68,.13)] px-2 py-[3px] text-[9.5px] font-bold uppercase tracking-[.08em] text-[#1B7A44]">
-              <Zap className="h-[11px] w-[11px]" />
-              {m.template_category} · {m.template_code}
+    <>
+      <div className={cn(
+        'max-w-[min(80%,560px)] px-4 py-2.5',
+        out
+          ? cn('rounded-t-xl rounded-bl-xl rounded-br-sm shadow-[0_1px_2px_rgba(20,24,40,.03)]',
+               bad ? 'bg-[#FEEFEF] text-[#5A1919] ring-1 ring-[rgba(232,85,85,.3)]' : 'bg-[#DCF6D4] text-[#12331F]')
+          : 'rounded-t-xl rounded-bl-sm rounded-br-xl border border-[#E8EAF0] bg-white text-[#1F2733] shadow-[0_1px_2px_rgba(20,24,40,.04)]'
+      )}>
+        {m.template_code && (
+          <div className="mb-1.5 flex items-center gap-2">
+            <span
+              title={m.template_code}
+              className="inline-flex items-center gap-1 rounded-[4px] border border-[#BDE8CD] bg-[#E2F5EA] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#119751]"
+            >
+              <Zap className="h-[9px] w-[9px]" />
+              {m.template_category || 'Template'}
             </span>
-          )}
-          <div className="whitespace-pre-wrap break-words">{m.body}</div>
-          {bad && (
-            <div className="mt-[11px] flex items-start gap-2 border-t border-[rgba(232,85,85,.25)] pt-[11px] text-[12px] text-[#B02B2B]">
-              <AlertCircle className="mt-px h-[14px] w-[14px] flex-shrink-0" />
-              <div className="min-w-0 flex-1">
-                <b className="font-bold">Not delivered.</b> {m.error_detail || m.error_code || 'Unknown error'}
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
+        <p className="m-0 whitespace-pre-wrap break-words text-[13px] leading-relaxed">{m.body}</p>
+        {bad && (
+          <div className="mt-2 flex items-start gap-1.5 border-t border-[rgba(232,85,85,.25)] pt-2 text-[11.5px] text-[#B02B2B]">
+            <AlertCircle className="mt-px h-3 w-3 flex-shrink-0" />
+            <span className="min-w-0 flex-1"><b className="font-bold">Not delivered.</b> {m.error_detail || m.error_code || 'Unknown error'}</span>
+          </div>
+        )}
       </div>
-    </div>
+      {last && (
+        <span className={cn('flex items-center gap-1 text-[11px] text-[#7A8095]', out ? 'mr-1' : 'ml-1')}>
+          {fmtTime(m.created_at)}
+          {out && <StatusTick status={m.status} />}
+        </span>
+      )}
+    </>
   );
 }
