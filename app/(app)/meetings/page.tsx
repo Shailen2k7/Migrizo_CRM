@@ -449,16 +449,16 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
   const [m, setM] = useState<Partial<Member>>(myMember || {
     slug: '', display_name: '', title: 'GTV Consultation', meeting_link: '', timezone: 'Asia/Kolkata',
     slot_minutes: 30, buffer_minutes: 10, active: true,
-    working_hours: { mon: [['10:00', '18:00']], tue: [['10:00', '18:00']], wed: [['10:00', '18:00']], thu: [['10:00', '18:00']], fri: [['10:00', '18:00']], sat: [], sun: [] },
+    working_hours: { mon: [['10:00', '22:00']], tue: [['10:00', '22:00']], wed: [['10:00', '22:00']], thu: [['10:00', '22:00']], fri: [['10:00', '22:00']], sat: [], sun: [['10:00', '22:00']] },
   });
   const [saving, setSaving] = useState(false);
   const wh = (m.working_hours || {}) as Record<string, [string, string][]>;
 
-  function setDay(key: string, open: boolean, from = '10:00', to = '18:00') {
+  function setDay(key: string, open: boolean, from = '10:00', to = '22:00') {
     setM({ ...m, working_hours: { ...wh, [key]: open ? [[from, to]] : [] } });
   }
   function setRange(key: string, idx: 0 | 1, val: string) {
-    const cur = wh[key]?.[0] || ['10:00', '18:00'];
+    const cur = wh[key]?.[0] || ['10:00', '22:00'];
     const next: [string, string] = idx === 0 ? [val, cur[1]] : [cur[0], val];
     setM({ ...m, working_hours: { ...wh, [key]: [next] } });
   }
@@ -520,7 +520,7 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
         <div className="space-y-2 mb-5">
           {DAYS.map(({ key, label }) => {
             const open = (wh[key] || []).length > 0;
-            const range = wh[key]?.[0] || ['10:00', '18:00'];
+            const range = wh[key]?.[0] || ['10:00', '22:00'];
             return (
               <div key={key} className="flex items-center gap-2.5">
                 <label className="flex items-center gap-2 w-[110px] cursor-pointer">
