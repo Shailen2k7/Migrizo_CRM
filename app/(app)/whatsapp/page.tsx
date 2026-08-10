@@ -391,8 +391,10 @@ export default function WhatsAppPage() {
     const conversationId = active.id;
     const tempId = `tmp_${tempSeq.current++}`;
     const text = template ? body : body.trim();
-    // A bare photo or PDF is a real message — only bail when there is neither.
-    if (!text && !media) return;
+    // A bare photo or PDF is a real message, and so is a template — the template
+    // body lives on the server, so an empty `body` here is normal and must NOT
+    // be treated as "nothing to send". Only bail when all three are absent.
+    if (!text && !media && !template) return;
 
     const optimistic: WaMessage = {
       id: tempId,
@@ -1202,7 +1204,15 @@ export default function WhatsAppPage() {
         windowShut={wState === 'shut'}
         sending={sending}
         onClose={() => setPickerOpen(false)}
-        onSend={(t, values) => { setPickerOpen(false); send('', { code: t.code, values }); }}
+        // Render the body here purely so the optimistic bubble shows real words
+        // instead of an empty grey box. The server re-renders from its own copy
+        // of the template and that is what actually goes to Meta — this string
+        // never leaves the browser as the message.
+        onSend={(t, values) => {
+          setPickerOpen(false);
+          const preview = t.body.replace(/\{\{\s*(\d+)\s*\}\}/g, (_m, n) => values[n] ?? `{{${n}}}`);
+          send(preview, { code: t.code, values });
+        }}
       />
 
       <NewConversation
