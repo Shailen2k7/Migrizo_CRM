@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { PwaSetup } from '@/components/shared/pwa';
 import { Menu, Plus } from 'lucide-react';
 import { AppProvider } from '@/components/shared/app-provider';
@@ -48,6 +48,35 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
   const [paymentLeadId, setPaymentLeadId] = useState<string | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
 
+  // Sidebar collapse. Persisted, because a layout preference that resets on
+  // every navigation is worse than not having the control at all. Read in an
+  // effect rather than useState's initialiser so server and client render the
+  // same first paint and React never complains about a hydration mismatch.
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  useEffect(() => {
+    try { setNavCollapsed(localStorage.getItem('migrizo.nav.collapsed') === '1'); } catch { /* private mode */ }
+  }, []);
+  const toggleNav = useCallback(() => {
+    setNavCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem('migrizo.nav.collapsed', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  // Backslash toggles the rail — never while typing.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== '\\' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = (e.target as HTMLElement)?.tagName;
+      if (t === 'INPUT' || t === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+      e.preventDefault();
+      toggleNav();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleNav]);
+
   const ui: UIState = {
     openAddLead: useCallback(() => setAddLeadOpen(true), []),
     openImport: useCallback(() => setImportOpen(true), []),
@@ -73,9 +102,9 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
           </button>
         </header>
 
-        <Sidebar user={user} workspaceName={workspace.name} leadsCount={initialLeads.length} onAddLead={() => { setMobileNav(false); ui.openAddLead(); }} mobileOpen={mobileNav} onClose={() => setMobileNav(false)} />
+        <Sidebar user={user} workspaceName={workspace.name} leadsCount={initialLeads.length} onAddLead={() => { setMobileNav(false); ui.openAddLead(); }} mobileOpen={mobileNav} onClose={() => setMobileNav(false)} collapsed={navCollapsed} onToggleCollapse={toggleNav} />
 
-        <main className="md:ml-[240px] pt-14 md:pt-0">
+        <main className={`pt-14 md:pt-0 transition-[margin] duration-300 ease-out ${navCollapsed ? 'md:ml-[68px]' : 'md:ml-[240px]'}`}>
           <CooBanner leads={initialLeads} isAdmin={role === 'admin'} userName={user.name} />
           {children}
         </main>

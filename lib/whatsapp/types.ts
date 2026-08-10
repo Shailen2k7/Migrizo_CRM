@@ -47,6 +47,22 @@ export interface WaMessage {
   sequence_step: string | null;
   created_at: string;
   updated_at: string;
+  // Attachments (migration 048). media_path is a private storage path — the
+  // browser never uses it directly, it fetches /api/whatsapp/media/<id>.
+  media_path?: string | null;
+  media_type?: 'image' | 'document' | 'audio' | 'video' | 'sticker' | null;
+  media_name?: string | null;
+  media_mime?: string | null;
+  media_size?: number | null;
+}
+
+/** A canned free-form reply, inserted with /shortcut in the composer. */
+export interface WaSavedReply {
+  id: string;
+  shortcut: string;
+  title: string;
+  body: string;
+  sort_order: number;
 }
 
 export interface WaTemplateVar {
@@ -83,6 +99,8 @@ export interface WaSettings {
   pause_reason: string | null;
   last_tested_at: string | null;
   last_test_error: string | null;
+  send_window_start?: string;
+  send_window_end?: string;
 }
 
 export interface WaStats {

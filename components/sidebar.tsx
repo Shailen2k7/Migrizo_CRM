@@ -2,8 +2,9 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Megaphone, ListChecks, MessageCircle } from 'lucide-react';
-import { useState } from 'react';
+import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Megaphone, ListChecks, MessageCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { createClient as createBrowserClient } from '@/lib/supabase/client';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -47,9 +48,11 @@ interface Props {
   onAddLead?: () => void;   // no longer used — quick-add button removed
   mobileOpen?: boolean;
   onClose?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, onClose }: Props) {
+export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, onClose, collapsed = false, onToggleCollapse }: Props) {
   const { cases, followUps, canViewPayments, role } = useApp();
   const casesCount = cases.filter((c) => c.status === 'active' && !c.archived_at).length;
   const urgentFollowUps = followUps.filter((f) => isFollowUpOverdue(f) || isFollowUpToday(f)).length;
@@ -57,6 +60,28 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
   const router = useRouter();
   const supabase = createClient();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Live WhatsApp unread count. Realtime, so the badge moves the moment a lead
+  // replies — you never have to open the tab to find out something is waiting.
+  const { workspace } = useApp();
+  const [waUnread, setWaUnread] = useState(0);
+  useEffect(() => {
+    if (role !== 'admin') return;
+    const sb = createBrowserClient();
+    let alive = true;
+    const read = async () => {
+      const { data } = await sb.rpc('whatsapp_stats', { p_workspace_id: workspace.id });
+      const n = (data as { unread?: number } | null)?.unread;
+      if (alive && typeof n === 'number') setWaUnread(n);
+    };
+    read();
+    const ch = sb.channel(`nav-wa-${workspace.id}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'whatsapp_conversations', filter: `workspace_id=eq.${workspace.id}` },
+        () => read())
+      .subscribe();
+    return () => { alive = false; sb.removeChannel(ch); };
+  }, [workspace.id, role]);
 
   // Hide the Payments item for team members the admin hasn't granted access to.
   // Payments: hidden unless granted. Cases: admin/owner only.
@@ -81,48 +106,87 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
         onClick={onClose}
         className={`md:hidden fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] transition-opacity duration-300 ${mobileOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
       />
-      <aside className={`fixed left-0 top-0 bottom-0 w-[260px] md:w-[240px] bg-surface border-r border-border flex flex-col z-50 transition-transform duration-300 ease-out md:translate-x-0 ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}>
-      <div className="px-5 pt-5 pb-5 flex items-center gap-2.5">
-        <div className="w-9 h-9 rounded-[10px] flex items-center justify-center text-white font-bold text-[15px]" style={{ background: '#4F46E5' }}>M</div>
-        <div>
+      <aside className={`group/side fixed left-0 top-0 bottom-0 w-[260px] bg-surface border-r border-border flex flex-col z-50 transition-[transform,width] duration-300 ease-out md:translate-x-0 ${collapsed ? 'md:w-[68px]' : 'md:w-[240px]'} ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}>
+      <div className={`pt-5 pb-5 flex items-center gap-2.5 ${collapsed ? 'md:px-0 md:justify-center px-5' : 'px-5'}`}>
+        <div className="w-9 h-9 rounded-[10px] flex items-center justify-center text-white font-bold text-[15px] flex-shrink-0" style={{ background: '#4F46E5' }}>M</div>
+        <div className={collapsed ? 'md:hidden' : ''}>
           <div className="text-[15px] font-semibold tracking-tight">Migrizo</div>
           <div className="text-[10.5px] text-muted leading-none mt-0.5 truncate max-w-[160px]">{workspaceName}</div>
         </div>
+        {/* Collapse toggle. Desktop only — on mobile the whole rail slides away. */}
+        {onToggleCollapse && (
+          <button
+            onClick={onToggleCollapse}
+            title={collapsed ? 'Expand menu  (\\)' : 'Collapse menu  (\\)'}
+            aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}
+            className={`hidden md:flex ml-auto h-7 w-7 items-center justify-center rounded-md text-faint hover:bg-surface-2 hover:text-ink transition ${collapsed ? 'md:hidden' : ''}`}
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </button>
+        )}
       </div>
+      {/* When collapsed the toggle moves under the mark, so the rail stays 68px */}
+      {collapsed && onToggleCollapse && (
+        <button
+          onClick={onToggleCollapse}
+          title="Expand menu  (\\)"
+          aria-label="Expand menu"
+          className="hidden md:flex mx-auto mb-2 h-7 w-7 items-center justify-center rounded-md text-faint hover:bg-surface-2 hover:text-ink transition"
+        >
+          <PanelLeftOpen className="w-4 h-4" />
+        </button>
+      )}
 
       <nav className="px-3 flex-1 overflow-y-auto space-y-0.5">
         {nav.map((item) => {
           const Icon = item.icon;
           const active = path === item.href || path.startsWith(item.href + '/');
-          return (
-            <Link key={item.href} href={item.href} onClick={onClose} className={`nav-item ${active ? 'active' : ''}`}>
-              <Icon className={item.href === '/ai' ? 'w-[17px] h-[17px] text-indigo-600' : 'w-[17px] h-[17px]'} />
-              <span>{item.label}</span>
+          {
+            const waBadge = item.href === '/whatsapp' && waUnread > 0;
+            return (
+            <Link
+              key={item.href} href={item.href} onClick={onClose}
+              title={collapsed ? item.label : undefined}
+              className={`nav-item relative ${active ? 'active' : ''} ${collapsed ? 'md:justify-center md:px-0' : ''}`}
+            >
+              <span className="relative flex-shrink-0">
+                <Icon className={item.href === '/ai' ? 'w-[17px] h-[17px] text-indigo-600' : 'w-[17px] h-[17px]'} />
+                {/* Collapsed rail has no room for a number, so unread becomes a dot */}
+                {waBadge && collapsed && (
+                  <span className="hidden md:block absolute -top-1 -right-1 h-[7px] w-[7px] rounded-full bg-[#25A25A] ring-2 ring-surface" />
+                )}
+              </span>
+              <span className={collapsed ? 'md:hidden' : ''}>{item.label}</span>
               {item.href === '/leads' && leadsCount > 0 && (
-                <span className="ml-auto count">{leadsCount}</span>
+                <span className={`ml-auto count ${collapsed ? 'md:hidden' : ''}`}>{leadsCount}</span>
               )}
               {item.href === '/cases' && casesCount > 0 && (
-                <span className="ml-auto count">{casesCount}</span>
+                <span className={`ml-auto count ${collapsed ? 'md:hidden' : ''}`}>{casesCount}</span>
               )}
               {item.href === '/daily-tracker' && urgentFollowUps > 0 && (
-                <span className="ml-auto count" style={{ background: '#FEE2E2', color: '#B91C1C' }}>{urgentFollowUps}</span>
+                <span className={`ml-auto count ${collapsed ? 'md:hidden' : ''}`} style={{ background: '#FEE2E2', color: '#B91C1C' }}>{urgentFollowUps}</span>
               )}
-              {isNew(item.newUntil) && (
-                <span className="ml-auto chip" style={{ background: 'hsl(var(--indigo-soft))', color: '#4338CA', border: 'none', fontSize: '9px', padding: '1px 5px' }}>NEW</span>
+              {waBadge && (
+                <span className={`ml-auto count ${collapsed ? 'md:hidden' : ''}`} style={{ background: '#EDFAF1', color: '#1B7A44' }}>{waUnread}</span>
+              )}
+              {!waBadge && isNew(item.newUntil) && (
+                <span className={`ml-auto chip ${collapsed ? 'md:hidden' : ''}`} style={{ background: 'hsl(var(--indigo-soft))', color: '#4338CA', border: 'none', fontSize: '9px', padding: '1px 5px' }}>NEW</span>
               )}
             </Link>
           );
+          }
         })}
       </nav>
 
       <div className="px-3 py-3 relative">
-        <button onClick={() => setMenuOpen(!menuOpen)} className="w-full flex items-center gap-2.5 px-2 py-2 rounded-[10px] hover:bg-surface-2 transition">
-          <div className="av" style={{ background: '#0F1115', width: 30, height: 30, fontSize: 11 }}>{initials(user.name)}</div>
-          <div className="flex-1 text-left min-w-0">
+        <button onClick={() => setMenuOpen(!menuOpen)} title={collapsed ? user.name : undefined}
+          className={`w-full flex items-center gap-2.5 py-2 rounded-[10px] hover:bg-surface-2 transition ${collapsed ? 'md:justify-center md:px-0 px-2' : 'px-2'}`}>
+          <div className="av flex-shrink-0" style={{ background: '#0F1115', width: 30, height: 30, fontSize: 11 }}>{initials(user.name)}</div>
+          <div className={`flex-1 text-left min-w-0 ${collapsed ? 'md:hidden' : ''}`}>
             <div className="text-[13px] font-medium leading-tight truncate">{user.name}</div>
             <div className="text-[11px] text-muted leading-tight truncate mt-0.5">{user.email}</div>
           </div>
-          <ChevronsUpDown className="w-3.5 h-3.5 text-faint" />
+          <ChevronsUpDown className={`w-3.5 h-3.5 text-faint ${collapsed ? 'md:hidden' : ''}`} />
         </button>
         {menuOpen && (
           <div className="absolute left-3 right-3 bottom-[calc(100%-12px)] mb-2 bg-surface border border-border rounded-[10px] shadow-lg p-1 z-50 animate-fadeIn">

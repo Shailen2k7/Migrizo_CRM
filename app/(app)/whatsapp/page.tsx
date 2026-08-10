@@ -18,14 +18,14 @@
 // =============================================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Search, Clock, Lock, Check, CheckCheck, AlertCircle, Zap, Paperclip, Smile,
-  FileText, ChevronDown, PanelLeft, PanelRight, Columns, Maximize2, Minimize2,
+  Search, Clock, Lock, AlertCircle, Zap, Paperclip, Smile,
+  FileText, PanelRight, Columns, Maximize2, Minimize2,
   ExternalLink, Loader2, Bot, Pause, Play, Square, ShieldCheck, Plus, Send as SendIcon,
-  MessageSquare, Settings2,
+  MessageSquare, Settings2, X,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/components/shared/app-provider';
-import { initials, cn } from '@/lib/utils';
+import { initials, avatarColor, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import LeadPanel, { type SeqState } from '@/components/whatsapp/lead-panel';
 import TemplatePicker from '@/components/whatsapp/template-picker';
@@ -33,10 +33,17 @@ import NewConversation from '@/components/whatsapp/new-conversation';
 import SequencesTab, { type SeqOverviewRow } from '@/components/whatsapp/sequences-tab';
 import TemplatesTab from '@/components/whatsapp/templates-tab';
 import SettingsTab from '@/components/whatsapp/settings-tab';
+import { MessageBubble } from '@/components/whatsapp/message-bubble';
+import {
+  getCachedThread, setCachedThread, fetchThread, prefetchThreads, threadsEqual,
+} from '@/lib/whatsapp/thread-cache';
 import {
   formatLeft, windowLeftMs, windowState, WINDOW_META,
   type WaConversation, type WaMessage, type WaTemplate, type WaSettings, type WaStats,
+  type WaSavedReply,
 } from '@/lib/whatsapp/types';
+
+const EMOJI = ['👍','🙏','😊','🎉','✅','📄','📞','🇬🇧','🚀','💡','⏰','❤️'];
 
 type Filter = 'all' | 'unread' | 'attention' | 'open' | 'failed';
 type TabKey = 'inbox' | 'sequences' | 'templates' | 'settings';
@@ -53,14 +60,6 @@ const FILTERS: [Filter, string][] = [
 
 const GROUP_MS = 5 * 60_000;
 
-function fmtTime(iso: string) {
-  const d = new Date(iso);
-  let h = d.getHours();
-  const m = String(d.getMinutes()).padStart(2, '0');
-  const ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return `${String(h).padStart(2, '0')}:${m} ${ap}`;
-}
 function fmtRel(iso: string | null) {
   if (!iso) return '';
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -98,6 +97,12 @@ export default function WhatsAppPage() {
   const [sending, setSending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [newConvOpen, setNewConvOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [savedOpen, setSavedOpen] = useState(false);
+  const [savedReplies, setSavedReplies] = useState<WaSavedReply[]>([]);
+  // Only true on a genuinely cold thread. A cached one paints with no spinner.
+  const [threadLoading, setThreadLoading] = useState(false);
 
   // ── sub-tabs: Inbox · Sequences · Templates · Settings ───────────────────
   // Kept in the URL (?tab=) so a refresh or a shared link lands on the same
@@ -135,6 +140,7 @@ export default function WhatsAppPage() {
   const [hidePanel, setHidePanel] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   // Counter for optimistic message ids. A counter, not a timestamp — two sends
   // inside the same millisecond would collide on Date.now().
   const tempSeq = useRef(0);
@@ -195,6 +201,9 @@ export default function WhatsAppPage() {
       supabase.from('whatsapp_settings').select('*').eq('workspace_id', workspace.id).maybeSingle(),
       loadConvs(),
       loadStats(),
+      supabase.from('whatsapp_saved_replies').select('*')
+        .eq('workspace_id', workspace.id).order('sort_order')
+        .then((r) => { setSavedReplies((r.data ?? []) as WaSavedReply[]); return r; }),
     ]);
     setTemplates((tRes.data || []) as WaTemplate[]);
     setSettings((sRes.data || null) as WaSettings | null);
@@ -221,22 +230,43 @@ export default function WhatsAppPage() {
     if (!activeId && convs.length) setActiveId(convs[0].id);
   }, [convs, activeId]);
 
-  // thread for the selected conversation
+  // ── THREAD: cache first, network second ──────────────────────────────────
+  // The old version cleared the thread, showed a spinner and waited on a round
+  // trip for EVERY click. Now a visited conversation paints synchronously from
+  // the module-level cache and the refresh happens behind you — which is the
+  // single biggest reason this now feels like WhatsApp instead of a web app.
   useEffect(() => {
-    if (!activeId) { setMsgs([]); return; }
+    if (!activeId) { setMsgs([]); setThreadLoading(false); return; }
     let alive = true;
-    (async () => {
-      const { data, error } = await supabase.rpc('whatsapp_thread', {
-        p_conversation_id: activeId, p_limit: 400,
-      });
-      if (!alive) return;
-      if (error) { toast.error(`Couldn't load the thread: ${error.message}`); return; }
-      setMsgs((data || []) as WaMessage[]);
-      await supabase.rpc('whatsapp_mark_read', { p_conversation_id: activeId });
-      setConvs((cs) => cs.map((c) => (c.id === activeId ? { ...c, unread_count: 0 } : c)));
-    })();
+
+    const cached = getCachedThread(activeId);
+    if (cached) { setMsgs(cached); setThreadLoading(false); }
+    else { setMsgs([]); setThreadLoading(true); }
+
+    fetchThread(supabase, activeId)
+      .then((rows) => {
+        if (!alive) return;
+        // Repaint only when something actually differs — a background refresh
+        // that changes nothing should not cost a render.
+        setMsgs((prev) => (threadsEqual(prev, rows) ? prev : rows));
+      })
+      .catch((e) => { if (alive) toast.error(`Couldn't load the thread: ${(e as Error).message}`); })
+      .finally(() => { if (alive) setThreadLoading(false); });
+
+    // Fire-and-forget. Nobody should watch a read receipt travel.
+    supabase.rpc('whatsapp_mark_read', { p_conversation_id: activeId });
+    setConvs((cs) => cs.map((c) => (c.id === activeId ? { ...c, unread_count: 0 } : c)));
+
     return () => { alive = false; };
   }, [activeId, supabase]);
+
+  // Warm the threads most likely to be opened next, so the first click on each
+  // is also instant — not just the second.
+  useEffect(() => {
+    if (!convs.length) return;
+    const t = setTimeout(() => prefetchThreads(supabase, convs.slice(0, 8).map((c) => c.id), 8), 120);
+    return () => clearTimeout(t);
+  }, [convs, supabase]);
 
   // Read the selected conversation through a ref so the realtime channel does
   // not need activeId in its dependency list. It previously did, which meant
@@ -264,6 +294,14 @@ export default function WhatsAppPage() {
         (payload) => {
           const row = payload.new as WaMessage | undefined;
           if (!row) return;
+          // Keep the cache authoritative even for threads not on screen, so
+          // switching to them later shows the new message immediately.
+          if (row.conversation_id !== activeIdRef.current) {
+            const other = getCachedThread(row.conversation_id);
+            if (other && !other.some((m) => m.id === row.id)) {
+              setCachedThread(row.conversation_id, [...other, row]);
+            }
+          }
           if (row.conversation_id === activeIdRef.current) {
             setMsgs((prev) => {
               const i = prev.findIndex((m) => m.id === row.id);
@@ -295,6 +333,12 @@ export default function WhatsAppPage() {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [supabase, workspace.id, queueRefresh]);
+
+  // Mirror the on-screen thread into the cache so an optimistic send, a status
+  // tick or a failure is still there when you come back to this conversation.
+  useEffect(() => {
+    if (activeId && msgs.length) setCachedThread(activeId, msgs);
+  }, [activeId, msgs]);
 
   // stick to the bottom as the thread grows
   useEffect(() => {
@@ -340,12 +384,14 @@ export default function WhatsAppPage() {
   const send = useCallback(async (
     body: string,
     template?: { code: string; values: Record<string, string> },
+    media?: { path: string; mediaType: 'image' | 'document' | 'audio' | 'video'; name: string; mime: string; size: number },
   ) => {
     if (!active) return;
     const conversationId = active.id;
     const tempId = `tmp_${tempSeq.current++}`;
     const text = template ? body : body.trim();
-    if (!text) return;
+    // A bare photo or PDF is a real message — only bail when there is neither.
+    if (!text && !media) return;
 
     const optimistic: WaMessage = {
       id: tempId,
@@ -365,6 +411,11 @@ export default function WhatsAppPage() {
       sequence_step: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      media_path: media?.path ?? null,
+      media_type: media?.mediaType ?? null,
+      media_name: media?.name ?? null,
+      media_mime: media?.mime ?? null,
+      media_size: media?.size ?? null,
     };
 
     // 1. Paint immediately. Nothing below this line blocks the UI.
@@ -380,6 +431,7 @@ export default function WhatsAppPage() {
         body: JSON.stringify({
           conversationId,
           ...(template ? { templateCode: template.code, values: template.values } : { body: text }),
+          ...(media ? { media } : {}),
         }),
       });
       const json = await res.json();
@@ -428,6 +480,39 @@ export default function WhatsAppPage() {
       setSending(false);
     }
   }, [active, workspace.id, app.user?.id, queueRefresh]);
+
+  // Upload first, then send. Two steps on purpose: a file the user attaches and
+  // then thinks better of costs nothing and reaches nobody.
+  const onPickFile = useCallback(async (file: File) => {
+    if (!active) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/whatsapp/media/upload', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (!json.ok) { toast.error(json.detail || json.reason || 'Upload failed'); return; }
+      const caption = (drafts[active.id] || '').trim();
+      await send(caption, undefined, {
+        path: json.path, mediaType: json.mediaType, name: json.name, mime: json.mime, size: json.size,
+      });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }, [active, drafts, send]);
+
+  // Open a conversation in its own window — double-click a row, or the button
+  // in the header. Sized like a messaging app, not a browser tab.
+  const popOut = useCallback((conversationId: string) => {
+    window.open(
+      `/wa/${conversationId}`,
+      `wa_${conversationId}`,
+      'width=520,height=760,menubar=no,toolbar=no,location=no,status=no'
+    );
+  }, []);
 
   async function toggleClosed() {
     if (!active) return;
@@ -707,13 +792,27 @@ export default function WhatsAppPage() {
               const meta = WINDOW_META[st];
               const on = activeId === c.id;
               return (
-                <button key={c.id} onClick={() => setActiveId(c.id)}
+                <button
+                  key={c.id}
+                  onClick={() => setActiveId(c.id)}
+                  onDoubleClick={() => popOut(c.id)}
+                  // Pointing at a row starts its fetch, so the click that
+                  // follows has nothing left to wait for.
+                  onMouseEnter={() => prefetchThreads(supabase, [c.id], 1)}
+                  title="Double-click to open in its own window"
                   className={cn(
-                    'block w-full p-3 text-left transition-colors duration-150',
+                    'flex w-full items-start gap-3 p-3 text-left transition-colors duration-150',
                     on
                       ? 'border-l-[3px] border-l-[#25A25A] bg-[#EDFAF1]'
                       : 'border-l-[3px] border-l-transparent hover:bg-[#F9FAFB]'
                   )}>
+                  <span
+                    className="mt-[2px] flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-[12.5px] font-semibold text-white"
+                    style={{ background: avatarColor(c.lead_name) }}
+                  >
+                    {initials(c.lead_name)}
+                  </span>
+                  <span className="min-w-0 flex-1">
                   <span className="mb-1 flex items-baseline justify-between gap-2">
                     <span className={cn(
                       'flex min-w-0 items-center gap-[7px] truncate text-[13.5px] text-[#0F1728]',
@@ -740,6 +839,7 @@ export default function WhatsAppPage() {
                       Window {formatLeft(windowLeftMs(c.last_inbound_at))}
                     </span>
                   )}
+                  </span>
                 </button>
               );
             })}
@@ -782,9 +882,37 @@ export default function WhatsAppPage() {
                       {wState === 'shut' ? <Lock className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
                       {wState === 'shut' ? 'Window closed' : formatLeft(wLeft)}
                     </span>
+                    {/* Sequence control lives here too, not only in the side
+                        panel — you should be able to stop a sequence from the
+                        window you noticed the problem in. */}
+                    {seqState !== 'none' && (
+                      <span className="flex items-center gap-1 rounded-md border border-[#E8EAF0] bg-white p-[2px]">
+                        {seqState === 'active' ? (
+                          <button onClick={() => seqAction('pause')} title="Pause this lead's sequence"
+                            className="flex h-[26px] items-center gap-1 rounded px-2 text-[11.5px] font-semibold text-[#A25D07] transition hover:bg-[#FEF6E6]">
+                            <Pause className="h-3 w-3" />Pause
+                          </button>
+                        ) : (
+                          <button onClick={() => seqAction('resume')} disabled={seqState !== 'paused'}
+                            title="Resume this lead's sequence"
+                            className="flex h-[26px] items-center gap-1 rounded px-2 text-[11.5px] font-semibold text-[#1B7A44] transition hover:bg-[#EDFAF1] disabled:opacity-40">
+                            <Play className="h-3 w-3" />Resume
+                          </button>
+                        )}
+                        <button onClick={() => seqAction('stop')} disabled={seqState === 'stopped'}
+                          title="Stop permanently"
+                          className="flex h-[26px] items-center gap-1 rounded px-2 text-[11.5px] font-semibold text-[#45464c] transition hover:bg-[#F4F5F8] disabled:opacity-40">
+                          <Square className="h-3 w-3" />Stop
+                        </button>
+                      </span>
+                    )}
                     <button onClick={toggleClosed}
                       className="rounded-md border border-[#E8EAF0] bg-white px-3 py-[5px] text-[12px] font-medium text-[#45464c] transition-colors hover:text-[#0F1728]">
                       {active.status === 'closed' ? 'Reopen' : 'Mark as closed'}
+                    </button>
+                    <button onClick={() => popOut(active.id)} title="Open in its own window"
+                      className="flex h-8 w-8 items-center justify-center rounded-md text-[#7A8095] transition-colors hover:bg-[#F4F5F8] hover:text-[#0F1728]">
+                      <Maximize2 className="h-[16px] w-[16px]" />
                     </button>
                     {active.lead_id && (
                       <a href={`/leads?lead=${active.lead_id}`} title="Open lead record"
@@ -796,7 +924,16 @@ export default function WhatsAppPage() {
                 </div>
 
                 {/* messages */}
-                <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-[#FAFBFC] p-6">
+                <div
+                  ref={scroller}
+                  onDragOver={(e) => { e.preventDefault(); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files?.[0];
+                    if (f && !active.suppressed && wState !== 'shut') onPickFile(f);
+                  }}
+                  className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-[#FAFBFC] p-6"
+                >
                   {groups.map((g, gi) =>
                     g.kind === 'day' ? (
                       <div key={`d${gi}`} className="my-2 text-center text-[11px] font-medium uppercase tracking-widest text-[#7A8095]">
@@ -805,12 +942,15 @@ export default function WhatsAppPage() {
                     ) : (
                       <div key={`g${gi}`} className={cn('flex flex-col gap-1', g.dir === 'out' ? 'items-end' : 'items-start')}>
                         {g.items.map((m, i) => (
-                          <MessageLine key={m.id} m={m} last={i === g.items.length - 1} />
+                          <MessageBubble key={m.id} m={m} last={i === g.items.length - 1} />
                         ))}
                       </div>
                     )
                   )}
-                  {msgs.length === 0 && (
+                  {threadLoading && msgs.length === 0 && (
+                    <div className="py-14 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-muted" /></div>
+                  )}
+                  {!threadLoading && msgs.length === 0 && (
                     <p className="py-14 text-center text-[13px] text-muted">No messages in this conversation yet.</p>
                   )}
                 </div>
@@ -845,7 +985,53 @@ export default function WhatsAppPage() {
                       </button>
                     </div>
                   ) : (
-                    <div className="rounded-lg border border-[#E8EAF0] transition-all duration-150 focus-within:border-[#25A25A] focus-within:ring-1 focus-within:ring-[#25A25A]">
+                    <div className="relative rounded-lg border border-[#E8EAF0] transition-all duration-150 focus-within:border-[#25A25A] focus-within:ring-1 focus-within:ring-[#25A25A]">
+                      {emojiOpen && (
+                        <div className="absolute bottom-full left-2 z-20 mb-2 flex w-[236px] flex-wrap gap-1 rounded-xl border border-[#E8EAF0] bg-white p-2 shadow-[0_12px_28px_-12px_rgba(20,24,40,.3)]">
+                          {EMOJI.map((e) => (
+                            <button key={e}
+                              onClick={() => {
+                                const el = textarea.current;
+                                const v = (drafts[active.id] || '') + e;
+                                setDrafts((d) => ({ ...d, [active.id]: v }));
+                                if (el) { el.value = v; el.focus(); }
+                                setEmojiOpen(false);
+                              }}
+                              className="h-8 w-8 rounded-md text-[18px] leading-none transition hover:bg-[#F4F5F8]">{e}</button>
+                          ))}
+                        </div>
+                      )}
+                      {savedOpen && (
+                        <div className="absolute bottom-full left-2 z-20 mb-2 w-[320px] overflow-hidden rounded-xl border border-[#E8EAF0] bg-white shadow-[0_12px_28px_-12px_rgba(20,24,40,.3)]">
+                          <div className="flex items-center justify-between border-b border-[#E8EAF0] px-3 py-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#7A8095]">Saved replies</span>
+                            <button onClick={() => setSavedOpen(false)} className="text-[#7A8095] hover:text-[#0F1728]"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                          <div className="max-h-[260px] overflow-y-auto p-1">
+                            {savedReplies.length === 0 && (
+                              <p className="m-0 px-3 py-4 text-center text-[12px] text-[#7A8095]">
+                                None yet. Migration 048 seeds four to start with.
+                              </p>
+                            )}
+                            {savedReplies.map((r) => (
+                              <button key={r.id}
+                                onClick={() => {
+                                  const el = textarea.current;
+                                  setDrafts((d) => ({ ...d, [active.id]: r.body }));
+                                  if (el) { el.value = r.body; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 130)}px`; el.focus(); }
+                                  setSavedOpen(false);
+                                }}
+                                className="mb-px block w-full rounded-md px-3 py-2 text-left transition hover:bg-[#F4F5F8]">
+                                <span className="flex items-center gap-2">
+                                  <b className="text-[12.5px] font-semibold text-[#0F1728]">{r.title}</b>
+                                  <code className="rounded bg-[#F4F5F8] px-1.5 py-px text-[10.5px] text-[#7A8095]">/{r.shortcut}</code>
+                                </span>
+                                <span className="mt-0.5 block line-clamp-2 text-[11.5px] leading-[1.5] text-[#7A8095]">{r.body}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <textarea
                         ref={textarea}
                         rows={1}
@@ -872,13 +1058,20 @@ export default function WhatsAppPage() {
                             className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728]">
                             <Zap className="h-[18px] w-[18px]" />
                           </button>
-                          <button onClick={() => toast('Attachments arrive in Stage 2')}
-                            className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728]">
-                            <Paperclip className="h-[18px] w-[18px]" />
+                          <input ref={fileRef} type="file" className="hidden"
+                            onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickFile(f); }} />
+                          <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                            title="Attach a photo or document"
+                            className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728] disabled:opacity-50">
+                            {uploading ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Paperclip className="h-[18px] w-[18px]" />}
                           </button>
-                          <button onClick={() => toast('Emoji picker arrives in Stage 2')}
+                          <button onClick={() => { setEmojiOpen((v) => !v); setSavedOpen(false); }} title="Emoji"
                             className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728]">
                             <Smile className="h-[18px] w-[18px]" />
+                          </button>
+                          <button onClick={() => { setSavedOpen((v) => !v); setEmojiOpen(false); }} title="Saved replies"
+                            className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728]">
+                            <FileText className="h-[18px] w-[18px]" />
                           </button>
                         </div>
                         <div className="flex items-center gap-3">
@@ -996,54 +1189,3 @@ function ConnectionPill({ settings, loading }: { settings: WaSettings | null; lo
   );
 }
 
-function StatusTick({ status }: { status: WaMessage['status'] }) {
-  if (status === 'queued') return <Clock className="h-[13px] w-[13px] text-[#BFC3D2]" />;
-  if (status === 'sent') return <Check className="h-[17px] w-[17px] text-[#A6ABBD]" />;
-  if (status === 'delivered') return <CheckCheck className="h-[17px] w-[17px] text-[#A6ABBD]" />;
-  if (status === 'read') return <CheckCheck className="h-[17px] w-[17px] text-[#2E90FA]" />;
-  if (status === 'failed') return <AlertCircle className="h-[14px] w-[14px] text-[#E85555]" />;
-  return null;
-}
-
-// One bubble in the approved geometry: asymmetric corners, quiet shadow, meta
-// line (time + ticks) under the LAST bubble of a group only.
-function MessageLine({ m, last }: { m: WaMessage; last: boolean }) {
-  const out = m.direction === 'out';
-  const bad = m.status === 'failed';
-  return (
-    <>
-      <div className={cn(
-        'max-w-[min(80%,560px)] px-4 py-2.5',
-        out
-          ? cn('rounded-t-xl rounded-bl-xl rounded-br-sm shadow-[0_1px_2px_rgba(20,24,40,.03)]',
-               bad ? 'bg-[#FEEFEF] text-[#5A1919] ring-1 ring-[rgba(232,85,85,.3)]' : 'bg-[#DCF6D4] text-[#12331F]')
-          : 'rounded-t-xl rounded-bl-sm rounded-br-xl border border-[#E8EAF0] bg-white text-[#1F2733] shadow-[0_1px_2px_rgba(20,24,40,.04)]'
-      )}>
-        {m.template_code && (
-          <div className="mb-1.5 flex items-center gap-2">
-            <span
-              title={m.template_code}
-              className="inline-flex items-center gap-1 rounded-[4px] border border-[#BDE8CD] bg-[#E2F5EA] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#119751]"
-            >
-              <Zap className="h-[9px] w-[9px]" />
-              {m.template_category || 'Template'}
-            </span>
-          </div>
-        )}
-        <p className="m-0 whitespace-pre-wrap break-words text-[13px] leading-relaxed">{m.body}</p>
-        {bad && (
-          <div className="mt-2 flex items-start gap-1.5 border-t border-[rgba(232,85,85,.25)] pt-2 text-[11.5px] text-[#B02B2B]">
-            <AlertCircle className="mt-px h-3 w-3 flex-shrink-0" />
-            <span className="min-w-0 flex-1"><b className="font-bold">Not delivered.</b> {m.error_detail || m.error_code || 'Unknown error'}</span>
-          </div>
-        )}
-      </div>
-      {last && (
-        <span className={cn('flex items-center gap-1 text-[11px] text-[#7A8095]', out ? 'mr-1' : 'ml-1')}>
-          {fmtTime(m.created_at)}
-          {out && <StatusTick status={m.status} />}
-        </span>
-      )}
-    </>
-  );
-}

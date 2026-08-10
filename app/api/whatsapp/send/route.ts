@@ -20,7 +20,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdmin } from '@supabase/supabase-js';
-import { sendTemplate, sendText, renderTemplate } from '@/lib/whatsapp/interakt';
+import { sendTemplate, sendText, sendMedia, renderTemplate } from '@/lib/whatsapp/interakt';
 import { normalizePhone } from '@/lib/whatsapp/phone';
 
 export const runtime = 'nodejs';
@@ -35,6 +35,14 @@ interface Body {
   body?: string;
   templateCode?: string;
   values?: Record<string, string>;
+  /** From /api/whatsapp/media/upload — an attachment already in our bucket. */
+  media?: {
+    path: string;
+    mediaType: 'image' | 'document' | 'audio' | 'video';
+    name?: string;
+    mime?: string;
+    size?: number;
+  };
 }
 
 export async function POST(req: Request) {
@@ -161,7 +169,11 @@ export async function POST(req: Request) {
     language = tpl.language || 'en';
   } else {
     text = String(b.body ?? '').trim();
-    if (!text) return NextResponse.json({ ok: false, reason: 'empty_message' }, { status: 400 });
+    // A photo or PDF with no caption is a real message; only reject when there
+    // is neither text nor a file.
+    if (!text && !b.media) {
+      return NextResponse.json({ ok: false, reason: 'empty_message' }, { status: 400 });
+    }
 
     // The 24-hour rule. Meta enforces it; we enforce it first so the failure is
     // a clear message instead of a cryptic provider error.
@@ -190,6 +202,11 @@ export async function POST(req: Request) {
     p_sent_by: user.id,
     p_lead_id: leadId,
     p_step: null,
+    p_media_path: b.media?.path ?? null,
+    p_media_type: b.media?.mediaType ?? null,
+    p_media_name: b.media?.name ?? null,
+    p_media_mime: b.media?.mime ?? null,
+    p_media_size: b.media?.size ?? null,
   });
   if (recErr) return NextResponse.json({ ok: false, reason: recErr.message }, { status: 500 });
 
@@ -199,7 +216,35 @@ export async function POST(req: Request) {
   }
 
   // ── call Interakt ─────────────────────────────────────────────────────────
-  const result = isTemplate
+  // Interakt fetches media from a URL, so mint a short-lived signed link for
+  // our private object. 10 minutes is far longer than the fetch needs and short
+  // enough that the link is dead before it could be misused.
+  let signedUrl: string | null = null;
+  if (b.media?.path) {
+    const { data: signed } = await admin.storage
+      .from('whatsapp-media').createSignedUrl(b.media.path, 600);
+    signedUrl = signed?.signedUrl ?? null;
+    if (!signedUrl && !dryRun) {
+      await admin.from('whatsapp_messages').update({
+        status: 'failed', error_code: 'signing_failed',
+        error_detail: 'Could not create a signed URL for the attachment.',
+        updated_at: new Date().toISOString(),
+      }).eq('id', r.message_id);
+      return NextResponse.json({ ok: false, reason: 'signing_failed', messageId: r.message_id });
+    }
+  }
+
+  const result = b.media
+    ? await sendMedia({
+        phone: to,
+        mediaUrl: signedUrl ?? 'dry-run',
+        mediaType: b.media.mediaType,
+        fileName: b.media.name,
+        caption: text || undefined,
+        callbackData: r.message_id,
+        dryRun,
+      })
+    : isTemplate
     ? await sendTemplate({
         phone: to,
         template: { name: b.templateCode as string, languageCode: language, bodyValues },

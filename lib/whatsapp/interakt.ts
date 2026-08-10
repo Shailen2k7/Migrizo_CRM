@@ -194,6 +194,80 @@ export async function sendText(opts: {
   }
 }
 
+
+// ── SEND MEDIA ──────────────────────────────────────────────────────────────
+// Interakt takes a PUBLICLY REACHABLE url and fetches the file itself; it will
+// not accept a raw upload on this endpoint. Our bucket is private, so the
+// caller passes a short-lived signed URL — long enough for Interakt to pull the
+// bytes, short enough that a leaked link is worthless an hour later.
+//
+// mediaType maps to Interakt's `type`: Image | Document | Audio | Video.
+export async function sendMedia(opts: {
+  phone: string;
+  mediaUrl: string;
+  mediaType: 'image' | 'document' | 'audio' | 'video';
+  fileName?: string;
+  caption?: string;
+  callbackData?: string;
+  dryRun?: boolean;
+}): Promise<SendResult> {
+  const split = splitPhone(opts.phone);
+  if (!split) {
+    return { ok: false, code: 'bad_phone', detail: `Cannot parse phone number "${opts.phone}"` };
+  }
+
+  const typeMap = { image: 'Image', document: 'Document', audio: 'Audio', video: 'Video' } as const;
+
+  const payload = {
+    countryCode: split.countryCode,
+    phoneNumber: split.phoneNumber,
+    type: typeMap[opts.mediaType],
+    ...(opts.callbackData ? { callbackData: opts.callbackData.slice(0, 512) } : {}),
+    data: {
+      mediaUrl: opts.mediaUrl,
+      ...(opts.fileName ? { fileName: opts.fileName } : {}),
+      ...(opts.caption ? { caption: opts.caption } : {}),
+    },
+  };
+
+  if (opts.dryRun) {
+    // Never log the signed URL itself — it grants read access for its lifetime.
+    console.log('[whatsapp][DRY RUN] media ->', JSON.stringify({
+      ...payload, data: { ...payload.data, mediaUrl: '<signed-url-redacted>' },
+    }));
+    return { ok: true, dryRun: true, providerId: `dry_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` };
+  }
+
+  try {
+    const { status, json, text } = await call('/message/', payload);
+    if (status >= 200 && status < 300 && json?.result === true && typeof json.id === 'string') {
+      return { ok: true, providerId: json.id, raw: json };
+    }
+    return readError(status, json, text);
+  } catch (e) {
+    return asFailure(e);
+  }
+}
+
+/** Interakt's content-type strings -> our media_type enum. */
+export function mediaTypeFromInterakt(contentType: string | null | undefined): 'image' | 'document' | 'audio' | 'video' | 'sticker' | null {
+  const t = (contentType || '').toLowerCase();
+  if (t.includes('image')) return 'image';
+  if (t.includes('video')) return 'video';
+  if (t.includes('audio') || t.includes('voice')) return 'audio';
+  if (t.includes('sticker')) return 'sticker';
+  if (t.includes('document') || t.includes('file')) return 'document';
+  return null;
+}
+
+/** MIME -> our media_type enum, for files WE send. */
+export function mediaTypeFromMime(mime: string): 'image' | 'document' | 'audio' | 'video' {
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  return 'document';
+}
+
 // ── CONNECTION TEST ─────────────────────────────────────────────────────────
 // Interakt has no dedicated "ping" endpoint, so we prove the credential by
 // making a deliberately invalid send and reading which way it fails:
