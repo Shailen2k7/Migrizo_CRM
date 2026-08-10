@@ -21,7 +21,7 @@ import {
   Search, Clock, Lock, AlertCircle, Zap, Paperclip, Smile,
   FileText, PanelRight, Columns, Maximize2, Minimize2,
   ExternalLink, Loader2, Bot, Pause, Play, Square, ShieldCheck, Plus, Send as SendIcon,
-  MessageSquare, Settings2, X,
+  MessageSquare, Settings2, X, MoreHorizontal, Eraser, Trash2,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/components/shared/app-provider';
@@ -35,7 +35,7 @@ import TemplatesTab from '@/components/whatsapp/templates-tab';
 import SettingsTab from '@/components/whatsapp/settings-tab';
 import { MessageBubble } from '@/components/whatsapp/message-bubble';
 import {
-  getCachedThread, setCachedThread, fetchThread, prefetchThreads, threadsEqual,
+  getCachedThread, setCachedThread, dropCachedThread, fetchThread, prefetchThreads, threadsEqual,
 } from '@/lib/whatsapp/thread-cache';
 import {
   formatLeft, windowLeftMs, windowState, WINDOW_META,
@@ -103,6 +103,7 @@ export default function WhatsAppPage() {
   const [savedReplies, setSavedReplies] = useState<WaSavedReply[]>([]);
   // Only true on a genuinely cold thread. A cached one paints with no spinner.
   const [threadLoading, setThreadLoading] = useState(false);
+  const [chatMenu, setChatMenu] = useState(false);
 
   // ── sub-tabs: Inbox · Sequences · Templates · Settings ───────────────────
   // Kept in the URL (?tab=) so a refresh or a shared link lands on the same
@@ -514,6 +515,43 @@ export default function WhatsAppPage() {
     );
   }, []);
 
+  // "Close it completely so it opens fresh." Two shapes of that, because they
+  // mean different things: empty the thread, or remove the conversation.
+  const clearChat = useCallback(async (hardDelete: boolean) => {
+    if (!active) return;
+    setChatMenu(false);
+    const who = active.lead_name;
+    const ok = window.confirm(
+      hardDelete
+        ? `Delete the whole conversation with ${who}?\n\nEvery message is removed and it disappears from the inbox. It comes back empty the next time they message you.\n\nThis cannot be undone.`
+        : `Clear all messages with ${who}?\n\nThe chat is emptied but stays in your inbox.\n\nThis cannot be undone.`
+    );
+    if (!ok) return;
+
+    const { data, error } = await supabase.rpc('whatsapp_clear_conversation', {
+      p_conversation_id: active.id,
+      p_delete: hardDelete,
+    });
+    if (error) { toast.error(error.message); return; }
+    const r = (data ?? {}) as { ok?: boolean; reason?: string; messages_removed?: number };
+    if (!r.ok) {
+      toast.error(r.reason === 'not_campaign_admin'
+        ? 'Only a campaign admin can clear conversations'
+        : r.reason ?? 'Could not clear the chat');
+      return;
+    }
+
+    // Drop it from the cache too, or the emptied thread would repaint from
+    // memory the next time you clicked it.
+    dropCachedThread(active.id);
+    setMsgs([]);
+    if (hardDelete) setActiveId(null);
+    await reload();
+    toast.success(hardDelete
+      ? `Conversation deleted — ${r.messages_removed ?? 0} messages removed`
+      : `Chat cleared — ${r.messages_removed ?? 0} messages removed`);
+  }, [active, supabase, reload]);
+
   async function toggleClosed() {
     if (!active) return;
     const next = active.status === 'open' ? 'closed' : 'open';
@@ -914,6 +952,38 @@ export default function WhatsAppPage() {
                       className="flex h-8 w-8 items-center justify-center rounded-md text-[#7A8095] transition-colors hover:bg-[#F4F5F8] hover:text-[#0F1728]">
                       <Maximize2 className="h-[16px] w-[16px]" />
                     </button>
+                    <span className="relative">
+                      <button onClick={() => setChatMenu((v) => !v)} title="More"
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-[#7A8095] transition-colors hover:bg-[#F4F5F8] hover:text-[#0F1728]">
+                        <MoreHorizontal className="h-[17px] w-[17px]" />
+                      </button>
+                      {chatMenu && (
+                        <>
+                          <span className="fixed inset-0 z-10" onClick={() => setChatMenu(false)} />
+                          <span className="absolute right-0 top-[36px] z-20 block w-[248px] overflow-hidden rounded-xl border border-[#E8EAF0] bg-white p-1 shadow-[0_12px_28px_-12px_rgba(20,24,40,.3)]">
+                            <button onClick={() => clearChat(false)}
+                              className="flex w-full items-start gap-[9px] rounded-lg px-[10px] py-[8px] text-left transition hover:bg-[#F4F5F8]">
+                              <Eraser className="mt-[2px] h-[14px] w-[14px] flex-shrink-0 text-[#7A8095]" />
+                              <span>
+                                <b className="block text-[12.6px] font-semibold text-[#0F1728]">Clear messages</b>
+                                <span className="block text-[11px] leading-[1.45] text-[#7A8095]">Empties the chat, keeps the contact here.</span>
+                              </span>
+                            </button>
+                            <button onClick={() => clearChat(true)}
+                              className="flex w-full items-start gap-[9px] rounded-lg px-[10px] py-[8px] text-left transition hover:bg-[#FEEFEF]">
+                              <Trash2 className="mt-[2px] h-[14px] w-[14px] flex-shrink-0 text-[#B02B2B]" />
+                              <span>
+                                <b className="block text-[12.6px] font-semibold text-[#B02B2B]">Delete conversation</b>
+                                <span className="block text-[11px] leading-[1.45] text-[#8E2A2A]">Removes it from the inbox. Reopens blank on their next message.</span>
+                              </span>
+                            </button>
+                            <span className="mt-1 block border-t border-[#F0F1F5] px-[10px] pb-1 pt-[7px] text-[10.5px] leading-[1.5] text-[#A8ADBF]">
+                              Opt-outs are never undone by either action.
+                            </span>
+                          </span>
+                        </>
+                      )}
+                    </span>
                     {active.lead_id && (
                       <a href={`/leads?lead=${active.lead_id}`} title="Open lead record"
                          className="flex h-8 w-8 items-center justify-center rounded-md text-[#7A8095] transition-colors hover:bg-[#F4F5F8] hover:text-[#0F1728]">

@@ -114,18 +114,33 @@ export async function POST(req: Request) {
 
   // ── cap / pause / dry-run ─────────────────────────────────────────────────
   const { data: gate } = await admin.rpc('whatsapp_can_send', { p_workspace_id: wsId });
-  const g = (gate ?? {}) as { allowed?: boolean; dry_run?: boolean; paused?: boolean; reason?: string; cap?: number; sent_today?: number };
+  const g = (gate ?? {}) as {
+    allowed?: boolean; connected?: boolean; dry_run?: boolean; paused?: boolean;
+    reason?: string; cap?: number; sent_today?: number; remaining?: number;
+  };
   const dryRun = g.dry_run !== false;
 
   if (!dryRun) {
     if (g.paused) {
       return NextResponse.json({ ok: false, reason: 'sending_paused', detail: g.reason || 'Sending is paused.' });
     }
-    if (!g.allowed) {
+    // whatsapp_can_send folds THREE conditions into one `allowed` flag:
+    // connected AND not paused AND under cap. Reporting that as "cap reached"
+    // sent people hunting through their daily limit when the real problem was a
+    // credential that had never tested clean. Each cause now names itself.
+    if (!g.connected) {
+      return NextResponse.json({
+        ok: false,
+        reason: 'not_connected',
+        detail: 'The Interakt credential has not tested clean on this deploy, so sending is blocked. ' +
+                'Open WhatsApp → Settings and press "Test connection".',
+      });
+    }
+    if ((g.remaining ?? 0) <= 0) {
       return NextResponse.json({
         ok: false,
         reason: 'cap_reached',
-        detail: `Daily cap reached (${g.sent_today ?? '?'} of ${g.cap ?? '?'}). Resets at midnight IST.`,
+        detail: `Daily cap reached (${g.sent_today ?? '?'} of ${g.cap ?? '?'}). Resets at midnight IST — raise it in Settings if you need more today.`,
       });
     }
   }
@@ -150,7 +165,10 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ok: false,
         reason: 'template_not_approved',
-        detail: `Template is "${tpl.meta_status}". Meta must approve it before it can be sent.`,
+        detail: `This CRM has "${b.templateCode}" marked as "${tpl.meta_status}", so it refuses to send it. ` +
+                `If Meta has already approved it in Interakt, open WhatsApp → Templates and press ` +
+                `"Mark all as approved in Meta" — approval does not sync automatically unless Interakt's ` +
+                `template-status webhook is switched on.`,
       });
     }
 

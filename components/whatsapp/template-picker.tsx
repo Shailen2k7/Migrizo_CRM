@@ -41,7 +41,19 @@ export default function TemplatePicker({
   const slots = sel ? placeholders(sel.body) : [];
   const missing = slots.filter((n) => !(values[n] ?? '').trim());
 
+  /** Why this template cannot be sent right now — null when it can. */
+  function blockedReason(t: WaTemplate): string | null {
+    if (!t.active) return 'Retired — not in use any more.';
+    if (t.meta_status === 'rejected') return 'Meta rejected this template. Fix it in Interakt and resubmit.';
+    if (t.meta_status === 'paused') return 'Meta paused this template.';
+    if (t.meta_status !== 'approved') {
+      return 'Not marked approved in this CRM. If Meta approved it, open the Templates tab and press "Mark all as approved".';
+    }
+    return null;
+  }
+
   function pick(t: WaTemplate) {
+    if (blockedReason(t)) return;
     setSelId(t.id);
     const next: Record<string, string> = {};
     placeholders(t.body).forEach((n) => {
@@ -123,14 +135,20 @@ export default function TemplatePicker({
               )}
               {shown.map((t) => {
                 const on = selId === t.id;
-                const blocked = t.meta_status !== 'approved';
+                const blockReason = blockedReason(t);
+                const blocked = Boolean(blockReason);
+                const varCount = placeholders(t.body).length;
                 return (
                   <button
                     key={t.id}
                     onClick={() => pick(t)}
+                    disabled={blocked}
+                    title={blockReason ?? undefined}
                     className={[
                       'mb-[7px] w-full rounded-[11px] border px-[14px] py-3 text-left transition',
-                      on
+                      blocked
+                        ? 'cursor-not-allowed border-transparent bg-[#F5F6F9] opacity-70'
+                        : on
                         ? 'border-[#25A25A] bg-[#EDFAF1] shadow-[0_0_0_2px_#D7F3E1]'
                         : 'border-[#DDE0E9] bg-white hover:border-[#2FB463] hover:bg-[#EDFAF1]',
                     ].join(' ')}
@@ -151,14 +169,27 @@ export default function TemplatePicker({
                     <div className="line-clamp-2 text-[11.6px] leading-[1.5] text-muted">
                       {t.body.replace(/\n+/g, ' ')}
                     </div>
-                    <div className="mt-[6px] flex items-center gap-2">
+                    <div className="mt-[6px] flex flex-wrap items-center gap-[6px]">
                       <code className="text-[10.2px] text-faint">{t.code}</code>
+                      {/* The variable count is the number that must match
+                          Interakt's copy — surface it, don't hide it. */}
+                      <span className={[
+                        'rounded border px-[6px] py-px text-[9.5px] font-bold uppercase tracking-wide',
+                        varCount > 0
+                          ? 'border-[#D7F3E1] bg-[#EDFAF1] text-[#1B7A44]'
+                          : 'border-[#DDE0E9] bg-white text-[#7A8095]',
+                      ].join(' ')}>
+                        {varCount} var{varCount === 1 ? '' : 's'}
+                      </span>
                       {blocked && (
                         <span className="rounded border border-[#F8E2B8] bg-[#FEF6E6] px-[6px] py-px text-[9.5px] font-bold uppercase tracking-wide text-[#A25D07]">
                           {t.meta_status}
                         </span>
                       )}
                     </div>
+                    {blockReason && (
+                      <p className="m-0 mt-[6px] text-[10.8px] leading-[1.45] text-[#A25D07]">{blockReason}</p>
+                    )}
                   </button>
                 );
               })}
@@ -220,6 +251,8 @@ export default function TemplatePicker({
           <span className="text-[11.8px] text-muted">
             {!sel ? 'Select a template to continue'
               : missing.length ? `Fill ${missing.map((n) => `{{${n}}}`).join(', ')} before sending`
+              : slots.length === 0
+                ? 'No variables here — if Interakt\u2019s copy has one, this send will fail. Check the Templates tab.'
               : sel.category === 'UTILITY' ? 'Utility — cheaper, no frequency cap'
               : 'Marketing — subject to frequency caps'}
           </span>
