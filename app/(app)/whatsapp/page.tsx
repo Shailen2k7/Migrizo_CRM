@@ -697,7 +697,7 @@ export default function WhatsAppPage() {
           reloadOverview={loadOverview}
         />
       )}
-      {tab === 'templates' && <TemplatesTab templates={templates} />}
+      {tab === 'templates' && <TemplatesTab templates={templates} onChanged={reload} />}
       {tab === 'settings' && (
         <SettingsTab
           workspaceId={workspace.id}

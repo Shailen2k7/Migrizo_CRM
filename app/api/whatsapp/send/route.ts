@@ -280,22 +280,35 @@ export async function POST(req: Request) {
     });
   }
 
+  // Interakt's variable-count error is the single most common failure here and
+  // its wording explains nothing. Translate it into the actual fix: our copy of
+  // the template body and Interakt's copy disagree on how many {{n}} they hold.
+  let detail = result.detail ?? '';
+  const countMismatch = /missing variable values|expected number of values/i.test(detail);
+  if (countMismatch) {
+    const expected = /are\s+(\d+)/i.exec(detail)?.[1] ?? '?';
+    detail =
+      `Interakt expects ${expected} variable value(s) for "${b.templateCode}", but this CRM's copy of ` +
+      `the template has ${bodyValues.length}. The two bodies have drifted apart. ` +
+      `Open WhatsApp → Templates, press Edit on this template, and paste the exact body from Interakt.`;
+  }
+
   // Failure: write the real reason onto the message so it shows on the bubble.
   console.error('[whatsapp][send] failed', { code: result.code, detail: result.detail, raw: result.raw });
   await admin
     .from('whatsapp_messages')
     .update({
       status: 'failed',
-      error_code: result.code ?? 'unknown',
-      error_detail: (result.detail ?? '').slice(0, 500),
+      error_code: countMismatch ? 'template_variable_mismatch' : (result.code ?? 'unknown'),
+      error_detail: detail.slice(0, 500),
       updated_at: new Date().toISOString(),
     })
     .eq('id', r.message_id);
 
   return NextResponse.json({
     ok: false,
-    reason: result.code ?? 'send_failed',
-    detail: result.detail,
+    reason: countMismatch ? 'template_variable_mismatch' : (result.code ?? 'send_failed'),
+    detail,
     messageId: r.message_id,
     conversationId: r.conversation_id,
   });
