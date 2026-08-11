@@ -503,6 +503,14 @@ export async function POST(req: NextRequest) {
         sent++; remaining--;
 
         await admin.from('whatsapp_journeys').update({ stage: 'awaiting_reply' }).eq('id', j.id);
+
+        // A click-to-WhatsApp ad can arrive fully tagged, so this lead may be
+        // just as hot as a form lead — the trigger set priority before we ran.
+        if (j.priority && cfg.priority_push) {
+          await pushWorkspace(admin, wsId!, '🔥 Hot lead — willing to pay',
+            `${greetName(lead?.full_name)} · ${j.field ?? 'eligible'} · messaged us directly, jump in early`);
+        }
+
         // Same silence handling as an ad-form lead: two reminders, then cold.
         // Those go out as a TEMPLATE because by then the window has shut.
         await admin.from('whatsapp_auto_jobs').insert({

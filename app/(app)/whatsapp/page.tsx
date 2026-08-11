@@ -258,9 +258,17 @@ export default function WhatsAppPage() {
       .catch((e) => { if (alive) toast.error(`Couldn't load the thread: ${(e as Error).message}`); })
       .finally(() => { if (alive) setThreadLoading(false); });
 
-    // Fire-and-forget. Nobody should watch a read receipt travel.
-    supabase.rpc('whatsapp_mark_read', { p_conversation_id: activeId });
-    setConvs((cs) => cs.map((c) => (c.id === activeId ? { ...c, unread_count: 0 } : c)));
+    // Fire-and-forget — but it MUST actually fire. A supabase query builder is
+    // lazy: the HTTP request is issued inside .then(), so calling .rpc() and
+    // ignoring the result sent nothing at all. The badge cleared locally, the
+    // database never heard about it, and the next refresh brought the unread
+    // count and the orange "needs reply" dot straight back. Hence .then().
+    void supabase
+      .rpc('whatsapp_touch_read', { p_conversation_id: activeId })
+      .then(() => {}, () => {});
+    setConvs((cs) => cs.map((c) => (
+      c.id === activeId ? { ...c, unread_count: 0, needs_attention: false } : c
+    )));
 
     return () => { alive = false; };
   }, [activeId, supabase]);

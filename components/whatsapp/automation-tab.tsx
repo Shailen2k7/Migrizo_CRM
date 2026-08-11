@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import {
   Zap, Play, Check, X, Loader2, RefreshCw, Flame,
   FileText, Video, CalendarClock, Sparkles, BellRing, Moon, MessageSquare,
+  AlertTriangle, Clock,
 } from 'lucide-react';
 import type { WaTemplate } from '@/lib/whatsapp/types';
 import { FIELD_AREA, Select, IconInput, NumField } from '@/components/whatsapp/ui';
@@ -36,8 +37,9 @@ interface JourneyRow {
   updated_at: string; lead_name: string; pending_jobs: number;
   eligibility: { verdict?: string; decided_by?: string } | null;
 }
+interface CronStatus { installed: boolean; ok: boolean; jobs: Array<{ name: string; schedule: string; active: boolean }>; last_run: string | null }
 interface Overview {
-  settings: AutoSettings | null; counts: Record<string, number>;
+  settings: AutoSettings | null; counts: Record<string, number>; cron?: CronStatus;
   entry: Record<string, number>;
   sequences: SeqLite[]; journeys: JourneyRow[];
 }
@@ -180,6 +182,29 @@ export default function AutomationTab({
         <Toggle on={cfg.enabled} onClick={() => edit({ enabled: !cfg.enabled })} />
       </div>
 
+      {/* The scheduler is invisible until it fails. Make it visible. */}
+      {ov.cron && !ov.cron.ok && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-[#F6D5D2] bg-[#FDEEEE] px-3.5 py-2.5">
+          <AlertTriangle className="mt-px h-3.5 w-3.5 flex-shrink-0 text-[#B3423A]" />
+          <p className="m-0 text-[11.8px] leading-[1.5] text-[#8A2F28]">
+            <b>Nothing is running by itself.</b>{' '}
+            {ov.cron.installed
+              ? 'The scheduled jobs are missing — re-run migration 053 in Supabase.'
+              : 'pg_cron is not enabled on this database. Supabase → Database → Extensions → enable pg_cron and pg_net, then re-run migration 053.'}
+            {' '}Until then the engine only moves when you press <b>Run now</b>.
+          </p>
+        </div>
+      )}
+      {ov.cron?.ok && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-[#D7F3E1] bg-[#EDFAF1] px-3.5 py-2">
+          <Clock className="h-3.5 w-3.5 flex-shrink-0 text-[#1B7A44]" />
+          <p className="m-0 text-[11.5px] text-[#1B7A44]">
+            Running automatically — automation every minute, sequences every 10 minutes.
+            {ov.cron.last_run && ` Last run ${timeAgo(ov.cron.last_run)} ago.`}
+          </p>
+        </div>
+      )}
+
       {cfg.enabled && linksMissing && (
         <div className="mb-3 rounded-lg border border-[#F8E2B8] bg-[#FEF6E6] px-3.5 py-2.5 text-[11.8px] leading-[1.5] text-[#A25D07]">
           <b>Almost on.</b> Step 3 is missing its {[
@@ -309,7 +334,7 @@ export default function AutomationTab({
               The second door — someone messages us directly
             </h3>
             <p className="m-0 mt-px text-[11.5px] leading-[1.5] text-muted">
-              Click-to-WhatsApp ads, your website button, or a saved number. No form, no tags — so the AI reads their first message, answers it from your Q&amp;A if it can, then asks for CV &amp; LinkedIn. Sent as normal text: their message opens the window, so no template and no delivery cap.
+              Click-to-WhatsApp ads, your website button, or a saved number. If the ad sends their answers as the first message, we read the field and budget straight out of it — so they get the <b>same fully-automatic journey as a form lead</b>, hot lane included. Otherwise the AI reads their message, answers it from your Q&amp;A if it can, then asks for CV &amp; LinkedIn. All normal text: their message opens the window, so no template and no delivery cap.
             </p>
           </div>
           <Toggle on={cfg.inbound_enabled} onClick={() => edit({ inbound_enabled: !cfg.inbound_enabled })} />
