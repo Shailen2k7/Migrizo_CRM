@@ -16,6 +16,11 @@
 //               cold sequence (eligible fields only), else stop quietly
 //   faq         the Q&A brain — see route rules below
 //   notify      push the team ("wrong-field lead replied — review needed")
+//   inbound_intro  someone messaged US first (click-to-WhatsApp, our number
+//               saved, a website button). Reads their first message, answers it
+//               from your saved Q&A when it can, then asks for CV + LinkedIn —
+//               all as FREE TEXT, because their message opened the 24h window.
+//               Spam is ignored, anything sensitive or unknown goes to a human.
 //
 // THE Q&A BRAIN'S RULES (in priority order, enforced in code):
 //   1. Discounts/negotiation, complaints, ready-to-pay, guarantees
@@ -43,26 +48,38 @@ const WINDOW_MS = 24 * 60 * 60 * 1000;
 
 interface Job {
   id: string; workspace_id: string; journey_id: string;
-  kind: 'welcome' | 'assets' | 'faq' | 'reminder' | 'cold_enrol' | 'notify' | 'eligibility';
+  kind: 'welcome' | 'assets' | 'faq' | 'reminder' | 'cold_enrol' | 'notify' | 'eligibility' | 'inbound_intro';
   payload: { message_id?: string; conversation_id?: string; n?: number; reason?: string };
   attempts: number;
 }
 interface Journey {
   id: string; workspace_id: string; lead_id: string; conversation_id: string | null;
   phone_e164: string; stage: string; priority: boolean; field: string | null;
-  readiness: string | null; reminders_sent: number;
+  readiness: string | null; reminders_sent: number; entry_source: string;
 }
 interface AutoCfg {
   enabled: boolean; welcome_template_code: string;
   pdf_url: string | null; video_url: string | null; booking_url: string | null;
   eligible_message: string; booking_message: string;
   auto_faq: boolean; cold_sequence_id: string | null;
+  inbound_enabled: boolean; inbound_intro_message: string;
   reminder_hours_1: number; reminder_hours_2: number; priority_push: boolean;
 }
 interface Faq { id: string; title: string; question: string; keywords: string[]; answer: string; times_used: number }
 
 const firstName = (n: string) =>
   n.replace(/^(Dr|Mr|Mrs|Ms|Prof)\.?\s+/i, '').trim().split(/\s+/)[0] || n;
+
+/**
+ * Inbound leads are created as "WhatsApp 9199…" because we genuinely do not
+ * know their name yet. Greeting someone by their own phone number reads like a
+ * robot, so those become "there" — "Hi there, thanks for reaching out".
+ */
+const greetName = (n: string | null | undefined) => {
+  const raw = (n ?? '').trim();
+  if (!raw || /^whatsapp\s/i.test(raw) || /^[+\d\s-]+$/.test(raw)) return 'there';
+  return firstName(raw);
+};
 
 function fillTokens(text: string, t: { name?: string; pdf?: string; video?: string; booking?: string }): string {
   return text
@@ -240,16 +257,30 @@ export async function POST(req: NextRequest) {
     return { ok: true, convId: r.conversation_id };
   }
 
-  /** Has the lead said anything since the welcome? (reminder/cold gate) */
+  /**
+   * Has the lead spoken since OUR last message?
+   *
+   * "Do they have any inbound message at all" is the wrong question: a lead who
+   * messaged us first (entry_source = whatsapp_inbound) always has one, so that
+   * test would silently cancel every reminder for them. What matters is whether
+   * the newest message in the thread is theirs or ours.
+   */
   async function leadHasReplied(j: Journey): Promise<boolean> {
-    if (!j.conversation_id) {
+    let convId = j.conversation_id;
+    if (!convId) {
       const { data: conv } = await admin.from('whatsapp_conversations')
-        .select('id, last_inbound_at').eq('workspace_id', wsId).eq('phone_e164', j.phone_e164).maybeSingle();
-      return Boolean(conv?.last_inbound_at);
+        .select('id').eq('workspace_id', wsId).eq('phone_e164', j.phone_e164).maybeSingle();
+      convId = conv?.id ?? null;
     }
-    const { data: conv } = await admin.from('whatsapp_conversations')
-      .select('last_inbound_at').eq('id', j.conversation_id).maybeSingle();
-    return Boolean(conv?.last_inbound_at);
+    if (!convId) return false;
+    const newest = async (dir: 'in' | 'out') => {
+      const { data } = await admin.from('whatsapp_messages')
+        .select('created_at').eq('conversation_id', convId!).eq('direction', dir)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      return data?.created_at ? new Date(data.created_at).getTime() : 0;
+    };
+    const [lastIn, lastOut] = await Promise.all([newest('in'), newest('out')]);
+    return lastIn > lastOut;
   }
 
   for (const job of jobs) {
@@ -398,6 +429,93 @@ export async function POST(req: NextRequest) {
         results.push({ kind: job.kind, ok: true });
       }
 
+      // ════ INBOUND INTRO — they messaged US first ═════════════════════════
+      // The one job that reads intent before it says anything. Their message
+      // opened the 24h window, so everything here is free text: no template,
+      // no approval, no marketing frequency cap.
+      else if (job.kind === 'inbound_intro') {
+        if (!cfg.inbound_enabled) { await done(job.id); continue; }
+        if (['booked', 'stopped', 'not_eligible'].includes(j.stage)) { await done(job.id); continue; }
+
+        const { data: msg } = await admin.from('whatsapp_messages')
+          .select('body, media_path, conversation_id').eq('id', job.payload.message_id ?? '').maybeSingle();
+        const text = (msg?.body ?? '').trim();
+        const convId = msg?.conversation_id ?? job.payload.conversation_id ?? j.conversation_id ?? null;
+
+        const { data: lead } = await admin.from('leads').select('full_name').eq('id', j.lead_id).maybeSingle();
+        const name = greetName(lead?.full_name);
+
+        const flagHuman = async (why: string, title: string) => {
+          if (convId) await admin.from('whatsapp_conversations').update({ needs_attention: true }).eq('id', convId);
+          await admin.from('whatsapp_journeys').update({ stage: 'needs_review' }).eq('id', j.id);
+          await pushWorkspace(admin, wsId!, title, `${j.phone_e164}: “${(text || 'sent a file').slice(0, 90)}”`);
+          await activity(j.lead_id, 'whatsapp_inbound_escalated', { why, conversation_id: convId, text: text.slice(0, 200) });
+          await done(job.id);
+          results.push({ kind: job.kind, escalated: why });
+        };
+
+        // They opened by sending a document — asking for a CV would be absurd.
+        if (!text && msg?.media_path) { await flagHuman('opened_with_file', '📎 New enquiry — sent a file'); continue; }
+
+        // The four always-human topics, decided in code before any AI runs.
+        if (text && sensitiveHit(text)) { await flagHuman('sensitive_topic', '💬 New enquiry — sensitive question'); continue; }
+
+        const { data: faqRows } = await admin.from('whatsapp_faqs')
+          .select('*').eq('workspace_id', wsId).eq('active', true).order('sort_order');
+        const faqs = (faqRows ?? []) as Faq[];
+
+        const intent = await classifyInbound(text, faqs);
+
+        if (intent.action === 'ignore') {
+          // Spam, a wrong number, or a bot. Say nothing, bother nobody.
+          await admin.from('whatsapp_journeys').update({ stage: 'stopped', stop_reason: 'not_a_lead' }).eq('id', j.id);
+          await done(job.id);
+          results.push({ kind: job.kind, note: 'ignored_not_a_lead' });
+          continue;
+        }
+        if (intent.action === 'human') { await flagHuman('no_match', '❓ New enquiry — needs a human'); continue; }
+
+        if (remaining <= 0) { await defer(job, 'daily_cap', 15); deferred++; continue; }
+
+        // A question we have an answer for: answer it FIRST, in your words,
+        // then ask for the documents. Answering before asking is the whole
+        // difference between a helpful business and an interrogation.
+        if (intent.action === 'answer_then_intro' && intent.faq) {
+          const answer = fillTokens(intent.faq.answer, {
+            name, pdf: cfg.pdf_url ?? '', video: cfg.video_url ?? '', booking: cfg.booking_url ?? '',
+          });
+          const a = await sendFree(j, answer, 'auto:inbound_answer');
+          if (!a.ok) { await fail(job.id, a.err!, a.retry); failed++; continue; }
+          sent++; remaining--;
+          await admin.from('whatsapp_faqs')
+            .update({ times_used: intent.faq.times_used + 1 }).eq('id', intent.faq.id);
+          await activity(j.lead_id, 'whatsapp_faq_answered', {
+            faq_id: intent.faq.id, faq: intent.faq.title, conversation_id: convId, dry_run: dryRun,
+          });
+        }
+
+        if (remaining <= 0) { await defer(job, 'daily_cap', 15); deferred++; continue; }
+        const intro = fillTokens(cfg.inbound_intro_message, {
+          name, pdf: cfg.pdf_url ?? '', video: cfg.video_url ?? '', booking: cfg.booking_url ?? '',
+        });
+        const r = await sendFree(j, intro, 'auto:inbound_intro');
+        if (!r.ok) { await fail(job.id, r.err!, r.retry); failed++; continue; }
+        sent++; remaining--;
+
+        await admin.from('whatsapp_journeys').update({ stage: 'awaiting_reply' }).eq('id', j.id);
+        // Same silence handling as an ad-form lead: two reminders, then cold.
+        // Those go out as a TEMPLATE because by then the window has shut.
+        await admin.from('whatsapp_auto_jobs').insert({
+          workspace_id: wsId, journey_id: j.id, kind: 'reminder', payload: { n: 1 },
+          due_at: new Date(Date.now() + cfg.reminder_hours_1 * 3600_000).toISOString(),
+        });
+        await activity(j.lead_id, 'whatsapp_inbound_intro_sent', {
+          answered_first: intent.action === 'answer_then_intro', dry_run: dryRun,
+        });
+        await done(job.id);
+        results.push({ kind: job.kind, ok: true, intent: intent.action, dryRun });
+      }
+
       // ════ Q&A BRAIN ══════════════════════════════════════════════════════
       else if (job.kind === 'faq') {
         if (!cfg.auto_faq) { await done(job.id); continue; }
@@ -536,5 +654,86 @@ Reply with ONLY the JSON.`,
     // AI down → keyword hit answers, an apparent question goes to a human.
     if (best && bestScore >= 1) return { action: 'answer', faq: best };
     return /[?？]/.test(text) ? { action: 'human' } : { action: 'ignore' };
+  }
+}
+
+// ═════ FIRST-MESSAGE INTENT — what does this stranger actually want? ═══════
+// Deliberately narrow: it decides between four ACTIONS, never what to say.
+// Anything it is unsure about becomes 'human', because a wrong guess on
+// someone's first ever message is the most expensive kind of wrong.
+type Intent =
+  | { action: 'intro' }                                   // interest / greeting
+  | { action: 'answer_then_intro'; faq: Faq }             // a question we answer
+  | { action: 'human' }                                   // real but unanswerable
+  | { action: 'ignore' };                                 // spam / wrong number
+
+async function classifyInbound(text: string, faqs: Faq[]): Promise<Intent> {
+  const t = text.toLowerCase().trim();
+  if (!t) return { action: 'intro' };                     // "hi" with no words
+
+  // Obvious non-leads, decided without spending an API call.
+  if (/^(stop|unsubscribe|remove me)\b/i.test(t)) return { action: 'ignore' };
+  if (t.length < 2) return { action: 'intro' };
+
+  // Strong keyword overlap → we already know the answer, no AI needed.
+  let best: Faq | null = null, bestScore = 0;
+  for (const f of faqs) {
+    const score = (f.keywords ?? []).filter((k) => k && t.includes(k.toLowerCase())).length;
+    if (score > bestScore) { bestScore = score; best = f; }
+  }
+  if (best && bestScore >= 2) return { action: 'answer_then_intro', faq: best };
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    // No AI: a single keyword hit still answers; everything else gets the
+    // intro, which is always a reasonable thing to say to a new enquiry.
+    return best && bestScore >= 1 ? { action: 'answer_then_intro', faq: best } : { action: 'intro' };
+  }
+
+  try {
+    const list = faqs.map((f, i) => `${i + 1}. ${f.title} — example: "${f.question || f.keywords.join(', ')}"`).join('\n');
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+        max_tokens: 120,
+        messages: [{
+          role: 'user',
+          content:
+`Someone just messaged a UK-visa consultancy on WhatsApp for the FIRST time. Decide what we should do. You may only choose from the saved answers below — never invent a reply.
+
+SAVED ANSWERS:
+${list || '(none saved yet)'}
+
+THEIR FIRST MESSAGE (may be Hindi/Hinglish): "${text.slice(0, 500)}"
+
+Choose one:
+- They ask something a saved answer covers → {"action":"answer_then_intro","index":N}
+- They show interest, greet us, or ask about the visa in general with no saved answer that fits → {"action":"intro"}
+- A real question we cannot answer from the list, or anything about discounts, complaints, payments or guarantees → {"action":"human"}
+- Spam, a wrong number, a bot, or clearly unrelated to visas → {"action":"ignore"}
+
+Use "ignore" only when you are certain it is not a potential client. When torn between intro and human, choose human.
+
+Reply with ONLY the JSON.`,
+        }],
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return best && bestScore >= 1 ? { action: 'answer_then_intro', faq: best } : { action: 'intro' };
+    const json = await res.json() as { content?: Array<{ type: string; text?: string }> };
+    const raw = (json.content ?? []).find((c) => c.type === 'text')?.text ?? '';
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (!m) return { action: 'intro' };
+    const parsed = JSON.parse(m[0]) as { action?: string; index?: number };
+    if (parsed.action === 'answer_then_intro' && parsed.index && faqs[parsed.index - 1]) {
+      return { action: 'answer_then_intro', faq: faqs[parsed.index - 1] };
+    }
+    if (parsed.action === 'human') return { action: 'human' };
+    if (parsed.action === 'ignore') return { action: 'ignore' };
+    return { action: 'intro' };
+  } catch {
+    return best && bestScore >= 1 ? { action: 'answer_then_intro', faq: best } : { action: 'intro' };
   }
 }

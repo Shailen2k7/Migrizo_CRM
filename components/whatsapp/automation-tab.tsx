@@ -14,7 +14,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import {
   Zap, Play, Check, X, Loader2, RefreshCw, Flame,
-  FileText, Video, CalendarClock, Sparkles, BellRing, Moon,
+  FileText, Video, CalendarClock, Sparkles, BellRing, Moon, MessageSquare,
 } from 'lucide-react';
 import type { WaTemplate } from '@/lib/whatsapp/types';
 import { FIELD_AREA, Select, IconInput, NumField } from '@/components/whatsapp/ui';
@@ -26,16 +26,19 @@ interface AutoSettings {
   eligible_message: string; booking_message: string;
   auto_faq: boolean; cold_sequence_id: string | null;
   reminder_hours_1: number; reminder_hours_2: number; priority_push: boolean;
+  inbound_enabled: boolean; inbound_intro_message: string;
 }
 interface SeqLite { id: string; name: string; status: string }
 interface JourneyRow {
   id: string; lead_id: string; phone_e164: string; stage: string; priority: boolean;
   field: string | null; readiness: string | null; reminders_sent: number;
+  entry_source: string;
   updated_at: string; lead_name: string; pending_jobs: number;
   eligibility: { verdict?: string; decided_by?: string } | null;
 }
 interface Overview {
   settings: AutoSettings | null; counts: Record<string, number>;
+  entry: Record<string, number>;
   sequences: SeqLite[]; journeys: JourneyRow[];
 }
 
@@ -43,6 +46,7 @@ const ELIGIBLE_FIELDS = ['tech', 'research', 'engineering', 'art'];
 
 const STAGE_META: Record<string, { label: string; cls: string }> = {
   welcome_queued:  { label: 'Welcome queued',      cls: 'bg-[#F5F6F9] text-[#7A8095] border-[#DDE0E9]' },
+  intro_queued:    { label: 'Replying…',           cls: 'bg-indigo-soft text-indigo-700 border-indigo-100' },
   awaiting_reply:  { label: 'Waiting for reply',   cls: 'bg-indigo-soft text-indigo-700 border-indigo-100' },
   needs_review:    { label: 'Needs your decision', cls: 'bg-[#FEF6E6] text-[#A25D07] border-[#F8E2B8]' },
   eligible:        { label: 'Eligible ✓',          cls: 'bg-[#EDFAF1] text-[#1B7A44] border-[#D7F3E1]' },
@@ -111,6 +115,8 @@ export default function AutomationTab({
       reminder_hours_1: cfg.reminder_hours_1,
       reminder_hours_2: cfg.reminder_hours_2,
       priority_push: cfg.priority_push,
+      inbound_enabled: cfg.inbound_enabled,
+      inbound_intro_message: cfg.inbound_intro_message,
     }).eq('workspace_id', workspaceId);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
@@ -186,7 +192,7 @@ export default function AutomationTab({
       <div className="mb-3.5 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Kpi icon={<Zap className="h-3.5 w-3.5 text-[#1B7A44]" />} bg="bg-[#EDFAF1]" label="In journey" value={inFlight} />
         <Kpi icon={<Play className="h-3.5 w-3.5 text-indigo-700" />} bg="bg-indigo-soft" label="Waiting reply"
-          value={(ov.counts['awaiting_reply'] ?? 0) + (ov.counts['welcome_queued'] ?? 0)} />
+          value={(ov.counts['awaiting_reply'] ?? 0) + (ov.counts['welcome_queued'] ?? 0) + (ov.counts['intro_queued'] ?? 0)} />
         <Kpi icon={<Flame className="h-3.5 w-3.5 text-[#D9541E]" />} bg="bg-[#FFF4EE]" label="Hot · will pay"
           value={ov.journeys.filter((x) => x.priority && !['booked','stopped','not_eligible'].includes(x.stage)).length} />
         <Kpi icon={<CalendarClock className="h-3.5 w-3.5 text-[#1B7A44]" />} bg="bg-[#EDFAF1]" label="Meetings booked"
@@ -292,6 +298,33 @@ export default function AutomationTab({
         </Step>
       </div>
 
+      {/* ── the second door: they message us, no form involved ────────────── */}
+      <section className="mb-3.5 rounded-xl border border-indigo-100 bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+        <div className="flex items-center gap-2.5 border-b border-indigo-100 px-4 py-3">
+          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px] bg-indigo-soft">
+            <MessageSquare className="h-4 w-4 text-indigo-700" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="m-0 text-[12.8px] font-semibold tracking-[-.01em]">
+              The second door — someone messages us directly
+            </h3>
+            <p className="m-0 mt-px text-[11.5px] leading-[1.5] text-muted">
+              Click-to-WhatsApp ads, your website button, or a saved number. No form, no tags — so the AI reads their first message, answers it from your Q&amp;A if it can, then asks for CV &amp; LinkedIn. Sent as normal text: their message opens the window, so no template and no delivery cap.
+            </p>
+          </div>
+          <Toggle on={cfg.inbound_enabled} onClick={() => edit({ inbound_enabled: !cfg.inbound_enabled })} />
+        </div>
+        <div className="px-4 py-3">
+          <MsgField label="Your opening message to a new enquiry"
+            value={cfg.inbound_intro_message} onChange={(v) => edit({ inbound_intro_message: v })} />
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[10.8px] text-faint">
+            <span>A question we can answer → answer first, then this message</span>
+            <span>Price haggling / complaint / guarantee → straight to a human</span>
+            <span>Spam or wrong number → nothing is sent</span>
+          </div>
+        </div>
+      </section>
+
       {dirty && (
         <div className="sticky bottom-3 z-10 mt-3.5 flex items-center gap-3 rounded-xl border border-[#DDE0E9] bg-white px-3.5 py-2.5 shadow-[0_8px_24px_-8px_rgba(20,24,40,.22)]">
           <span className="text-[11.8px] text-muted">Unsaved changes</span>
@@ -351,7 +384,11 @@ export default function AutomationTab({
                   {jr.priority
                     ? <Flame className="h-3 w-3 flex-shrink-0 text-[#D9541E]" />
                     : <span className="w-3 flex-shrink-0" />}
-                  <b className="w-[112px] flex-shrink-0 truncate text-[11.8px]">{jr.lead_name}</b>
+                  <b className="w-[104px] flex-shrink-0 truncate text-[11.8px]">{jr.lead_name}</b>
+                  {jr.entry_source === 'whatsapp_inbound' && (
+                    <span className="flex-shrink-0 rounded border border-indigo-100 bg-indigo-soft px-1 py-px text-[9px] font-bold text-indigo-700"
+                      title="Messaged us directly — no ad form">IN</span>
+                  )}
                   <span className={`truncate rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.cls}`}>{meta.label}</span>
                   <span className="ml-auto flex-shrink-0 text-[9.8px] text-faint">{timeAgo(jr.updated_at)}</span>
                 </div>
@@ -366,6 +403,8 @@ export default function AutomationTab({
           </div>
           <div className="px-3.5 py-1">
             {[
+              ['From the ad form', ov.entry?.['meta_form'] ?? 0],
+              ['Messaged us directly', ov.entry?.['whatsapp_inbound'] ?? 0],
               ['Meetings booked', ov.counts['booked'] ?? 0],
               ['Booking link sent', ov.counts['waiting_booking'] ?? 0],
               ['Moved to Junk', ov.counts['not_eligible'] ?? 0],

@@ -1,99 +1,88 @@
-# WhatsApp Lead Automation — the complete system, one go
+# The second door — people who message you directly
 
-6 files. Upload to the same paths, run the one migration, redeploy. Done.
+3 files. Upload, run the one migration, redeploy.
 
 ```
-supabase/migrations/051_whatsapp_automation.sql       NEW — run in Supabase SQL Editor
-app/api/whatsapp/automation/drain/route.ts            NEW
-components/whatsapp/automation-tab.tsx                NEW
-components/whatsapp/qa-tab.tsx                        NEW
-components/whatsapp/sequences-tab.tsx                 REPLACE
-app/(app)/whatsapp/page.tsx                           REPLACE
+supabase/migrations/052_whatsapp_inbound_leads.sql   NEW — run in Supabase SQL Editor
+app/api/whatsapp/automation/drain/route.ts           REPLACE
+components/whatsapp/automation-tab.tsx               REPLACE
 ```
 
 `tsc` clean · `next build` green · migration applied twice on Postgres 16 ·
-**30 automated tests passing** (14 database, 16 routing/logic). No new env
-variables — it uses what's already in Netlify.
+**29 tests passing** (11 database, 18 routing/logic). No new env variables.
 
 ---
 
-## The flow you approved, exactly as built
+## What this adds
 
-**① Lead arrives from the Meta ad** — already tagged with their field and
-whether they'll pay (your new Make.com intake). No CV scanning anywhere.
+Until now a journey could only start from the Meta lead **form**. Anyone who
+tapped "Chat on WhatsApp" on an ad, used your website button, or just saved
+your number and messaged you was left to the Q&A brain and your team.
 
-**② Sorted at the door.** Field is tech / research / engineering / arts →
-eligible. Eligible AND willing to pay → 🔥 **priority: pushed to your phone
-the moment the welcome goes out**, so a human can jump in early. Any other
-field → still welcomed, but replies are handed to a human, never auto-promised.
+Now they become a proper lead, automatically:
 
-**③ Welcome = `fresh_lead_01`** (changeable via a dropdown on the Automation
-tab). Goes out within a minute of the lead arriving.
+**They message you (you've never spoken)**
+→ a lead is created — source **"WhatsApp Inbound"**, stage Cold, so they appear
+  in Leads, Pipeline and every report
+→ a journey starts, and the AI **reads their first message** before saying
+  anything:
 
-**④ They reply** → eligible leads automatically get the **guide + video
-message, then the booking-link message**. Their reply opened the 24-hour
-window, so these always deliver.
+| Their first message | What happens |
+|---|---|
+| A question your Q&A covers | **Your answer goes first**, then the CV + LinkedIn request |
+| "Hi" / general interest | The CV + LinkedIn request |
+| Discount, complaint, "ready to pay", guarantee | **Nothing sent.** Flagged + pushed to you |
+| They open by sending a file | **Nothing sent** — asking for a CV would be absurd. Flagged for a human |
+| Spam / wrong number / a bot | **Nothing sent, nobody bothered.** Journey quietly ends |
 
-**⑤ No reply** → `fresh_lead_01` is re-sent at +24h and +48h (both timings
-editable). Still silent a day later → eligible fields are enrolled into the
-**cold sequence you pick from a dropdown**; off-field leads simply stop.
+→ they reply → because there are no ad tags, **a human decides eligibility**
+  ("Needs your decision" on the Automation tab). One click sends the guide +
+  booking link.
+→ silence → the same two reminders, then the cold sequence.
 
-**⑥ Meeting booked → everything stops.** The journey, queued messages, and
-any running sequences for that number.
+## Why this path is MORE reliable than the ad-form path
 
-**∞ The Q&A brain** (its own new tab) — on every incoming message:
-1. Discounts/negotiation, complaints, "ready to pay", guarantees →
-   **never answered by the robot.** Chat flagged "Needs reply" + push.
-   This is decided by plain code before any AI runs.
-2. Matches a Q&A you saved → sends **your answer, word-for-word**. The AI
-   only picks which saved answer fits — it cannot compose.
-3. Casual chatter ("ok", "thanks", a file) → silence.
-4. A real question nothing covers → flagged + push. Silence beats guessing.
+Their message opens Meta's 24-hour window, so every message here is **normal
+free text** — no template, no Meta approval, and **no MARKETING frequency
+cap**. The "not delivered to maintain healthy ecosystem engagement" problem
+cannot happen on this path at all.
 
-Four Q&As are pre-seeded, including the **price answer built from your GTV
-brochure** (£3,000 fixed fee · ~£4,000 government costs · ~£7,500/3yr ·
-~£9,500/5yr → free assessment call). The standard price question is
-auto-answered; the moment someone says "discount" or starts negotiating,
-rule 1 takes over and a human gets it.
+## What it will never do
 
----
+- **Message a suppressed number.** Someone who said STOP stays stopped, even
+  if they message again. Tested.
+- **Send an intro to a reply.** If *we* messaged first (a sequence, a campaign,
+  a manual template), their reply is a reply — not a new enquiry. The code
+  checks for an earlier outbound message before ever introducing itself. Tested.
+- **Double-answer.** The intro brain owns the first message; the Q&A brain
+  takes over from the second onward. Tested.
+- **Greet someone by their phone number.** A lead we only know as a number is
+  greeted "Hi there", never "Hi WhatsApp 919999…".
+- **Promise eligibility.** No ad tag means no automatic verdict — a human decides.
 
-## Setup — do these once, in order
+## Where you control it
 
-1. **Supabase → SQL Editor** → run `051_whatsapp_automation.sql` (safe twice).
-2. Upload the 5 code files → deploy → **Settings → Test connection**
-   (resets on every deploy — always re-test after deploying).
-3. **Templates tab** → open `fresh_lead_01` and make sure the body matches
-   your Interakt copy EXACTLY (the migration seeds a sensible body marked
-   approved, but the variable count must match Interakt's or sends fail).
-4. **Automation tab** → paste the PDF link, video link, booking link →
-   pick your cold sequence in step 4 → flip the master switch ON.
-5. **Q&A tab** → read the 4 seeded answers, edit to your voice, add more.
-6. Test with **dry-run ON** (Settings): submit a test lead through Make,
-   watch it move through the Automation tab. Nothing leaves the CRM until
-   you turn dry-run off.
+**Automation tab → "The second door"** (new card below the 5 steps):
+a toggle, and the opening message you send to a new enquiry — edit it freely.
 
-## Where things surface
+In the **live feed**, inbound leads carry a small **IN** badge, and the Totals
+panel now splits *From the ad form* vs *Messaged us directly*.
 
-- 🔥 Hot lead arrives → push: "Hot lead — willing to pay".
-- Wrong-field lead replies → push + "Needs your decision" list on the
-  Automation tab (one click: Eligible → assets go out / Not eligible → Junk).
-- Unknown question → push + "Needs reply" flag in the inbox.
-- Every automated send is in the chat thread and the lead's activity log.
+## One bug this also fixed
 
-## Also in this bundle
+Reminders used "does this lead have any inbound message?" to decide whether to
+stay quiet. Every inbound lead has one by definition — so reminders would have
+been silently cancelled for all of them, forever. It now compares whose message
+is *newest*, which is correct for both doors.
 
-- **Compact design pass** on the WhatsApp module — Make-style density:
-  smaller chrome, tighter rows and paddings, same font, same Migrizo green.
-  The new Automation and Q&A tabs are born compact.
-- **Sequences tab** now opens with a one-line cheat-sheet of how it works.
-- The **sequences cron fix** from the audit is in the migration (sequences
-  used to have NO scheduler at all — now every 10 minutes).
-- Everything from the earlier packs (send fixes, clear/delete chat, editable
-  templates) is already in your repo and untouched.
+## Test it in 2 minutes
 
-## Answers the robot will never give
+1. Run the migration, deploy, Settings → **Test connection**.
+2. From a phone that has **never messaged your number**, send "Hi, what is the price?"
+3. Within a minute you should receive **your price answer, then the CV request**
+   — and the lead appears in Leads (source: WhatsApp Inbound) and in the live
+   feed with an **IN** badge.
+4. Now try "can you give me a discount?" from another new number → **no reply**,
+   chat flagged "Needs reply", push to your phone.
 
-Discount or negotiation requests · complaints · payment handling ·
-guarantee/success-rate questions. These always reach a human, by design —
-a premium brand's hardest questions deserve a person.
+Dry-run works here too — journeys advance, nothing leaves the CRM.
