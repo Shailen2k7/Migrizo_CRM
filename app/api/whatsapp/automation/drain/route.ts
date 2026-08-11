@@ -258,6 +258,30 @@ export async function POST(req: NextRequest) {
   }
 
   /**
+   * Is the 24-hour window open for this journey?
+   *
+   * The conversation's cached last_inbound_at LIED to us once: an assets job
+   * fired 36 seconds before the cache caught up with the very reply that
+   * triggered it, the check saw "closed", and a hot lead got silence. So the
+   * source of truth is now the newest INBOUND MESSAGE ROW itself — the thing
+   * that cannot be stale, because it is the thing that queued the job.
+   */
+  async function windowOpen(j: Journey): Promise<boolean> {
+    let convId = j.conversation_id;
+    if (!convId) {
+      const { data: c } = await admin.from('whatsapp_conversations')
+        .select('id').eq('workspace_id', wsId).eq('phone_e164', j.phone_e164).maybeSingle();
+      convId = c?.id ?? null;
+    }
+    if (!convId) return false;
+    const { data: m } = await admin.from('whatsapp_messages')
+      .select('created_at').eq('conversation_id', convId).eq('direction', 'in')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (!m?.created_at) return false;
+    return Date.now() - new Date(m.created_at).getTime() < WINDOW_MS;
+  }
+
+  /**
    * Has the lead spoken since OUR last message?
    *
    * "Do they have any inbound message at all" is the wrong question: a lead who
@@ -392,11 +416,11 @@ export async function POST(req: NextRequest) {
         if (missing.length) { await fail(job.id, `fill in the ${missing.join(', ')} on the Automation tab first`); failed++; continue; }
         if (remaining < 2) { await defer(job, 'daily_cap', 30); deferred++; continue; }
 
-        const { data: conv } = await admin.from('whatsapp_conversations')
-          .select('last_inbound_at').eq('id', j.conversation_id ?? '').maybeSingle();
-        const open = conv?.last_inbound_at
-          ? Date.now() - new Date(conv.last_inbound_at).getTime() < WINDOW_MS : false;
-        if (!open) {
+        if (!(await windowOpen(j))) {
+          // A closed window right after a reply is almost always a caching
+          // race, not reality — so retry twice before giving up. Only a
+          // genuinely day-old job deserves the permanent failure.
+          if (job.attempts < 3) { await defer(job, 'window_check_retry', 2); deferred++; continue; }
           await fail(job.id, 'their 24h window closed before the assets went out — send a template from the inbox');
           if (j.conversation_id) await admin.from('whatsapp_conversations').update({ needs_attention: true }).eq('id', j.conversation_id);
           failed++; continue;

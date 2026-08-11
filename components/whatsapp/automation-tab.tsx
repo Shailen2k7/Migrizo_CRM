@@ -38,8 +38,10 @@ interface JourneyRow {
   eligibility: { verdict?: string; decided_by?: string } | null;
 }
 interface CronStatus { installed: boolean; ok: boolean; jobs: Array<{ name: string; schedule: string; active: boolean }>; last_run: string | null }
+interface FailedJob { id: string; kind: string; error: string | null; updated_at: string; lead_name: string; phone: string }
 interface Overview {
   settings: AutoSettings | null; counts: Record<string, number>; cron?: CronStatus;
+  failed_jobs?: FailedJob[];
   entry: Record<string, number>;
   sequences: SeqLite[]; journeys: JourneyRow[];
 }
@@ -144,6 +146,14 @@ export default function AutomationTab({
     const r = (data ?? {}) as { ok?: boolean; reason?: string };
     if (error || !r.ok) { toast.error(error?.message || r.reason || 'Failed'); return; }
     toast.success(eligible ? 'Marked eligible — guide + booking link on their way' : 'Moved to Junk');
+    load();
+  };
+
+  const retryJob = async (jobId: string) => {
+    const { data, error } = await supabase.rpc('whatsapp_job_retry', { p_job_id: jobId });
+    const r = (data ?? {}) as { ok?: boolean; reason?: string };
+    if (error || !r.ok) { toast.error(error?.message || r.reason || 'Retry failed'); return; }
+    toast.success('Back in the queue — runs within a minute');
     load();
   };
 
@@ -363,6 +373,33 @@ export default function AutomationTab({
 
       {/* ── the operations rail: watch the machine while you configure it ── */}
       <aside className="grid gap-3 xl:sticky xl:top-4">
+        {(ov.failed_jobs?.length ?? 0) > 0 && (
+          <section className="rounded-xl border border-[#F6D5D2] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+            <div className="flex items-center gap-2 border-b border-[#F6D5D2] px-3.5 py-2.5">
+              <AlertTriangle className="h-3.5 w-3.5 text-[#B3423A]" />
+              <h3 className="m-0 text-[12.6px] font-semibold">Failed steps</h3>
+              <span className="rounded-full border border-[#F6D5D2] bg-[#FDEEEE] px-2 py-0.5 text-[10.3px] font-bold text-[#B3423A]">{ov.failed_jobs!.length}</span>
+              <span className="ml-auto text-[10.5px] text-faint">why + one-click retry</span>
+            </div>
+            <div className="px-3.5 py-2.5">
+              {ov.failed_jobs!.map((f) => (
+                <div key={f.id} className="mb-1.5 rounded-lg border border-[#F0F1F5] bg-[#FBFBFC] px-2.5 py-2 last:mb-0">
+                  <div className="flex items-center gap-2">
+                    <b className="truncate text-[11.8px]">{f.lead_name}</b>
+                    <span className="rounded border border-[#DDE0E9] bg-white px-1.5 py-px text-[9px] font-bold uppercase text-[#7A8095]">{f.kind}</span>
+                    <span className="ml-auto flex-shrink-0 text-[9.8px] text-faint">{timeAgo(f.updated_at)}</span>
+                  </div>
+                  <p className="m-0 mt-1 text-[10.8px] leading-[1.45] text-[#8A2F28]">{f.error ?? 'unknown error'}</p>
+                  <button onClick={() => retryJob(f.id)}
+                    className="mt-1.5 rounded-md border border-[#D7F3E1] bg-[#EDFAF1] px-2.5 py-1 text-[10.5px] font-bold text-[#1B7A44] transition hover:bg-[#D7F3E1]">
+                    ↻ Retry now
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {needsReview.length > 0 && (
           <section className="rounded-xl border border-[#F5E3BC] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
             <div className="flex items-center gap-2 border-b border-[#F5E3BC] px-3.5 py-2.5">

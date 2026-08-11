@@ -273,7 +273,12 @@ export async function POST(req: NextRequest) {
 
       // With real media capture below, an empty caption is genuinely empty —
       // the database builds the "📄 CV.pdf" preview from the file itself.
-      const text = str(message.message) ?? '';
+      // Interakt sometimes serialises an ABSENT caption as the literal string
+      // "None" (Python's None, stringified). That is not something the person
+      // typed — showing it in the bubble, or feeding it to the intent brain,
+      // is wrong both times. Treat it as empty.
+      const rawText = str(message.message) ?? '';
+      const text = /^(none|null|undefined)$/i.test(rawText.trim()) ? '' : rawText;
 
       const wsId = await workspaceId();
       log.workspace_id = wsId;
