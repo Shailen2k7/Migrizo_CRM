@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { MessageCircleQuestion, Plus, Trash2, Loader2, ShieldAlert } from 'lucide-react';
+import { FIELD, FIELD_AREA } from '@/components/whatsapp/ui';
 
 interface Faq {
   id: string; title: string; question: string; keywords: string[]; answer: string;
@@ -75,8 +76,11 @@ export default function QaTab({ workspaceId }: { workspaceId: string }) {
     </div>;
   }
 
+  const totalAnswered = faqs.reduce((a, f) => a + f.times_used, 0);
+  const mostAsked = faqs.reduce<Faq | null>((best, f) => (f.times_used > (best?.times_used ?? 0) ? f : best), null);
+
   return (
-    <div className="mx-auto max-w-[820px] px-5 py-4">
+    <div className="mx-auto max-w-[1380px] px-5 py-4">
       <div className="mb-3 flex items-center gap-3 rounded-xl border border-[#E8EAF0] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(20,24,40,.04)]">
         <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] border border-indigo-100 bg-indigo-soft">
           <MessageCircleQuestion className="h-4 w-4 text-indigo-700" />
@@ -84,7 +88,7 @@ export default function QaTab({ workspaceId }: { workspaceId: string }) {
         <div className="min-w-0 flex-1">
           <h2 className="m-0 text-[13.5px] font-semibold tracking-[-.015em]">Q&amp;A — teach the system your answers</h2>
           <p className="m-0 mt-px text-[11.8px] leading-[1.5] text-muted">
-            Write a question the way leads ask it, and the exact answer to send. The AI picks the closest saved question and replies with <b>your</b> words — it never invents. No match → the chat waits for your team. The more you add, the more it handles.
+            Write a question the way leads ask it, and the exact answer to send. The AI picks the closest saved question and replies with <b>your</b> words — it never invents.
           </p>
         </div>
         <button onClick={() => setAdding(true)}
@@ -93,19 +97,73 @@ export default function QaTab({ workspaceId }: { workspaceId: string }) {
         </button>
       </div>
 
-      <div className="mb-3 flex items-start gap-2 rounded-lg border border-[#F8E2B8] bg-[#FEF6E6] px-3.5 py-2.5">
-        <ShieldAlert className="mt-px h-3.5 w-3.5 flex-shrink-0 text-[#A25D07]" />
-        <p className="m-0 text-[11.5px] leading-[1.5] text-[#8A5606]">
-          <b>Always a human, never the robot:</b> discounts &amp; price negotiation, complaints, “I&apos;m ready to pay”, and guarantee questions. These are flagged to your team even if a matching Q&amp;A exists.
-        </p>
+      {/* KPI strip */}
+      <div className="mb-3.5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <QaKpi label="Saved answers" value={String(faqs.length)} />
+        <QaKpi label="Auto-answered" value={String(totalAnswered)} note="all time" />
+        <QaKpi label="Active" value={String(faqs.filter((f) => f.active).length)} />
+        <QaKpi label="Most asked" value={mostAsked && mostAsked.times_used > 0 ? mostAsked.title : '—'} small />
       </div>
 
-      {adding && <Editor onSave={(f) => save(f, true)} onCancel={() => setAdding(false)} />}
+      <div className="grid grid-cols-1 items-start gap-3.5 xl:grid-cols-[minmax(0,1fr)_372px]">
+        <div>
+          {adding && <Editor onSave={(f) => save(f, true)} onCancel={() => setAdding(false)} />}
+          {faqs.length === 0 && !adding && (
+            <p className="m-0 py-8 text-center text-[12px] text-faint">No Q&amp;As yet — add your first one above.</p>
+          )}
+          <div className="grid grid-cols-1 gap-3 2xl:grid-cols-2">
+            {faqs.map((f) => <Card key={f.id} faq={f} onSave={save} onDelete={() => remove(f.id)} />)}
+          </div>
+        </div>
 
-      {faqs.length === 0 && !adding && (
-        <p className="m-0 py-8 text-center text-[12px] text-faint">No Q&amp;As yet — add your first one above.</p>
-      )}
-      {faqs.map((f) => <Card key={f.id} faq={f} onSave={save} onDelete={() => remove(f.id)} />)}
+        <aside className="grid gap-3 xl:sticky xl:top-4">
+          <section className="rounded-xl border border-[#F5E3BC] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+            <div className="flex items-center gap-2 border-b border-[#F5E3BC] px-3.5 py-2.5">
+              <ShieldAlert className="h-3.5 w-3.5 text-[#A25D07]" />
+              <h3 className="m-0 text-[12.6px] font-semibold">Always a human, never the robot</h3>
+            </div>
+            <div className="px-3.5 py-1.5">
+              {['💸 Discounts & price negotiation', '😠 Complaints or frustration', '💳 “I\u2019m ready to pay”', '🛡️ Guarantee / success-rate questions'].map((r) => (
+                <div key={r} className="border-b border-dashed border-[#F5E3BC] py-2 text-[11.6px] text-[#8A5606] last:border-b-0">{r}</div>
+              ))}
+            </div>
+            <div className="border-t border-[#F5E3BC] px-3.5 py-2 text-[10.8px] text-[#8A5606]">
+              Flagged to your team instantly — even if a matching Q&amp;A exists.
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-[#E8EAF0] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+            <div className="border-b border-[#F0F1F5] px-3.5 py-2.5">
+              <h3 className="m-0 text-[12.6px] font-semibold">How it works</h3>
+            </div>
+            <div className="px-3.5 py-1.5">
+              {[
+                'A lead\u2019s message comes in — any chat, any hour. Their message opens the reply window.',
+                'AI finds the closest saved question and sends your answer, word-for-word.',
+                'No match? The chat is flagged for your team. Silence beats guessing.',
+                'Each answer fires max once per chat per day — no spam, ever.',
+              ].map((t, i) => (
+                <div key={i} className="flex gap-2.5 py-2 text-[11.6px] leading-[1.5] text-ink-2">
+                  <span className="flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full bg-[#EDFAF1] text-[10px] font-bold text-[#1B7A44]">{i + 1}</span>
+                  {t}
+                </div>
+              ))}
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function QaKpi({ label, value, note, small }: { label: string; value: string; note?: string; small?: boolean }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-[#E8EAF0] bg-white px-3.5 py-2.5 shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+      <div className="min-w-0">
+        <span className="block text-[10px] font-bold uppercase tracking-[.05em] text-faint">{label}</span>
+        <b className={`block truncate leading-[1.2] tracking-[-.02em] ${small ? 'text-[13px]' : 'text-[19px]'}`}>{value}</b>
+      </div>
+      {note && <span className="ml-auto rounded-md bg-[#EDFAF1] px-2 py-0.5 text-[10px] font-bold text-[#1B7A44]">{note}</span>}
     </div>
   );
 }
@@ -151,16 +209,16 @@ function Editor({ faq, onSave, onCancel }: {
     <div className="mb-2 rounded-xl border border-[#2FB463] bg-[#FBFEFC] px-3.5 py-3 shadow-[0_0_0_2px_#EDFAF1]">
       <div className="mb-1.5 grid gap-1.5 sm:grid-cols-2">
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Topic label — e.g. Price / total cost"
-          className="rounded-lg border border-[#DDE0E9] px-2 py-1.5 text-[12px] outline-none focus:border-[#2FB463]" />
+          className={FIELD} />
         <input value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="Optional trigger words — price, cost, fee"
-          className="rounded-lg border border-[#DDE0E9] px-2 py-1.5 text-[12px] outline-none focus:border-[#2FB463]" />
+          className={FIELD} />
       </div>
       <input value={question} onChange={(e) => setQuestion(e.target.value)}
         placeholder='The question, as leads ask it — "How much does it cost? What do I need to spend?"'
-        className="mb-1.5 w-full rounded-lg border border-[#DDE0E9] px-2 py-1.5 text-[12px] outline-none focus:border-[#2FB463]" />
+        className={`${FIELD} mb-1.5`} />
       <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={4}
         placeholder="The reply that goes out, word-for-word. Tokens allowed: {{name}}, {{pdf}}, {{video}}, {{booking}}"
-        className="mb-1.5 w-full resize-y rounded-lg border border-[#DDE0E9] px-2 py-1.5 text-[12px] leading-[1.5] outline-none focus:border-[#2FB463]" />
+        className={`${FIELD_AREA} mb-1.5`} />
       <div className="flex items-center gap-2.5">
         <label className="flex cursor-pointer items-center gap-1.5 text-[11.5px] text-muted">
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active

@@ -18,6 +18,7 @@ import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { WaSettings, WaStats } from '@/lib/whatsapp/types';
+import { FIELD } from '@/components/whatsapp/ui';
 
 interface Props {
   workspaceId: string;
@@ -130,7 +131,7 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-[14px]">
-      <div className="mx-auto grid max-w-[980px] grid-cols-1 gap-[14px] lg:grid-cols-2">
+      <div className="mx-auto grid max-w-[1380px] grid-cols-1 gap-[14px] lg:grid-cols-2 xl:grid-cols-3">
 
         {/* ── connection ── */}
         <Card icon={<PlugZap />} title="Connection" sub="The Interakt credential and your number">
@@ -192,17 +193,17 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
           <Row label="Daily cap (all sends)">
             <span className="flex items-center gap-[8px]">
               <input type="number" min={1} max={1000} value={cap} onChange={(e) => setCap(e.target.value)}
-                className="w-[80px] rounded-[8px] border border-[#DDE0E9] px-[9px] py-[6px] text-center text-[13px] font-semibold tabular-nums outline-none focus:border-[#2FB463]" />
+                className={`${FIELD} w-[80px] text-center font-bold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`} />
               <span className="text-[11.6px] text-muted">used today: <b className="tabular-nums">{stats?.sent_today ?? 0}</b></span>
             </span>
           </Row>
           <Row label="Send window (IST)">
             <span className="flex items-center gap-[7px]">
               <input type="time" value={winStart} onChange={(e) => setWinStart(e.target.value)}
-                className="rounded-[8px] border border-[#DDE0E9] px-[8px] py-[6px] text-[13px] tabular-nums outline-none focus:border-[#2FB463]" />
+                className={`${FIELD} w-[112px] cursor-pointer font-semibold tabular-nums`} />
               <span className="text-muted">to</span>
               <input type="time" value={winEnd} onChange={(e) => setWinEnd(e.target.value)}
-                className="rounded-[8px] border border-[#DDE0E9] px-[8px] py-[6px] text-[13px] tabular-nums outline-none focus:border-[#2FB463]" />
+                className={`${FIELD} w-[112px] cursor-pointer font-semibold tabular-nums`} />
             </span>
           </Row>
           <p className="m-0 mt-[6px] text-[11.4px] leading-[1.55] text-faint">

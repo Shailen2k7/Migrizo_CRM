@@ -17,6 +17,7 @@ import {
   FileText, Video, CalendarClock, Sparkles, BellRing, Moon,
 } from 'lucide-react';
 import type { WaTemplate } from '@/lib/whatsapp/types';
+import { FIELD_AREA, Select, IconInput, NumField } from '@/components/whatsapp/ui';
 
 interface AutoSettings {
   workspace_id: string; enabled: boolean; sources: string[];
@@ -153,7 +154,7 @@ export default function AutomationTab({
     .reduce((a, [, n]) => a + n, 0);
 
   return (
-    <div className="mx-auto max-w-[820px] px-5 py-4">
+    <div className="mx-auto max-w-[1380px] px-5 py-4">
 
       {/* master switch */}
       <div className="mb-3 flex items-center gap-3 rounded-xl border border-[#E8EAF0] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(20,24,40,.04)]">
@@ -181,8 +182,23 @@ export default function AutomationTab({
         </div>
       )}
 
+      {/* KPI strip — the state of the machine at a glance */}
+      <div className="mb-3.5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <Kpi icon={<Zap className="h-3.5 w-3.5 text-[#1B7A44]" />} bg="bg-[#EDFAF1]" label="In journey" value={inFlight} />
+        <Kpi icon={<Play className="h-3.5 w-3.5 text-indigo-700" />} bg="bg-indigo-soft" label="Waiting reply"
+          value={(ov.counts['awaiting_reply'] ?? 0) + (ov.counts['welcome_queued'] ?? 0)} />
+        <Kpi icon={<Flame className="h-3.5 w-3.5 text-[#D9541E]" />} bg="bg-[#FFF4EE]" label="Hot · will pay"
+          value={ov.journeys.filter((x) => x.priority && !['booked','stopped','not_eligible'].includes(x.stage)).length} />
+        <Kpi icon={<CalendarClock className="h-3.5 w-3.5 text-[#1B7A44]" />} bg="bg-[#EDFAF1]" label="Meetings booked"
+          value={ov.counts['booked'] ?? 0} />
+      </div>
+
+      {/* config left · live operations right */}
+      <div className="grid grid-cols-1 items-start gap-3.5 xl:grid-cols-[minmax(0,1fr)_372px]">
+      <div>
+
       {/* the journey */}
-      <div className="relative mb-4">
+      <div className="relative">
         <div className="absolute bottom-5 left-[17px] top-5 w-px bg-[#E8EAF0]" />
 
         <Step n={1} icon={<Sparkles className="h-3.5 w-3.5" />} title="A lead arrives, already sorted by the ad"
@@ -206,10 +222,10 @@ export default function AutomationTab({
         <Step n={2} icon={<Zap className="h-3.5 w-3.5" />} title="The welcome goes out within a minute"
           sub="An approved template — it can reach people who never messaged us.">
           <div className="mb-2 flex items-center gap-2">
-            <select
-              value={cfg.welcome_template_code}
-              onChange={(e) => edit({ welcome_template_code: e.target.value })}
-              className="rounded-lg border border-[#DDE0E9] bg-white px-2 py-1.5 text-[12px] font-medium outline-none focus:border-[#2FB463]"
+            <Select
+              value={cfg.welcome_template_code} ariaLabel="Welcome template"
+              onChange={(v) => edit({ welcome_template_code: v })}
+              className="w-[380px] max-w-full"
             >
               {approvedTemplates.map((t) => (
                 <option key={t.id} value={t.code}>{t.code} — {t.name}</option>
@@ -217,7 +233,7 @@ export default function AutomationTab({
               {!approvedTemplates.some((t) => t.code === cfg.welcome_template_code) && (
                 <option value={cfg.welcome_template_code}>{cfg.welcome_template_code}</option>
               )}
-            </select>
+            </Select>
             {welcomeTpl && (
               <span className={[
                 'rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase',
@@ -256,16 +272,16 @@ export default function AutomationTab({
             <span className="text-muted">then</span>
             <HoursInput value={cfg.reminder_hours_2} onChange={(v) => edit({ reminder_hours_2: v })} />
             <span className="text-muted">hours · still silent →</span>
-            <select
-              value={cfg.cold_sequence_id ?? ''}
-              onChange={(e) => edit({ cold_sequence_id: e.target.value || null })}
-              className="rounded-lg border border-[#DDE0E9] bg-white px-2 py-1.5 text-[12px] outline-none focus:border-[#2FB463]"
+            <Select
+              value={cfg.cold_sequence_id ?? ''} ariaLabel="Cold sequence"
+              onChange={(v) => edit({ cold_sequence_id: v || null })}
+              className="w-[250px] max-w-full"
             >
               <option value="">— no cold sequence, just stop —</option>
               {ov.sequences.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}{s.status !== 'active' ? ` (${s.status})` : ''}</option>
               ))}
-            </select>
+            </Select>
           </div>
           <p className="m-0 mt-1.5 text-[10.8px] text-faint">Only leads in the 4 eligible fields are enrolled — off-field silent leads simply stop.</p>
         </Step>
@@ -277,7 +293,7 @@ export default function AutomationTab({
       </div>
 
       {dirty && (
-        <div className="sticky bottom-3 z-10 mb-4 flex items-center gap-3 rounded-xl border border-[#DDE0E9] bg-white px-3.5 py-2.5 shadow-[0_8px_24px_-8px_rgba(20,24,40,.22)]">
+        <div className="sticky bottom-3 z-10 mt-3.5 flex items-center gap-3 rounded-xl border border-[#DDE0E9] bg-white px-3.5 py-2.5 shadow-[0_8px_24px_-8px_rgba(20,24,40,.22)]">
           <span className="text-[11.8px] text-muted">Unsaved changes</span>
           <button onClick={save} disabled={saving}
             className="ml-auto rounded-lg bg-[#25A25A] px-3.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-[#1B7A44] disabled:opacity-50">
@@ -285,60 +301,98 @@ export default function AutomationTab({
           </button>
         </div>
       )}
+      </div>
 
-      {/* needs decision */}
-      {needsReview.length > 0 && (
-        <section className="mb-4 rounded-xl border border-[#F8E2B8] bg-white px-4 py-3">
-          <h3 className="m-0 text-[13px] font-semibold">Needs your decision <span className="text-[#A25D07]">({needsReview.length})</span></h3>
-          <p className="m-0 mb-2 text-[11.5px] text-muted">Outside the 4 GTV fields, or flagged for review. One click decides — Eligible sends the guide &amp; booking link.</p>
-          {needsReview.map((jr) => (
-            <div key={jr.id} className="mb-1.5 flex items-center gap-2.5 rounded-lg border border-[#E8EAF0] bg-[#F7F8FA] px-3 py-2">
-              <div className="min-w-0 flex-1">
-                <b className="text-[12.2px]">{jr.lead_name}</b>
-                <span className="ml-2 text-[10.8px] capitalize text-muted">{jr.field ?? 'field unknown'}{jr.readiness ? ` · pays: ${jr.readiness}` : ''}</span>
-              </div>
-              <button onClick={() => decide(jr.id, true)} disabled={deciding === jr.id}
-                className="flex items-center gap-1 rounded-md border border-[#D7F3E1] bg-[#EDFAF1] px-2.5 py-1 text-[11.3px] font-semibold text-[#1B7A44] transition hover:bg-[#D7F3E1] disabled:opacity-50">
-                <Check className="h-3 w-3" /> Eligible
-              </button>
-              <button onClick={() => decide(jr.id, false)} disabled={deciding === jr.id}
-                className="flex items-center gap-1 rounded-md border border-[#F6D5D2] bg-[#FDEEEE] px-2.5 py-1 text-[11.3px] font-semibold text-[#B3423A] transition hover:bg-[#F6D5D2] disabled:opacity-50">
-                <X className="h-3 w-3" /> Not eligible
-              </button>
+      {/* ── the operations rail: watch the machine while you configure it ── */}
+      <aside className="grid gap-3 xl:sticky xl:top-4">
+        {needsReview.length > 0 && (
+          <section className="rounded-xl border border-[#F5E3BC] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+            <div className="flex items-center gap-2 border-b border-[#F5E3BC] px-3.5 py-2.5">
+              <h3 className="m-0 text-[12.6px] font-semibold">Needs your decision</h3>
+              <span className="rounded-full border border-[#F5E3BC] bg-[#FEF6E6] px-2 py-0.5 text-[10.3px] font-bold text-[#A25D07]">{needsReview.length}</span>
+              <span className="ml-auto text-[10.5px] text-faint">one click decides</span>
             </div>
-          ))}
-        </section>
-      )}
+            <div className="px-3.5 py-2.5">
+              {needsReview.map((jr) => (
+                <div key={jr.id} className="mb-1.5 flex items-center gap-2 rounded-lg border border-[#F0F1F5] bg-[#FBFBFC] px-2.5 py-2 last:mb-0">
+                  <div className="min-w-0 flex-1">
+                    <b className="block truncate text-[11.8px]">{jr.lead_name}</b>
+                    <span className="block text-[10.3px] capitalize text-faint">{jr.field ?? 'field unknown'}{jr.readiness ? ` · pays: ${jr.readiness}` : ''}</span>
+                  </div>
+                  <button onClick={() => decide(jr.id, true)} disabled={deciding === jr.id}
+                    className="flex items-center gap-1 rounded-md border border-[#D7F3E1] bg-[#EDFAF1] px-2 py-1 text-[10.5px] font-bold text-[#1B7A44] transition hover:bg-[#D7F3E1] disabled:opacity-50">
+                    <Check className="h-3 w-3" /> Eligible
+                  </button>
+                  <button onClick={() => decide(jr.id, false)} disabled={deciding === jr.id}
+                    className="flex items-center gap-1 rounded-md border border-[#F6D5D2] bg-[#FDEEEE] px-2 py-1 text-[10.5px] font-bold text-[#B3423A] transition hover:bg-[#F6D5D2] disabled:opacity-50">
+                    <X className="h-3 w-3" /> No
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
-      {/* live feed */}
-      <section className="rounded-xl border border-[#E8EAF0] bg-white px-4 py-3">
-        <div className="mb-2 flex items-center gap-2.5">
-          <h3 className="m-0 text-[13px] font-semibold">Leads in the journey</h3>
-          <span className="text-[11px] text-faint">{inFlight} in flight</span>
-          <button onClick={load} className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-muted transition hover:text-ink">
-            <RefreshCw className="h-2.5 w-2.5" /> Refresh
-          </button>
-        </div>
-        {ov.journeys.length === 0 ? (
-          <p className="m-0 py-5 text-center text-[11.8px] text-faint">No journeys yet — the next Meta lead appears here within a minute.</p>
-        ) : (
-          <div className="grid gap-1">
-            {ov.journeys.map((jr) => {
+        <section className="rounded-xl border border-[#E8EAF0] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+          <div className="flex items-center gap-2 border-b border-[#F0F1F5] px-3.5 py-2.5">
+            <h3 className="m-0 text-[12.6px] font-semibold">Live journey feed</h3>
+            <span className="text-[10.5px] text-faint">auto-refreshes</span>
+            <button onClick={load} className="ml-auto flex items-center gap-1 text-[10.8px] font-semibold text-muted transition hover:text-ink">
+              <RefreshCw className="h-2.5 w-2.5" /> Refresh
+            </button>
+          </div>
+          <div className="px-3.5 py-1.5">
+            {ov.journeys.length === 0 ? (
+              <p className="m-0 py-4 text-center text-[11.5px] text-faint">No journeys yet — the next Meta lead appears here within a minute.</p>
+            ) : ov.journeys.slice(0, 14).map((jr) => {
               const meta = STAGE_META[jr.stage] ?? STAGE_META.stopped;
               return (
-                <div key={jr.id} className="flex items-center gap-2.5 rounded-md border border-[#F0F1F5] px-2.5 py-1.5">
-                  {jr.priority && <Flame className="h-3 w-3 flex-shrink-0 text-[#D9541E]" />}
-                  <b className="w-[150px] flex-shrink-0 truncate text-[12px]">{jr.lead_name}</b>
-                  <span className={`rounded-full border px-2 py-0.5 text-[10.3px] font-semibold ${meta.cls}`}>{meta.label}</span>
-                  {jr.field && <span className="hidden text-[10.8px] capitalize text-muted sm:inline">{jr.field}</span>}
-                  {jr.reminders_sent > 0 && <span className="text-[10.3px] text-faint">reminded ×{jr.reminders_sent}</span>}
-                  <span className="ml-auto flex-shrink-0 text-[10.3px] text-faint">{timeAgo(jr.updated_at)}</span>
+                <div key={jr.id} className="flex items-center gap-2 border-b border-[#F0F1F5] py-[7px] last:border-b-0">
+                  {jr.priority
+                    ? <Flame className="h-3 w-3 flex-shrink-0 text-[#D9541E]" />
+                    : <span className="w-3 flex-shrink-0" />}
+                  <b className="w-[112px] flex-shrink-0 truncate text-[11.8px]">{jr.lead_name}</b>
+                  <span className={`truncate rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.cls}`}>{meta.label}</span>
+                  <span className="ml-auto flex-shrink-0 text-[9.8px] text-faint">{timeAgo(jr.updated_at)}</span>
                 </div>
               );
             })}
           </div>
-        )}
-      </section>
+        </section>
+
+        <section className="rounded-xl border border-[#E8EAF0] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+          <div className="border-b border-[#F0F1F5] px-3.5 py-2.5">
+            <h3 className="m-0 text-[12.6px] font-semibold">Totals</h3>
+          </div>
+          <div className="px-3.5 py-1">
+            {[
+              ['Meetings booked', ov.counts['booked'] ?? 0],
+              ['Booking link sent', ov.counts['waiting_booking'] ?? 0],
+              ['Moved to Junk', ov.counts['not_eligible'] ?? 0],
+              ['In cold sequence / stopped', ov.counts['stopped'] ?? 0],
+            ].map(([k, v]) => (
+              <div key={String(k)} className="flex items-center justify-between border-b border-[#F0F1F5] py-2 text-[11.8px] last:border-b-0">
+                <span className="text-muted">{k}</span><b>{v}</b>
+              </div>
+            ))}
+          </div>
+        </section>
+      </aside>
+      </div>
+    </div>
+  );
+}
+
+function Kpi({ icon, bg, label, value }: {
+  icon: React.ReactNode; bg: string; label: string; value: number;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-[#E8EAF0] bg-white px-3.5 py-2.5 shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+      <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px] ${bg}`}>{icon}</span>
+      <div>
+        <span className="block text-[10px] font-bold uppercase tracking-[.05em] text-faint">{label}</span>
+        <b className="block text-[19px] leading-[1.15] tracking-[-.02em]">{value}</b>
+      </div>
     </div>
   );
 }
@@ -378,11 +432,9 @@ function LinkField({ icon, label, value, onChange, placeholder }: {
   icon: React.ReactNode; label: string; value: string; onChange: (v: string) => void; placeholder: string;
 }) {
   return (
-    <label className="flex items-center gap-2">
-      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-[#E8EAF0] bg-[#F7F8FA] text-muted">{icon}</span>
+    <label className="flex items-center gap-2.5">
       <span className="w-[128px] flex-shrink-0 text-[11.5px] font-semibold text-ink-2">{label}</span>
-      <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-[#DDE0E9] px-2 py-1.5 text-[12px] outline-none transition focus:border-[#2FB463] focus:shadow-[0_0_0_2px_#EDFAF1]" />
+      <IconInput icon={icon} value={value} onChange={onChange} placeholder={placeholder} ariaLabel={label} />
     </label>
   );
 }
@@ -393,15 +445,11 @@ function MsgField({ label, value, onChange }: { label: string; value: string; on
       <span className="mb-0.5 block text-[9.5px] font-bold uppercase tracking-[.06em] text-faint">{label}</span>
       <textarea value={value} rows={Math.min(4, Math.max(2, value.split('\n').length))}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full resize-y rounded-lg border border-[#DDE0E9] px-2 py-1.5 text-[12px] leading-[1.5] outline-none transition focus:border-[#2FB463] focus:shadow-[0_0_0_2px_#EDFAF1]" />
+        className={FIELD_AREA} />
     </div>
   );
 }
 
 function HoursInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return (
-    <input type="number" min={1} max={168} value={value}
-      onChange={(e) => onChange(Math.max(1, Math.min(168, Number(e.target.value) || 24)))}
-      className="w-[54px] rounded-lg border border-[#DDE0E9] px-1.5 py-1.5 text-center text-[12px] font-semibold outline-none focus:border-[#2FB463]" />
-  );
+  return <NumField value={value} onChange={onChange} min={1} max={168} />;
 }
