@@ -228,7 +228,15 @@ export default function SequencesTab({ workspaceId, templates, leads, overview, 
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex min-h-0 flex-1 gap-[14px] p-[14px]">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* One-line cheat-sheet — sequences explained at a glance, always visible. */}
+      <div className="mx-[10px] mt-[10px] flex flex-wrap items-center gap-x-4 gap-y-1 rounded-[10px] border border-[#E8EAF0] bg-white px-3 py-2 text-[11.3px] leading-[1.5] text-muted shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+        <b className="text-[11.5px] text-ink-2">How sequences work:</b>
+        <span><b className="text-ink-2">1.</b> Build steps → template + days apart</span>
+        <span><b className="text-ink-2">2.</b> Enrol leads → who gets it</span>
+        <span><b className="text-ink-2">3.</b> Runs itself → 10:00–19:00 only, stops when they reply, book or say STOP</span>
+      </div>
+      <div className="flex min-h-0 flex-1 gap-[10px] p-[10px]">
       {/* ── left: sequence list ── */}
       <div className="flex w-[300px] flex-shrink-0 flex-col rounded-[14px] border border-[#E8EAF0] bg-white shadow-[0_1px_2px_rgba(20,24,40,.06)]">
         <div className="flex-shrink-0 border-b border-[#E8EAF0] p-[14px]">
@@ -530,6 +538,7 @@ export default function SequencesTab({ workspaceId, templates, leads, overview, 
           }}
         />
       )}
+      </div>
     </div>
   );
 }

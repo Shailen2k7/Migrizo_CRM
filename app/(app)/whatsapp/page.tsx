@@ -30,6 +30,8 @@ import { toast } from 'sonner';
 import LeadPanel, { type SeqState } from '@/components/whatsapp/lead-panel';
 import TemplatePicker from '@/components/whatsapp/template-picker';
 import NewConversation from '@/components/whatsapp/new-conversation';
+import AutomationTab from '@/components/whatsapp/automation-tab';
+import QaTab from '@/components/whatsapp/qa-tab';
 import SequencesTab, { type SeqOverviewRow } from '@/components/whatsapp/sequences-tab';
 import TemplatesTab from '@/components/whatsapp/templates-tab';
 import SettingsTab from '@/components/whatsapp/settings-tab';
@@ -46,13 +48,15 @@ import {
 const EMOJI = ['👍','🙏','😊','🎉','✅','📄','📞','🇬🇧','🚀','💡','⏰','❤️'];
 
 type Filter = 'all' | 'unread' | 'attention' | 'open' | 'failed';
-type TabKey = 'inbox' | 'sequences' | 'templates' | 'settings';
+type TabKey = 'inbox' | 'automation' | 'qa' | 'sequences' | 'templates' | 'settings';
 
 const SUB_TABS: Array<[TabKey, string, React.ReactNode]> = [
-  ['inbox', 'Inbox', <MessageSquare key="i" className="h-[14px] w-[14px]" />],
-  ['sequences', 'Sequences', <Zap key="s" className="h-[14px] w-[14px]" />],
-  ['templates', 'Templates', <FileText key="t" className="h-[14px] w-[14px]" />],
-  ['settings', 'Settings', <Settings2 key="g" className="h-[14px] w-[14px]" />],
+  ['inbox', 'Inbox', <MessageSquare key="i" className="h-[13px] w-[13px]" />],
+  ['automation', 'Automation', <Bot key="a" className="h-[13px] w-[13px]" />],
+  ['qa', 'Q&A', <ShieldCheck key="q" className="h-[13px] w-[13px]" />],
+  ['sequences', 'Sequences', <Zap key="s" className="h-[13px] w-[13px]" />],
+  ['templates', 'Templates', <FileText key="t" className="h-[13px] w-[13px]" />],
+  ['settings', 'Settings', <Settings2 key="g" className="h-[13px] w-[13px]" />],
 ];
 const FILTERS: [Filter, string][] = [
   ['all', 'All'], ['unread', 'Unread'], ['attention', 'Needs reply'], ['open', 'Open'], ['failed', 'Failed'],
@@ -111,7 +115,7 @@ export default function WhatsAppPage() {
   const [tab, setTabState] = useState<TabKey>('inbox');
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    if (t === 'sequences' || t === 'templates' || t === 'settings') setTabState(t);
+    if (t === 'automation' || t === 'qa' || t === 'sequences' || t === 'templates' || t === 'settings') setTabState(t);
   }, []);
   const setTab = useCallback((t: TabKey) => {
     setTabState(t);
@@ -679,11 +683,11 @@ export default function WhatsAppPage() {
   return (
     <div className="flex h-[calc(100vh-56px)] flex-col bg-[#EEF0F4]">
       {/* top bar — the approved design: wordmark · centred segmented tabs · presence pill */}
-      <div className="relative flex h-[56px] flex-shrink-0 items-center gap-3 border-b border-[#E8EAF0] bg-white px-[18px]">
+      <div className="relative flex h-[46px] flex-shrink-0 items-center gap-2.5 border-b border-[#E8EAF0] bg-white px-[14px]">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="text-[15px] font-bold tracking-tight text-[#0F1728]">WhatsApp</span>
+          <span className="text-[13.5px] font-bold tracking-tight text-[#0F1728]">WhatsApp</span>
           <span className="text-[#E8EAF0]">|</span>
-          <span className="truncate text-[15px] font-medium text-[#7A8095]">
+          <span className="truncate text-[13px] font-medium text-[#7A8095]">
             {SUB_TABS.find(([k]) => k === tab)?.[1] ?? 'Inbox'}
           </span>
         </div>
@@ -714,7 +718,7 @@ export default function WhatsAppPage() {
                 onClick={() => { const all = focusOn; setHideList(!all); setHidePanel(!all); }}
                 title="Focus mode  (F)"
                 className={cn(
-                  'inline-flex flex-shrink-0 items-center gap-[7px] rounded-full border px-[13px] py-[7px] text-[12.4px] font-semibold transition',
+                  'inline-flex flex-shrink-0 items-center gap-[6px] rounded-full border px-[11px] py-[5px] text-[11.8px] font-semibold transition',
                   focusOn ? 'border-ink bg-ink text-white' : 'border-[#DDE0E9] bg-white text-ink-2 hover:border-[#2FB463] hover:bg-[#EDFAF1] hover:text-[#1B7A44]'
                 )}
               >
@@ -728,6 +732,16 @@ export default function WhatsAppPage() {
         </div>
       </div>
 
+      {tab === 'automation' && (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <AutomationTab workspaceId={workspace.id} templates={templates} />
+        </div>
+      )}
+      {tab === 'qa' && (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <QaTab workspaceId={workspace.id} />
+        </div>
+      )}
       {tab === 'sequences' && (
         <SequencesTab
           workspaceId={workspace.id}
@@ -841,13 +855,13 @@ export default function WhatsAppPage() {
                   onMouseEnter={() => prefetchThreads(supabase, [c.id], 1)}
                   title="Double-click to open in its own window"
                   className={cn(
-                    'flex w-full items-start gap-3 p-3 text-left transition-colors duration-150',
+                    'flex w-full items-start gap-2.5 px-2.5 py-2 text-left transition-colors duration-150',
                     on
                       ? 'border-l-[3px] border-l-[#25A25A] bg-[#EDFAF1]'
                       : 'border-l-[3px] border-l-transparent hover:bg-[#F9FAFB]'
                   )}>
                   <span
-                    className="mt-[2px] flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-[12.5px] font-semibold text-white"
+                    className="mt-[2px] flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
                     style={{ background: avatarColor(c.lead_name) }}
                   >
                     {initials(c.lead_name)}
@@ -855,7 +869,7 @@ export default function WhatsAppPage() {
                   <span className="min-w-0 flex-1">
                   <span className="mb-1 flex items-baseline justify-between gap-2">
                     <span className={cn(
-                      'flex min-w-0 items-center gap-[7px] truncate text-[13.5px] text-[#0F1728]',
+                      'flex min-w-0 items-center gap-[6px] truncate text-[12.8px] text-[#0F1728]',
                       c.unread_count ? 'font-bold' : on ? 'font-semibold' : 'font-medium'
                     )}>
                       {c.lead_name}
@@ -887,7 +901,7 @@ export default function WhatsAppPage() {
         </div>
 
         {/* conversation + panel */}
-        <div className="flex min-w-0 flex-1 p-[14px]">
+        <div className="flex min-w-0 flex-1 p-[10px]">
           <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-[#E8EAF0] bg-white shadow-[0_1px_2px_rgba(20,24,40,.06)]">
             {!active ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted">
@@ -900,7 +914,7 @@ export default function WhatsAppPage() {
             ) : (
               <>
                 {/* header — 56px, quiet, per the approved design */}
-                <div className="flex h-[56px] flex-shrink-0 items-center justify-between border-b border-[#E8EAF0] bg-white px-6">
+                <div className="flex h-[46px] flex-shrink-0 items-center justify-between border-b border-[#E8EAF0] bg-white px-4">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#E9EDFF] text-[13px] font-semibold text-[#3323cc]">
                       {initials(active.lead_name)}
@@ -1122,7 +1136,7 @@ export default function WhatsAppPage() {
                             if (v && !sending) send(v);
                           }
                         }}
-                        className="block max-h-[130px] min-h-[60px] w-full resize-none border-0 bg-transparent p-3 text-[13px] leading-[1.6] outline-none placeholder:text-[#7A8095]"
+                        className="block max-h-[120px] min-h-[46px] w-full resize-none border-0 bg-transparent p-3 text-[13px] leading-[1.6] outline-none placeholder:text-[#7A8095]"
                       />
                       <div className="flex items-center justify-between rounded-b-lg border-t border-[#E8EAF0] bg-[#FAFBFC] p-2">
                         <div className="flex gap-1">

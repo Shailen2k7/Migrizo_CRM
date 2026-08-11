@@ -1,125 +1,99 @@
-# WhatsApp fix pack — 4 files
+# WhatsApp Lead Automation — the complete system, one go
 
-Upload these 4 files into your repo (same paths), then run the one migration.
+6 files. Upload to the same paths, run the one migration, redeploy. Done.
 
 ```
-supabase/migrations/049_whatsapp_clear_conversation.sql   NEW
-app/api/whatsapp/send/route.ts                            REPLACE
-components/whatsapp/template-picker.tsx                   REPLACE
-app/(app)/whatsapp/page.tsx                               REPLACE
+supabase/migrations/051_whatsapp_automation.sql       NEW — run in Supabase SQL Editor
+app/api/whatsapp/automation/drain/route.ts            NEW
+components/whatsapp/automation-tab.tsx                NEW
+components/whatsapp/qa-tab.tsx                        NEW
+components/whatsapp/sequences-tab.tsx                 REPLACE
+app/(app)/whatsapp/page.tsx                           REPLACE
 ```
 
-Then in Supabase → SQL Editor, paste and run `049_whatsapp_clear_conversation.sql`.
-It is idempotent — safe to run twice.
-
-`tsc --noEmit` clean. `next build` green. Migration applied twice on Postgres 16, 7 test paths pass.
-
----
-
-## PART 1 — Why you still can't send templates to existing chats
-
-There were **three** separate causes, all wearing the same disguise. The audit
-found the third one, and it is almost certainly your actual blocker.
-
-### Cause 1 — Meta approved them, but your CRM never heard about it
-
-Interakt approving a template does not write anything into your database. That
-only happens if Interakt's *template-status* webhook is switched on, and it
-isn't. So all 13 templates still sit at `meta_status = 'draft'` in the CRM, and
-the send route refuses anything not marked approved.
-
-**Fix:** WhatsApp → Templates tab → **"Mark all as approved in Meta"**. One click,
-once. There's a banner there now explaining it.
-
-### Cause 2 — The body text drifted between the CRM and Interakt
-
-Six of your templates have **zero** `{{1}}` placeholders in the CRM copy, while
-Interakt's copy of the same template has one. Interakt then rejects the send
-with *"Missing variable values… expected number of values are 1"* — technically
-accurate, completely unhelpful.
-
-**Fix:** Templates tab is now editable. Open Interakt, copy the body **exactly**
-as Meta approved it, paste it into the CRM, save. The CRM re-derives the
-variable list from the body on save, so the two stay in step. The picker now
-shows a `1 var` chip so a mismatch is visible before you press Send.
-
-### Cause 3 — "Daily cap reached (0 of 100)" was lying to you  ← the real one
-
-`whatsapp_can_send` folds three unrelated conditions — *credential connected*,
-*not paused*, *under the daily cap* — into a single `allowed` flag. The send
-route read that one flag and reported the last of the three. So a **disconnected
-Interakt credential** surfaced in the UI as *"Daily cap reached (0 of 100)"*,
-which sent you looking at limits instead of at the connection.
-
-The route now tests the three conditions separately and names the right one:
-
-| What's actually wrong | What you now see |
-|---|---|
-| Credential not verified on this deploy | `not_connected` — "press Test connection" |
-| Sending paused | `sending_paused` |
-| Genuinely over the cap | `cap_reached — 100 of 100` |
-
-**Fix:** Settings → WhatsApp → **Test connection**. If it goes green, sending
-works. `connected` is set by that test and is per-deploy — a Netlify redeploy
-resets it, which is why this bit you after a deploy.
-
-**Do these in order: 3, then 1, then 2.** Cause 3 blocks every send; the other
-two only block specific templates.
+`tsc` clean · `next build` green · migration applied twice on Postgres 16 ·
+**30 automated tests passing** (14 database, 16 routing/logic). No new env
+variables — it uses what's already in Netlify.
 
 ---
 
-## PART 2 — Close a chat and reopen it fresh
+## The flow you approved, exactly as built
 
-Chat header → **⋯** menu → two options.
+**① Lead arrives from the Meta ad** — already tagged with their field and
+whether they'll pay (your new Make.com intake). No CV scanning anywhere.
 
-**Clear messages** — wipes every message, keeps the contact in your inbox. Opens
-as an empty thread.
+**② Sorted at the door.** Field is tech / research / engineering / arts →
+eligible. Eligible AND willing to pay → 🔥 **priority: pushed to your phone
+the moment the welcome goes out**, so a human can jump in early. Any other
+field → still welcomed, but replies are handed to a human, never auto-promised.
 
-**Delete conversation** — removes the thread entirely. It disappears from the
-list and reappears blank the next time that number messages you, or you message
-them.
+**③ Welcome = `fresh_lead_01`** (changeable via a dropdown on the Automation
+tab). Goes out within a minute of the lead arriving.
 
-Both are admin-only (`is_campaign_admin`), both write an `activity` row with the
-message count, so a cleared chat still leaves an audit trail.
+**④ They reply** → eligible leads automatically get the **guide + video
+message, then the booking-link message**. Their reply opened the 24-hour
+window, so these always deliver.
 
-### Two decisions worth knowing about
+**⑤ No reply** → `fresh_lead_01` is re-sent at +24h and +48h (both timings
+editable). Still silent a day later → eligible fields are enrolled into the
+**cold sequence you pick from a dropdown**; off-field leads simply stop.
 
-**Opt-outs survive.** Clearing never touches `whatsapp_suppressions`. If someone
-sent STOP, they stay stopped. A clear is a housekeeping action, not a way to
-resurrect consent.
+**⑥ Meeting booked → everything stops.** The journey, queued messages, and
+any running sequences for that number.
 
-**Clear keeps `last_inbound_at`.** Meta's 24-hour customer-service window is a
-fact about the real world, not a row in your database. If clearing reset that
-timestamp, the CRM would think the window was shut while WhatsApp still had it
-open, and your free-form replies would start failing for no visible reason.
-*Delete* drops it along with the row — correct, because the next message
-genuinely re-opens the window.
+**∞ The Q&A brain** (its own new tab) — on every incoming message:
+1. Discounts/negotiation, complaints, "ready to pay", guarantees →
+   **never answered by the robot.** Chat flagged "Needs reply" + push.
+   This is decided by plain code before any AI runs.
+2. Matches a Q&A you saved → sends **your answer, word-for-word**. The AI
+   only picks which saved answer fits — it cannot compose.
+3. Casual chatter ("ok", "thanks", a file) → silence.
+4. A real question nothing covers → flagged + push. Silence beats guessing.
 
----
-
-## PART 3 — Audit findings
-
-**Fixed — the picker let you select an unsendable template.** It computed a
-`blocked` flag and then never used it. You could pick a draft or Meta-rejected
-template, press Send, and only find out at the server. Blocked templates are now
-disabled in the list with the reason on the row: *"Meta rejected this template"*,
-*"Not marked approved in this CRM"*, *"Retired"*.
-
-**Fixed — variable count was invisible until failure.** Each template now shows
-a `1 var` / `0 vars` chip, and a footer warning when a template has no variables
-(the usual sign of Cause 2 above).
-
-**Not a bug — "not delivered to maintain healthy ecosystem engagement."** That's
-Meta's per-recipient marketing frequency cap. It counts marketing messages that
-person received from *every* business, not just you, so it fires even on a day
-you sent five. Nothing to fix in code — send UTILITY-category templates to
-recently-active contacts, or wait it out.
+Four Q&As are pre-seeded, including the **price answer built from your GTV
+brochure** (£3,000 fixed fee · ~£4,000 government costs · ~£7,500/3yr ·
+~£9,500/5yr → free assessment call). The standard price question is
+auto-answered; the moment someone says "discount" or starts negotiating,
+rule 1 takes over and a human gets it.
 
 ---
 
-## After this
+## Setup — do these once, in order
 
-Sequences, caps, and the send window are already live. The lead automation we
-scoped (7 phases) is the next build. When you're ready I'll need from you:
-the profession list (eligible + auto-junk), 15–20 FAQs, the process PDF, the
-video link, the scheduler link, and the welcome message you want to use.
+1. **Supabase → SQL Editor** → run `051_whatsapp_automation.sql` (safe twice).
+2. Upload the 5 code files → deploy → **Settings → Test connection**
+   (resets on every deploy — always re-test after deploying).
+3. **Templates tab** → open `fresh_lead_01` and make sure the body matches
+   your Interakt copy EXACTLY (the migration seeds a sensible body marked
+   approved, but the variable count must match Interakt's or sends fail).
+4. **Automation tab** → paste the PDF link, video link, booking link →
+   pick your cold sequence in step 4 → flip the master switch ON.
+5. **Q&A tab** → read the 4 seeded answers, edit to your voice, add more.
+6. Test with **dry-run ON** (Settings): submit a test lead through Make,
+   watch it move through the Automation tab. Nothing leaves the CRM until
+   you turn dry-run off.
+
+## Where things surface
+
+- 🔥 Hot lead arrives → push: "Hot lead — willing to pay".
+- Wrong-field lead replies → push + "Needs your decision" list on the
+  Automation tab (one click: Eligible → assets go out / Not eligible → Junk).
+- Unknown question → push + "Needs reply" flag in the inbox.
+- Every automated send is in the chat thread and the lead's activity log.
+
+## Also in this bundle
+
+- **Compact design pass** on the WhatsApp module — Make-style density:
+  smaller chrome, tighter rows and paddings, same font, same Migrizo green.
+  The new Automation and Q&A tabs are born compact.
+- **Sequences tab** now opens with a one-line cheat-sheet of how it works.
+- The **sequences cron fix** from the audit is in the migration (sequences
+  used to have NO scheduler at all — now every 10 minutes).
+- Everything from the earlier packs (send fixes, clear/delete chat, editable
+  templates) is already in your repo and untouched.
+
+## Answers the robot will never give
+
+Discount or negotiation requests · complaints · payment handling ·
+guarantee/success-rate questions. These always reach a human, by design —
+a premium brand's hardest questions deserve a person.
