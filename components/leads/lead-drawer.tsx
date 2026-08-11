@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star, Pencil, Send, Inbox, Eye } from 'lucide-react';
+import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star, Pencil, Send, Inbox, Eye, ClipboardList } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { Lead, Note, Payment, LeadStage } from '@/lib/types';
-import { STAGE_META, MILESTONE_META, VISA_META, getVisaMeta } from '@/lib/types';
+import { STAGE_META, MILESTONE_META, getVisaMeta, INDUSTRY_LIST, INDUSTRY_META } from '@/lib/types';
 import { useApp } from '@/components/shared/app-provider';
 import { usePipelines, getStageColor } from '@/lib/pipelines';
 import { Select } from '@/components/shared/select';
@@ -15,7 +15,8 @@ import { AddFollowUpDialog } from '@/components/followups/add-followup-dialog';
 import { PaymentRow } from '@/components/payments/payment-row';
 import { ComposeDialog, LeadEmailThread, type LeadEmailRow } from '@/components/emails/compose-dialog';
 import { RoadmapTab } from '@/components/roadmap/roadmap-tab';
-import { IndustrySelector, IndustryChip } from '@/components/shared/industry-chip';
+import { IndustryChip } from '@/components/shared/industry-chip';
+import { READINESS_LIST, READINESS_META, getReadinessMeta, intakeEntries } from '@/lib/intake';
 import { initials, avatarColor, formatMoney, timeAgo, scoreColor, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { DocEditorModal } from '@/components/leads/doc-editor-modal';
@@ -223,6 +224,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const leadPayments: Payment[] = leadId ? payments.filter((p) => p.lead_id === leadId) : [];
   const leadCurrency = effectiveLead?.currency || 'INR';
   const leadFollowUps = useMemo(() => followUps.filter((f) => f.lead_id === leadId), [followUps, leadId]);
+  const intakeAnswers = useMemo(() => intakeEntries(effectiveLead?.intake), [effectiveLead?.intake]);
   const pendingFollowUps = leadFollowUps.filter((f) => f.status === 'pending').length;
   const open = !!leadId && !!effectiveLead;
 
@@ -245,6 +247,20 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                         <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.dot }} />{m.short}
                       </span>); })()}
                     <IndustryChip industry={effectiveLead.industry} size="xs" />
+                    {/* Readiness sits in the header, next to the route and the
+                        industry, because it is the one fact that changes how the
+                        call opens and it should be visible before the drawer is
+                        scrolled. */}
+                    {(() => {
+                      const m = getReadinessMeta(effectiveLead.investment_readiness);
+                      if (!m) return null;
+                      return (
+                        <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold flex-shrink-0"
+                          style={{ background: m.bg, color: m.fg }} title={`Ad form: ${m.label}`}>
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.dot }} />{m.short}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <div className="text-[12px] text-muted leading-tight mt-1 truncate">{[effectiveLead.phone, effectiveLead.email].filter(Boolean).join(' · ') || '—'}</div>
                 </div>
@@ -348,25 +364,55 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     <Row label="Full name">
                       <InlineText value={effectiveLead.full_name} onChange={(v) => setLeadPending({ full_name: v || '' })} placeholder="Full name" />
                     </Row>
-                    <Row label="Visa type">
+                    {/* Visa type used to live here as a pair of toggles. It moved to
+                        the Visa route tab, which states the fee structure and the
+                        journey that the setting actually changes — a two-click
+                        switch in a details list was too quiet for a field that
+                        rewrites the agreement, the process email and the invoice
+                        labels. */}
+                    <Row label="Industry">
+                      <div style={{ maxWidth: 220 }}>
+                        <Select<string>
+                          value={effectiveLead.industry || ''}
+                          onChange={(v) => setLeadPending({ industry: v || null })}
+                          options={[
+                            { value: '', label: 'Not set', color: 'hsl(var(--faint))' },
+                            ...INDUSTRY_LIST.map((k) => ({ value: k, label: INDUSTRY_META[k].label, color: INDUSTRY_META[k].ring })),
+                          ]}
+                          size="sm"
+                        />
+                      </div>
+                    </Row>
+                    <Row label="Can invest">
                       <div className="flex items-center gap-1.5 py-1">
-                        {(['gtv', 'ifv'] as const).map((k) => {
-                          const m = VISA_META[k];
-                          const on = (effectiveLead.visa_type || '').toLowerCase() === k || getVisaMeta(effectiveLead.visa_type) === m;
+                        {READINESS_LIST.map((k) => {
+                          const m = READINESS_META[k];
+                          const on = effectiveLead.investment_readiness === k;
                           return (
-                            <button key={k} type="button" onClick={() => setLeadPending({ visa_type: on ? null : k })}
-                              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold tracking-wide border transition-all"
-                              style={on ? { background: m.bg, color: m.fg, borderColor: m.dot } : { background: 'hsl(var(--surface))', color: 'hsl(var(--muted))', borderColor: 'hsl(var(--border))' }}
-                              title={m.full}>
+                            <button key={k} type="button"
+                              onClick={() => setLeadPending({ investment_readiness: on ? null : k })}
+                              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-semibold border transition-all"
+                              style={on
+                                ? { background: m.bg, color: m.fg, borderColor: m.dot }
+                                : { background: 'hsl(var(--surface))', color: 'hsl(var(--muted))', borderColor: 'hsl(var(--border))' }}
+                              title={m.label}>
                               <span className="w-1.5 h-1.5 rounded-full" style={{ background: on ? m.dot : 'hsl(var(--faint))' }} />{m.short}
                             </button>
                           );
                         })}
+                        {!effectiveLead.investment_readiness && (
+                          <span className="text-[11px] text-faint ml-1">not asked</span>
+                        )}
                       </div>
                     </Row>
-                    <Row label="Industry">
-                      <div className="py-1">
-                        <IndustrySelector value={effectiveLead.industry} onChange={(v) => setLeadPending({ industry: v })} size="sm" />
+                    <Row label="Source">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13px] text-ink-2">{effectiveLead.source || '—'}</span>
+                        {(effectiveLead.tags || []).includes('meta-lead') && (
+                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: '#EEF0FF', color: '#3C3489' }}>
+                            AD FORM
+                          </span>
+                        )}
                       </div>
                     </Row>
                     <Row label="Phone">
@@ -452,6 +498,30 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                           {memberNameById(effectiveLead.last_note_author_id)}<span className="text-muted"> · {timeAgo(effectiveLead.last_note_at)}</span>
                         </span>
                       </Row>
+                    )}
+
+                    {/* The answers in the person's own words. The two rows above
+                        are what automation reads; this is the source they were
+                        read from, so when a chip looks wrong the caller can see
+                        why in one glance instead of asking someone to check
+                        Meta. Rendered generically from the jsonb, so a question
+                        added to the ad form appears here on its own. */}
+                    {intakeAnswers.length > 0 && (
+                      <div className="mt-5 rounded-xl border border-border overflow-hidden">
+                        <div className="px-3.5 py-2 bg-surface-2 border-b border-border flex items-center gap-2">
+                          <ClipboardList className="w-3.5 h-3.5 text-muted" />
+                          <span className="text-[11.5px] font-semibold text-ink-2">Answers from the ad form</span>
+                          <span className="text-[10.5px] text-faint ml-auto">as submitted</span>
+                        </div>
+                        <div className="divide-y divide-border">
+                          {intakeAnswers.map((a) => (
+                            <div key={a.key} className="grid grid-cols-[150px_1fr] gap-2 px-3.5 py-2.5">
+                              <span className="text-[11.5px] text-muted">{a.label}</span>
+                              <span className="text-[12.5px] text-ink-2">{a.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}

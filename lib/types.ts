@@ -66,6 +66,12 @@ export interface Lead {
   won_at: string | null;
   tags: string[];
   industry: string | null;
+  // Ad-form intake (migration 050). investment_readiness is DERIVED and is what
+  // automation reads; intake holds the raw answers verbatim so a mapping change
+  // can always be re-run against the originals. NULL readiness means the
+  // question was never asked, which is not the same as 'no'.
+  investment_readiness?: 'yes' | 'maybe' | 'no' | null;
+  intake?: Record<string, unknown> | null;
   is_spotlight: boolean;
   created_at: string;
   created_by: string | null;

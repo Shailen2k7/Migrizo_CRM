@@ -7,18 +7,39 @@
 // insert the lead (bypassing RLS, since there is no logged-in user).
 //
 // Expected JSON body (exactly what Make sends):
-//   { "token": "...", "full_name": "...", "phone": "...", "email": "..." }
+//   {
+//     "token": "...", "full_name": "...", "phone": "...", "email": "...",
+//     "expertise": "...",              // "Field of expertise?" — Meta sends an array
+//     "investment_readiness": "..."    // "Readiness to invest?" — Meta sends an array
+//   }
+//
+// The two qualifying answers are stored TWICE, deliberately. The derived enums
+// (industry, investment_readiness) are what every queue filter, sequence
+// audience and report reads. The raw answers go to leads.intake untouched, so a
+// mapping mistake can never destroy the original and a question added to the
+// form tomorrow lands here with no code change. See lib/intake.ts.
 // =============================================================================
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { renderProcess } from '@/lib/email/branded';
+import { flattenAnswer, mapExpertise, mapReadiness } from '@/lib/intake';
+
+// Core fields the route understands. Anything else in the body is treated as an
+// extra ad-form answer and kept verbatim in leads.intake.
+const CORE_KEYS = new Set(['token', 'full_name', 'phone', 'email', 'visa_type', 'source']);
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   // ---- parse body ----------------------------------------------------------
-  let body: { token?: string; full_name?: string; phone?: string; email?: string; visa_type?: string; source?: string };
+  let body: {
+    token?: string; full_name?: string; phone?: string; email?: string;
+    visa_type?: string; source?: string;
+    // Meta sends these as arrays; flattenAnswer copes with array, string or "[]".
+    expertise?: unknown; investment_readiness?: unknown;
+    [k: string]: unknown;
+  };
   try {
     body = await req.json();
   } catch {
@@ -38,6 +59,18 @@ export async function POST(req: Request) {
   }
   const phone = (body.phone || '').trim() || null;
   const email = (body.email || '').trim() || null;
+
+  // ---- ad-form intake ------------------------------------------------------
+  // Raw first: every non-core key is kept exactly as it arrived, flattened only
+  // from Meta's array wrapper. Derived second, from that same raw text.
+  const intake: Record<string, string> = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (CORE_KEYS.has(k)) continue;
+    const flat = flattenAnswer(v);
+    if (flat) intake[k] = flat;
+  }
+  const industry = mapExpertise(body.expertise);
+  const readiness = mapReadiness(body.investment_readiness);
 
   // ---- service-role client (bypasses RLS) ----------------------------------
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -59,15 +92,32 @@ export async function POST(req: Request) {
   }
 
   // ---- dedupe by phone within the workspace --------------------------------
+  // A repeat submission is not nothing. The person filled the form a second
+  // time, possibly answering a question they skipped before, so the answers are
+  // folded into the lead we already have rather than thrown away with it. Only
+  // gaps are filled: a value a human has since corrected in the CRM is never
+  // overwritten by an old ad-form answer.
   if (phone) {
     const { data: existing } = await admin
       .from('leads')
-      .select('id')
+      .select('id, industry, investment_readiness, intake')
       .eq('workspace_id', ws.id)
       .eq('phone', phone)
       .limit(1);
     if (existing && existing.length > 0) {
-      return NextResponse.json({ ok: true, duplicate: true, id: existing[0].id });
+      const prev = existing[0];
+      const patch: Record<string, unknown> = {};
+      if (Object.keys(intake).length > 0) {
+        patch.intake = { ...(prev.intake as Record<string, unknown> || {}), ...intake };
+      }
+      if (industry && !prev.industry) patch.industry = industry;
+      if (readiness && !prev.investment_readiness) patch.investment_readiness = readiness;
+      if (Object.keys(patch).length > 0) {
+        await admin.from('leads').update(patch).eq('id', prev.id);
+      }
+      return NextResponse.json({
+        ok: true, duplicate: true, id: prev.id, enriched: Object.keys(patch).length > 0,
+      });
     }
   }
 
@@ -83,6 +133,11 @@ export async function POST(req: Request) {
       stage: 'cold',
       visa_type: body.visa_type || null,
       tags: ['meta-lead'],
+      // Derived — what automation reads.
+      industry,
+      investment_readiness: readiness,
+      // Raw — what the person actually typed, kept whatever the mappers make of it.
+      intake,
     })
     .select('id')
     .single();
@@ -123,7 +178,14 @@ export async function POST(req: Request) {
     } catch { /* never block lead creation on email failure */ }
   }
 
-  return NextResponse.json({ ok: true, id: lead.id, welcomed });
+  // industry and readiness come back in the response on purpose: Make's
+  // execution history then shows how each answer was read, so a form option
+  // nobody mapped shows up as null there instead of being discovered weeks
+  // later as a gap in a report.
+  return NextResponse.json({
+    ok: true, id: lead.id, welcomed,
+    industry, investment_readiness: readiness,
+  });
 }
 
 // Health check so a browser GET doesn't look "broken" (Make only uses POST).
