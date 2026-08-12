@@ -1,64 +1,71 @@
 'use client';
 
 // =============================================================================
-// AUTOMATION TAB — the new-lead journey, tag-based, written for day one.
+// AUTOMATION TAB — manual mode (2026-08-12).
 //
-// Five numbered steps that ARE the manual. Eligibility comes from the ad tag
-// (leads.industry) — there is no CV scanning. Q&A lives in its own tab.
+// The whole promise on one screen:
+//   FIRST TOUCH  — every new lead gets exactly one automatic opener asking for
+//                  CV + LinkedIn (template for form leads, free text for
+//                  direct messages), then a human owns the chat.
+//   FOLLOW-UPS   — every cold and hot lead is enrolled into your approved
+//                  template sequence for that stage, automatically, backlog
+//                  included. Quiet leads only; a reply pauses instantly.
 //
-// Density: Make-style compact — 12px labels, 13px body, 14–16px card padding,
-// hierarchy from weight and colour, never from size.
+// Density: Make-style compact — 12px labels, 13px body, hierarchy from weight
+// and colour, never from size.
 // =============================================================================
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import {
-  Zap, Play, Check, X, Loader2, RefreshCw, Flame,
-  FileText, Video, CalendarClock, Sparkles, BellRing, Moon, MessageSquare,
-  AlertTriangle, Clock,
+  Zap, Play, Loader2, RefreshCw, Flame, Users, Snowflake,
+  CalendarClock, Sparkles, MessageSquare, UserCheck, AlertTriangle, Clock, Check,
 } from 'lucide-react';
 import type { WaTemplate } from '@/lib/whatsapp/types';
-import { FIELD_AREA, Select, IconInput, NumField } from '@/components/whatsapp/ui';
+import { FIELD_AREA, Select, IconInput } from '@/components/whatsapp/ui';
+import { FileText, Video } from 'lucide-react';
 
 interface AutoSettings {
   workspace_id: string; enabled: boolean; sources: string[];
   welcome_template_code: string;
   pdf_url: string | null; video_url: string | null; booking_url: string | null;
-  eligible_message: string; booking_message: string;
-  auto_faq: boolean; cold_sequence_id: string | null;
-  reminder_hours_1: number; reminder_hours_2: number; priority_push: boolean;
   inbound_enabled: boolean; inbound_intro_message: string;
+  priority_push: boolean;
+  cold_sequence_id: string | null; hot_sequence_id: string | null;
+  auto_enrol_cold: boolean; auto_enrol_hot: boolean;
 }
 interface SeqLite { id: string; name: string; status: string }
 interface JourneyRow {
   id: string; lead_id: string; phone_e164: string; stage: string; priority: boolean;
-  field: string | null; readiness: string | null; reminders_sent: number;
-  entry_source: string;
+  field: string | null; readiness: string | null; entry_source: string;
   updated_at: string; lead_name: string; pending_jobs: number;
-  eligibility: { verdict?: string; decided_by?: string } | null;
 }
 interface CronStatus { installed: boolean; ok: boolean; jobs: Array<{ name: string; schedule: string; active: boolean }>; last_run: string | null }
 interface FailedJob { id: string; kind: string; error: string | null; updated_at: string; lead_name: string; phone: string }
+interface Coverage {
+  sequence_id: string | null; lane_on: boolean;
+  total: number; no_phone: number; in_sequence: number;
+  active: number; paused: number; completed: number; untouched: number;
+}
 interface Overview {
   settings: AutoSettings | null; counts: Record<string, number>; cron?: CronStatus;
-  failed_jobs?: FailedJob[];
-  entry: Record<string, number>;
+  failed_jobs?: FailedJob[]; entry: Record<string, number>;
+  coverage?: Record<string, Coverage>;
   sequences: SeqLite[]; journeys: JourneyRow[];
 }
 
-const ELIGIBLE_FIELDS = ['tech', 'research', 'engineering', 'art'];
-
 const STAGE_META: Record<string, { label: string; cls: string }> = {
-  welcome_queued:  { label: 'Welcome queued',      cls: 'bg-[#F5F6F9] text-[#7A8095] border-[#DDE0E9]' },
-  intro_queued:    { label: 'Replying…',           cls: 'bg-indigo-soft text-indigo-700 border-indigo-100' },
-  awaiting_reply:  { label: 'Waiting for reply',   cls: 'bg-indigo-soft text-indigo-700 border-indigo-100' },
-  needs_review:    { label: 'Needs your decision', cls: 'bg-[#FEF6E6] text-[#A25D07] border-[#F8E2B8]' },
-  eligible:        { label: 'Eligible ✓',          cls: 'bg-[#EDFAF1] text-[#1B7A44] border-[#D7F3E1]' },
-  waiting_booking: { label: 'Booking link sent',   cls: 'bg-[#EDFAF1] text-[#1B7A44] border-[#D7F3E1]' },
-  booked:          { label: 'Meeting booked 🎉',   cls: 'bg-[#1B7A44] text-white border-[#1B7A44]' },
-  not_eligible:    { label: 'Not eligible → Junk', cls: 'bg-[#FDEEEE] text-[#B3423A] border-[#F6D5D2]' },
-  stopped:         { label: 'Stopped',             cls: 'bg-[#F5F6F9] text-[#7A8095] border-[#DDE0E9]' },
-  checking:        { label: 'Checking',            cls: 'bg-[#F5F6F9] text-[#7A8095] border-[#DDE0E9]' },
+  welcome_queued:  { label: 'Welcome queued',    cls: 'bg-[#F5F6F9] text-[#7A8095] border-[#DDE0E9]' },
+  intro_queued:    { label: 'Intro queued',      cls: 'bg-indigo-soft text-indigo-700 border-indigo-100' },
+  awaiting_reply:  { label: 'First touch sent',  cls: 'bg-indigo-soft text-indigo-700 border-indigo-100' },
+  handed_over:     { label: 'With your team',    cls: 'bg-[#FEF6E6] text-[#A25D07] border-[#F8E2B8]' },
+  booked:          { label: 'Meeting booked',    cls: 'bg-[#1B7A44] text-white border-[#1B7A44]' },
+  not_eligible:    { label: 'Junked',            cls: 'bg-[#FDEEEE] text-[#B3423A] border-[#F6D5D2]' },
+  stopped:         { label: 'Stopped',           cls: 'bg-[#F5F6F9] text-[#7A8095] border-[#DDE0E9]' },
+  needs_review:    { label: 'With your team',    cls: 'bg-[#FEF6E6] text-[#A25D07] border-[#F8E2B8]' },
+  eligible:        { label: 'With your team',    cls: 'bg-[#FEF6E6] text-[#A25D07] border-[#F8E2B8]' },
+  waiting_booking: { label: 'With your team',    cls: 'bg-[#FEF6E6] text-[#A25D07] border-[#F8E2B8]' },
+  checking:        { label: 'Checking',          cls: 'bg-[#F5F6F9] text-[#7A8095] border-[#DDE0E9]' },
 };
 
 const timeAgo = (iso: string) => {
@@ -78,14 +85,14 @@ export default function AutomationTab({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
-  const [deciding, setDeciding] = useState<string | null>(null);
+  const [sweeping, setSweeping] = useState(false);
   const loaded = useRef(false);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.rpc('whatsapp_automation_overview', { p_workspace_id: workspaceId });
     if (error) {
       if (/does not exist|schema cache/i.test(error.message)) {
-        toast.error('Run migration 051 in Supabase first — the automation tables are missing.');
+        toast.error('Run migration 056 in Supabase first — the manual-mode functions are missing.');
       } else if (!loaded.current) toast.error(error.message);
       return;
     }
@@ -112,19 +119,35 @@ export default function AutomationTab({
       pdf_url: cfg.pdf_url?.trim() || null,
       video_url: cfg.video_url?.trim() || null,
       booking_url: cfg.booking_url?.trim() || null,
-      eligible_message: cfg.eligible_message,
-      booking_message: cfg.booking_message,
-      auto_faq: cfg.auto_faq,
-      cold_sequence_id: cfg.cold_sequence_id,
-      reminder_hours_1: cfg.reminder_hours_1,
-      reminder_hours_2: cfg.reminder_hours_2,
-      priority_push: cfg.priority_push,
       inbound_enabled: cfg.inbound_enabled,
       inbound_intro_message: cfg.inbound_intro_message,
+      priority_push: cfg.priority_push,
+      cold_sequence_id: cfg.cold_sequence_id,
+      hot_sequence_id: cfg.hot_sequence_id,
+      auto_enrol_cold: cfg.auto_enrol_cold,
+      auto_enrol_hot: cfg.auto_enrol_hot,
     }).eq('workspace_id', workspaceId);
+    if (error) { setSaving(false); toast.error(error.message); return; }
+    setDirty(false);
+    // Saving the tab sweeps immediately — picking a sequence should enrol the
+    // backlog now, not in ten minutes.
+    const { data } = await supabase.rpc('whatsapp_stage_autoenrol', { p_workspace_id: workspaceId });
     setSaving(false);
+    const r = (data ?? {}) as { enrolled?: number };
+    toast.success(r.enrolled
+      ? `Saved — ${r.enrolled} lead${r.enrolled === 1 ? '' : 's'} enrolled into follow-ups`
+      : 'Automation saved');
+    load();
+  };
+
+  const sweepNow = async () => {
+    setSweeping(true);
+    const { data, error } = await supabase.rpc('whatsapp_stage_autoenrol', { p_workspace_id: workspaceId });
+    setSweeping(false);
     if (error) { toast.error(error.message); return; }
-    setDirty(false); toast.success('Automation saved'); load();
+    const r = (data ?? {}) as { enrolled?: number; stopped?: number };
+    toast.success(`Swept — ${r.enrolled ?? 0} enrolled, ${r.stopped ?? 0} stopped (stage changed)`);
+    load();
   };
 
   const runNow = async () => {
@@ -137,16 +160,6 @@ export default function AutomationTab({
       else toast.success(`Ran ${json.claimed} job${json.claimed === 1 ? '' : 's'} · ${json.sent} sent${json.dryRun ? ' (dry-run)' : ''}`);
       load();
     } finally { setRunning(false); }
-  };
-
-  const decide = async (journeyId: string, eligible: boolean) => {
-    setDeciding(journeyId);
-    const { data, error } = await supabase.rpc('whatsapp_journey_decide', { p_journey_id: journeyId, p_eligible: eligible });
-    setDeciding(null);
-    const r = (data ?? {}) as { ok?: boolean; reason?: string };
-    if (error || !r.ok) { toast.error(error?.message || r.reason || 'Failed'); return; }
-    toast.success(eligible ? 'Marked eligible — guide + booking link on their way' : 'Moved to Junk');
-    load();
   };
 
   const retryJob = async (jobId: string) => {
@@ -165,11 +178,10 @@ export default function AutomationTab({
 
   const approvedTemplates = templates.filter((t) => t.active);
   const welcomeTpl = templates.find((t) => t.code === cfg.welcome_template_code);
-  const needsReview = ov.journeys.filter((jr) => jr.stage === 'needs_review');
-  const linksMissing = !cfg.pdf_url || !cfg.video_url || !cfg.booking_url;
-  const inFlight = Object.entries(ov.counts)
-    .filter(([s]) => !['booked', 'not_eligible', 'stopped'].includes(s))
-    .reduce((a, [, n]) => a + n, 0);
+  const handedOver = (ov.counts['handed_over'] ?? 0) + (ov.counts['needs_review'] ?? 0)
+    + (ov.counts['eligible'] ?? 0) + (ov.counts['waiting_booking'] ?? 0);
+  const cov = ov.coverage ?? {};
+  const untouchedTotal = (cov.cold?.untouched ?? 0) + (cov.hot?.untouched ?? 0);
 
   return (
     <div className="mx-auto max-w-[1380px] px-5 py-4">
@@ -180,9 +192,10 @@ export default function AutomationTab({
           <Zap className="h-4 w-4 text-[#1B7A44]" />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="m-0 text-[13.5px] font-semibold tracking-[-.015em]">New-lead automation</h2>
+          <h2 className="m-0 text-[13.5px] font-semibold tracking-[-.015em]">First touch is automatic. Everything live is human.</h2>
           <p className="m-0 mt-px text-[11.8px] leading-[1.5] text-muted">
-            Lead lands from Meta → welcome → reply gets the guide &amp; booking link → stops when they book. Eligibility comes from the ad&apos;s field tag. You can type in any chat at any time.
+            Every new lead gets one opener asking for CV + LinkedIn, then your team owns the chat.
+            Separately, every cold &amp; hot lead runs through your approved follow-up templates — no lead untouched.
           </p>
         </div>
         <button onClick={runNow} disabled={running}
@@ -192,16 +205,15 @@ export default function AutomationTab({
         <Toggle on={cfg.enabled} onClick={() => edit({ enabled: !cfg.enabled })} />
       </div>
 
-      {/* The scheduler is invisible until it fails. Make it visible. */}
+      {/* scheduler visibility */}
       {ov.cron && !ov.cron.ok && (
         <div className="mb-3 flex items-start gap-2 rounded-lg border border-[#F6D5D2] bg-[#FDEEEE] px-3.5 py-2.5">
           <AlertTriangle className="mt-px h-3.5 w-3.5 flex-shrink-0 text-[#B3423A]" />
           <p className="m-0 text-[11.8px] leading-[1.5] text-[#8A2F28]">
             <b>Nothing is running by itself.</b>{' '}
             {ov.cron.installed
-              ? 'The scheduled jobs are missing — re-run migration 053 in Supabase.'
-              : 'pg_cron is not enabled on this database. Supabase → Database → Extensions → enable pg_cron and pg_net, then re-run migration 053.'}
-            {' '}Until then the engine only moves when you press <b>Run now</b>.
+              ? 'The scheduled jobs are missing — re-run migration 056 in Supabase.'
+              : 'pg_cron is not enabled on this database. Supabase → Database → Extensions → enable pg_cron and pg_net, then re-run migrations 053 and 056.'}
           </p>
         </div>
       )}
@@ -209,59 +221,32 @@ export default function AutomationTab({
         <div className="mb-3 flex items-center gap-2 rounded-lg border border-[#D7F3E1] bg-[#EDFAF1] px-3.5 py-2">
           <Clock className="h-3.5 w-3.5 flex-shrink-0 text-[#1B7A44]" />
           <p className="m-0 text-[11.5px] text-[#1B7A44]">
-            Running automatically — automation every minute, sequences every 10 minutes.
+            Running automatically — first touch every minute, follow-up sends every 10 minutes, enrol sweep every 10 minutes.
             {ov.cron.last_run && ` Last run ${timeAgo(ov.cron.last_run)} ago.`}
           </p>
         </div>
       )}
 
-      {cfg.enabled && linksMissing && (
-        <div className="mb-3 rounded-lg border border-[#F8E2B8] bg-[#FEF6E6] px-3.5 py-2.5 text-[11.8px] leading-[1.5] text-[#A25D07]">
-          <b>Almost on.</b> Step 3 is missing its {[
-            !cfg.pdf_url && 'PDF link', !cfg.video_url && 'video link', !cfg.booking_url && 'booking link',
-          ].filter(Boolean).join(', ')} — eligible leads will pause there until it&apos;s filled in.
-        </div>
-      )}
-
-      {/* KPI strip — the state of the machine at a glance */}
+      {/* KPI strip */}
       <div className="mb-3.5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Kpi icon={<Zap className="h-3.5 w-3.5 text-[#1B7A44]" />} bg="bg-[#EDFAF1]" label="In journey" value={inFlight} />
-        <Kpi icon={<Play className="h-3.5 w-3.5 text-indigo-700" />} bg="bg-indigo-soft" label="Waiting reply"
-          value={(ov.counts['awaiting_reply'] ?? 0) + (ov.counts['welcome_queued'] ?? 0) + (ov.counts['intro_queued'] ?? 0)} />
-        <Kpi icon={<Flame className="h-3.5 w-3.5 text-[#D9541E]" />} bg="bg-[#FFF4EE]" label="Hot · will pay"
-          value={ov.journeys.filter((x) => x.priority && !['booked','stopped','not_eligible'].includes(x.stage)).length} />
-        <Kpi icon={<CalendarClock className="h-3.5 w-3.5 text-[#1B7A44]" />} bg="bg-[#EDFAF1]" label="Meetings booked"
-          value={ov.counts['booked'] ?? 0} />
+        <Kpi icon={<Sparkles className="h-3.5 w-3.5 text-[#1B7A44]" />} bg="bg-[#EDFAF1]" label="First touches sent"
+          value={(ov.counts['awaiting_reply'] ?? 0) + handedOver + (ov.counts['booked'] ?? 0)} />
+        <Kpi icon={<UserCheck className="h-3.5 w-3.5 text-[#A25D07]" />} bg="bg-[#FEF6E6]" label="With your team" value={handedOver} />
+        <Kpi icon={<Users className="h-3.5 w-3.5 text-indigo-700" />} bg="bg-indigo-soft" label="In follow-ups"
+          value={(cov.cold?.active ?? 0) + (cov.hot?.active ?? 0)} />
+        <Kpi icon={untouchedTotal === 0 ? <Check className="h-3.5 w-3.5 text-[#1B7A44]" /> : <AlertTriangle className="h-3.5 w-3.5 text-[#D9541E]" />}
+          bg={untouchedTotal === 0 ? 'bg-[#EDFAF1]' : 'bg-[#FFF4EE]'} label="Untouched cold/hot" value={untouchedTotal} />
       </div>
 
       {/* config left · live operations right */}
       <div className="grid grid-cols-1 items-start gap-3.5 xl:grid-cols-[minmax(0,1fr)_372px]">
       <div>
 
-      {/* the journey */}
       <div className="relative">
         <div className="absolute bottom-5 left-[17px] top-5 w-px bg-[#E8EAF0]" />
 
-        <Step n={1} icon={<Sparkles className="h-3.5 w-3.5" />} title="A lead arrives, already sorted by the ad"
-          sub="The ad tells us their field and whether they'll pay — no CV needed.">
-          <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
-            <span className="text-faint">Eligible fields:</span>
-            {ELIGIBLE_FIELDS.map((f) => (
-              <span key={f} className="rounded border border-[#D7F3E1] bg-[#EDFAF1] px-1.5 py-0.5 font-semibold capitalize text-[#1B7A44]">{f === 'art' ? 'arts & culture' : f}</span>
-            ))}
-            <span className="text-faint">· anything else → welcomed, then a human reviews</span>
-          </div>
-          <div className="mt-2 flex items-center gap-2 rounded-lg border border-[#FFE0CC] bg-[#FFF6F0] px-3 py-2">
-            <Flame className="h-3.5 w-3.5 flex-shrink-0 text-[#D9541E]" />
-            <span className="flex-1 text-[11.8px] text-[#8A3A12]">
-              <b>Hot lane:</b> eligible field <i>and</i> willing to pay → marked priority + instant push to your phone.
-            </span>
-            <Toggle small on={cfg.priority_push} onClick={() => edit({ priority_push: !cfg.priority_push })} />
-          </div>
-        </Step>
-
-        <Step n={2} icon={<Zap className="h-3.5 w-3.5" />} title="The welcome goes out within a minute"
-          sub="An approved template — it can reach people who never messaged us.">
+        <Step n={1} icon={<Sparkles className="h-3.5 w-3.5" />} title="Ad-form lead → the welcome template, within a minute"
+          sub="An approved template — it can reach people who never messaged us. It asks for CV + LinkedIn and that is ALL it sends.">
           <div className="mb-2 flex items-center gap-2">
             <Select
               value={cfg.welcome_template_code} ariaLabel="Welcome template"
@@ -293,76 +278,97 @@ export default function AutomationTab({
           </div>
         </Step>
 
-        <Step n={3} icon={<FileText className="h-3.5 w-3.5" />} title="They reply → guide, video, then the booking link"
-          sub="Eligible leads get these automatically the moment they reply. Fill the links once.">
-          <div className="mb-2 grid gap-1.5">
-            <LinkField icon={<FileText className="h-3 w-3" />} label="Process guide (PDF)" value={cfg.pdf_url ?? ''} onChange={(v) => edit({ pdf_url: v })} placeholder="https://…/migrizo-gtv-guide.pdf" />
-            <LinkField icon={<Video className="h-3 w-3" />} label="Video link" value={cfg.video_url ?? ''} onChange={(v) => edit({ video_url: v })} placeholder="https://youtu.be/…" />
-            <LinkField icon={<CalendarClock className="h-3 w-3" />} label="Booking link" value={cfg.booking_url ?? ''} onChange={(v) => edit({ booking_url: v })} placeholder="https://crm.migrizo.com/book/…" />
+        <Step n={2} icon={<MessageSquare className="h-3.5 w-3.5" />} title="Direct message → the intro, as free text"
+          sub="Click-to-WhatsApp ads, your website button, a saved number. Their message opens the 24h window, so no template is needed. Ad answers are parsed into name, field and budget automatically.">
+          <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-[#E8EAF0] bg-[#F7F8FA] px-3 py-2">
+            <span className="text-[11.8px] font-semibold text-ink-2">Reply to first-time direct messages</span>
+            <Toggle small on={cfg.inbound_enabled} onClick={() => edit({ inbound_enabled: !cfg.inbound_enabled })} />
           </div>
-          <MsgField label="Message 1 — guide + video" value={cfg.eligible_message} onChange={(v) => edit({ eligible_message: v })} />
-          <MsgField label="Message 2 — booking link" value={cfg.booking_message} onChange={(v) => edit({ booking_message: v })} />
-          <p className="m-0 mt-1 text-[10.8px] text-faint">Tokens: {'{{name}} {{pdf}} {{video}} {{booking}}'} — filled automatically.</p>
+          <MsgField label="The intro they receive" value={cfg.inbound_intro_message}
+            onChange={(v) => edit({ inbound_intro_message: v })} />
+          <p className="m-0 mt-1 text-[10.8px] text-faint">
+            Someone who opens with a file is flagged to you instead — asking a person who just sent their CV for a CV reads like a bot.
+          </p>
         </Step>
 
-        <Step n={4} icon={<Moon className="h-3.5 w-3.5" />} title="No reply? Two gentle reminders, then the cold sequence"
-          sub="The welcome template is re-sent, then silent eligible leads move to your chosen sequence.">
-          <div className="flex flex-wrap items-center gap-2 text-[12px]">
-            <span className="text-muted">Remind after</span>
-            <HoursInput value={cfg.reminder_hours_1} onChange={(v) => edit({ reminder_hours_1: v })} />
-            <span className="text-muted">then</span>
-            <HoursInput value={cfg.reminder_hours_2} onChange={(v) => edit({ reminder_hours_2: v })} />
-            <span className="text-muted">hours · still silent →</span>
-            <Select
-              value={cfg.cold_sequence_id ?? ''} ariaLabel="Cold sequence"
-              onChange={(v) => edit({ cold_sequence_id: v || null })}
-              className="w-[250px] max-w-full"
-            >
-              <option value="">— no cold sequence, just stop —</option>
-              {ov.sequences.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}{s.status !== 'active' ? ` (${s.status})` : ''}</option>
-              ))}
-            </Select>
+        <Step n={3} icon={<UserCheck className="h-3.5 w-3.5" />} title="They reply → a human takes over. Nothing else is automatic."
+          sub="No auto answers, no auto links, no reminders. The chat is flagged “Needs reply” and any follow-up sequence for that number pauses instantly.">
+          <div className="flex items-center gap-2 rounded-lg border border-[#FFE0CC] bg-[#FFF6F0] px-3 py-2">
+            <Flame className="h-3.5 w-3.5 flex-shrink-0 text-[#D9541E]" />
+            <span className="flex-1 text-[11.8px] text-[#8A3A12]">
+              <b>Hot lane:</b> eligible field <i>and</i> willing to pay → instant push to your phone the moment the first touch goes out.
+            </span>
+            <Toggle small on={cfg.priority_push} onClick={() => edit({ priority_push: !cfg.priority_push })} />
           </div>
-          <p className="m-0 mt-1.5 text-[10.8px] text-faint">Only leads in the 4 eligible fields are enrolled — off-field silent leads simply stop.</p>
         </Step>
 
-        <Step n={5} icon={<BellRing className="h-3.5 w-3.5" />} title="Meeting booked → everything stops" last
-          sub="The journey, queued messages AND any running sequences for that number. Booked means booked.">
+        <Step n={4} icon={<CalendarClock className="h-3.5 w-3.5" />} title="Meeting booked → everything stops" last
+          sub="The first touch, queued jobs AND any follow-up sequence for that number. Booked means booked.">
           <></>
         </Step>
       </div>
 
-      {/* ── the second door: they message us, no form involved ────────────── */}
-      <section className="mb-3.5 rounded-xl border border-indigo-100 bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
-        <div className="flex items-center gap-2.5 border-b border-indigo-100 px-4 py-3">
-          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px] bg-indigo-soft">
-            <MessageSquare className="h-4 w-4 text-indigo-700" />
+      {/* ── follow-ups: no cold or hot lead left untouched ─────────────────── */}
+      <section className="mb-3.5 rounded-xl border border-[#E8EAF0] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+        <div className="flex items-center gap-2.5 border-b border-[#F0F1F5] px-4 py-3">
+          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px] bg-[#EDFAF1]">
+            <Users className="h-4 w-4 text-[#1B7A44]" />
           </span>
           <div className="min-w-0 flex-1">
-            <h3 className="m-0 text-[12.8px] font-semibold tracking-[-.01em]">
-              The second door — someone messages us directly
-            </h3>
+            <h3 className="m-0 text-[12.8px] font-semibold tracking-[-.01em]">Follow-ups — no lead left untouched</h3>
             <p className="m-0 mt-px text-[11.5px] leading-[1.5] text-muted">
-              Click-to-WhatsApp ads, your website button, or a saved number. If the ad sends their answers as the first message, we read the field and budget straight out of it — so they get the <b>same fully-automatic journey as a form lead</b>, hot lane included. Otherwise the AI reads their message, answers it from your Q&amp;A if it can, then asks for CV &amp; LinkedIn. All normal text: their message opens the window, so no template and no delivery cap.
+              Every lead in <b>Hot</b> or <b>Cold</b> is enrolled into that stage&apos;s approved template sequence — backlog included, new entrants within 10 minutes.
+              Only quiet leads (no chat activity in 24h) are enrolled; a reply pauses their follow-ups; leaving the stage stops them; each sequence reaches a number once, ever.
             </p>
           </div>
-          <Toggle on={cfg.inbound_enabled} onClick={() => edit({ inbound_enabled: !cfg.inbound_enabled })} />
+          <button onClick={sweepNow} disabled={sweeping}
+            className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-[#DDE0E9] bg-white px-2.5 py-1.5 text-[11.5px] font-semibold text-ink-2 transition hover:bg-[#F5F6F9] disabled:opacity-50">
+            {sweeping ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Sweep now
+          </button>
         </div>
-        <div className="px-4 py-3">
-          <MsgField label="Your opening message to a new enquiry"
-            value={cfg.inbound_intro_message} onChange={(v) => edit({ inbound_intro_message: v })} />
-          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[10.8px] text-faint">
-            <span>A question we can answer → answer first, then this message</span>
-            <span>Price haggling / complaint / guarantee → straight to a human</span>
-            <span>Spam or wrong number → nothing is sent</span>
-          </div>
+        <div className="grid gap-0 divide-y divide-[#F0F1F5]">
+          <Lane
+            icon={<Flame className="h-3.5 w-3.5 text-[#D9541E]" />}
+            name="Hot leads" tone="hot"
+            on={cfg.auto_enrol_hot}
+            onToggle={() => edit({ auto_enrol_hot: !cfg.auto_enrol_hot })}
+            seqId={cfg.hot_sequence_id}
+            onSeq={(v) => edit({ hot_sequence_id: v || null })}
+            sequences={ov.sequences}
+            cov={cov.hot}
+          />
+          <Lane
+            icon={<Snowflake className="h-3.5 w-3.5 text-[#1E63D9]" />}
+            name="Cold leads" tone="cold"
+            on={cfg.auto_enrol_cold}
+            onToggle={() => edit({ auto_enrol_cold: !cfg.auto_enrol_cold })}
+            seqId={cfg.cold_sequence_id}
+            onSeq={(v) => edit({ cold_sequence_id: v || null })}
+            sequences={ov.sequences}
+            cov={cov.cold}
+          />
+        </div>
+        <p className="m-0 border-t border-[#F0F1F5] px-4 py-2 text-[10.8px] text-faint">
+          Build the step lists (template + days apart) in the <b>Sequences</b> tab. Sends respect your send window and daily cap. STOP suppresses forever.
+        </p>
+      </section>
+
+      {/* ── the links behind the tokens ─────────────────────────────────────── */}
+      <section className="mb-3.5 rounded-xl border border-[#E8EAF0] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(20,24,40,.04)]">
+        <h3 className="m-0 text-[12.8px] font-semibold tracking-[-.01em]">Your links</h3>
+        <p className="m-0 mb-2 mt-0.5 text-[11.5px] leading-[1.5] text-muted">
+          These fill the <code className="font-mono text-[10.5px]">{'{{pdf}} {{video}} {{booking}}'}</code> tokens in the intro and in your quick replies.
+        </p>
+        <div className="grid gap-1.5">
+          <LinkField icon={<FileText className="h-3 w-3" />} label="Process guide (PDF)" value={cfg.pdf_url ?? ''} onChange={(v) => edit({ pdf_url: v })} placeholder="https://…/migrizo-gtv-guide.pdf" />
+          <LinkField icon={<Video className="h-3 w-3" />} label="Video link" value={cfg.video_url ?? ''} onChange={(v) => edit({ video_url: v })} placeholder="https://youtu.be/…" />
+          <LinkField icon={<CalendarClock className="h-3 w-3" />} label="Booking link" value={cfg.booking_url ?? ''} onChange={(v) => edit({ booking_url: v })} placeholder="https://crm.migrizo.com/book/…" />
         </div>
       </section>
 
       {dirty && (
         <div className="sticky bottom-3 z-10 mt-3.5 flex items-center gap-3 rounded-xl border border-[#DDE0E9] bg-white px-3.5 py-2.5 shadow-[0_8px_24px_-8px_rgba(20,24,40,.22)]">
-          <span className="text-[11.8px] text-muted">Unsaved changes</span>
+          <span className="text-[11.8px] text-muted">Unsaved changes — saving also sweeps the enrolments immediately</span>
           <button onClick={save} disabled={saving}
             className="ml-auto rounded-lg bg-[#25A25A] px-3.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-[#1B7A44] disabled:opacity-50">
             {saving ? 'Saving…' : 'Save automation'}
@@ -371,7 +377,7 @@ export default function AutomationTab({
       )}
       </div>
 
-      {/* ── the operations rail: watch the machine while you configure it ── */}
+      {/* ── the operations rail ─────────────────────────────────────────────── */}
       <aside className="grid gap-3 xl:sticky xl:top-4">
         {(ov.failed_jobs?.length ?? 0) > 0 && (
           <section className="rounded-xl border border-[#F6D5D2] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
@@ -400,37 +406,9 @@ export default function AutomationTab({
           </section>
         )}
 
-        {needsReview.length > 0 && (
-          <section className="rounded-xl border border-[#F5E3BC] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
-            <div className="flex items-center gap-2 border-b border-[#F5E3BC] px-3.5 py-2.5">
-              <h3 className="m-0 text-[12.6px] font-semibold">Needs your decision</h3>
-              <span className="rounded-full border border-[#F5E3BC] bg-[#FEF6E6] px-2 py-0.5 text-[10.3px] font-bold text-[#A25D07]">{needsReview.length}</span>
-              <span className="ml-auto text-[10.5px] text-faint">one click decides</span>
-            </div>
-            <div className="px-3.5 py-2.5">
-              {needsReview.map((jr) => (
-                <div key={jr.id} className="mb-1.5 flex items-center gap-2 rounded-lg border border-[#F0F1F5] bg-[#FBFBFC] px-2.5 py-2 last:mb-0">
-                  <div className="min-w-0 flex-1">
-                    <b className="block truncate text-[11.8px]">{jr.lead_name}</b>
-                    <span className="block text-[10.3px] capitalize text-faint">{jr.field ?? 'field unknown'}{jr.readiness ? ` · pays: ${jr.readiness}` : ''}</span>
-                  </div>
-                  <button onClick={() => decide(jr.id, true)} disabled={deciding === jr.id}
-                    className="flex items-center gap-1 rounded-md border border-[#D7F3E1] bg-[#EDFAF1] px-2 py-1 text-[10.5px] font-bold text-[#1B7A44] transition hover:bg-[#D7F3E1] disabled:opacity-50">
-                    <Check className="h-3 w-3" /> Eligible
-                  </button>
-                  <button onClick={() => decide(jr.id, false)} disabled={deciding === jr.id}
-                    className="flex items-center gap-1 rounded-md border border-[#F6D5D2] bg-[#FDEEEE] px-2 py-1 text-[10.5px] font-bold text-[#B3423A] transition hover:bg-[#F6D5D2] disabled:opacity-50">
-                    <X className="h-3 w-3" /> No
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
         <section className="rounded-xl border border-[#E8EAF0] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]">
           <div className="flex items-center gap-2 border-b border-[#F0F1F5] px-3.5 py-2.5">
-            <h3 className="m-0 text-[12.6px] font-semibold">Live journey feed</h3>
+            <h3 className="m-0 text-[12.6px] font-semibold">First-touch feed</h3>
             <span className="text-[10.5px] text-faint">auto-refreshes</span>
             <button onClick={load} className="ml-auto flex items-center gap-1 text-[10.8px] font-semibold text-muted transition hover:text-ink">
               <RefreshCw className="h-2.5 w-2.5" /> Refresh
@@ -438,7 +416,7 @@ export default function AutomationTab({
           </div>
           <div className="px-3.5 py-1.5">
             {ov.journeys.length === 0 ? (
-              <p className="m-0 py-4 text-center text-[11.5px] text-faint">No journeys yet — the next Meta lead appears here within a minute.</p>
+              <p className="m-0 py-4 text-center text-[11.5px] text-faint">No first touches yet — the next lead appears here within a minute.</p>
             ) : ov.journeys.slice(0, 14).map((jr) => {
               const meta = STAGE_META[jr.stage] ?? STAGE_META.stopped;
               return (
@@ -467,10 +445,11 @@ export default function AutomationTab({
             {[
               ['From the ad form', ov.entry?.['meta_form'] ?? 0],
               ['Messaged us directly', ov.entry?.['whatsapp_inbound'] ?? 0],
+              ['With your team', handedOver],
               ['Meetings booked', ov.counts['booked'] ?? 0],
-              ['Booking link sent', ov.counts['waiting_booking'] ?? 0],
-              ['Moved to Junk', ov.counts['not_eligible'] ?? 0],
-              ['In cold sequence / stopped', ov.counts['stopped'] ?? 0],
+              ['Hot in follow-ups', cov.hot?.active ?? 0],
+              ['Cold in follow-ups', cov.cold?.active ?? 0],
+              ['Paused (they replied)', (cov.hot?.paused ?? 0) + (cov.cold?.paused ?? 0)],
             ].map(([k, v]) => (
               <div key={String(k)} className="flex items-center justify-between border-b border-[#F0F1F5] py-2 text-[11.8px] last:border-b-0">
                 <span className="text-muted">{k}</span><b>{v}</b>
@@ -480,6 +459,51 @@ export default function AutomationTab({
         </section>
       </aside>
       </div>
+    </div>
+  );
+}
+
+// ── follow-up lane row ───────────────────────────────────────────────────────
+function Lane({ icon, name, tone, on, onToggle, seqId, onSeq, sequences, cov }: {
+  icon: React.ReactNode; name: string; tone: 'hot' | 'cold';
+  on: boolean; onToggle: () => void;
+  seqId: string | null; onSeq: (v: string) => void;
+  sequences: SeqLite[]; cov?: Coverage;
+}) {
+  const untouched = cov?.untouched ?? 0;
+  const covered = untouched === 0 && !!seqId && on;
+  return (
+    <div className="px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg ${tone === 'hot' ? 'bg-[#FFF4EE]' : 'bg-[#EAF1FE]'}`}>{icon}</span>
+        <b className="w-[76px] flex-shrink-0 text-[12.4px] font-semibold">{name}</b>
+        <Select value={seqId ?? ''} onChange={onSeq} ariaLabel={`${name} sequence`} className="w-[250px] max-w-full">
+          <option value="">— choose a sequence —</option>
+          {sequences.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}{s.status !== 'active' ? ` (${s.status})` : ''}</option>
+          ))}
+        </Select>
+        <span className="ml-auto" />
+        {covered ? (
+          <span className="flex items-center gap-1 rounded-full border border-[#D7F3E1] bg-[#EDFAF1] px-2 py-0.5 text-[10.3px] font-bold text-[#1B7A44]">
+            <Check className="h-3 w-3" /> Every lead covered
+          </span>
+        ) : untouched > 0 && (
+          <span className="rounded-full border border-[#FFE0CC] bg-[#FFF6F0] px-2 py-0.5 text-[10.3px] font-bold text-[#B3541E]">
+            {untouched} untouched
+          </span>
+        )}
+        <Toggle small on={on} onClick={onToggle} />
+      </div>
+      {cov && (
+        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 pl-[38px] text-[10.8px] text-faint">
+          <span><b className="font-semibold text-ink-2">{cov.total}</b> in stage</span>
+          <span><b className="font-semibold text-ink-2">{cov.active}</b> getting follow-ups</span>
+          <span><b className="font-semibold text-ink-2">{cov.paused}</b> paused (replied)</span>
+          <span><b className="font-semibold text-ink-2">{cov.completed}</b> finished all steps</span>
+          {cov.no_phone > 0 && <span><b className="font-semibold text-ink-2">{cov.no_phone}</b> no valid phone</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -515,7 +539,7 @@ function Step({ n, icon, title, sub, children, last }: {
   n: number; icon: React.ReactNode; title: string; sub: string; children: React.ReactNode; last?: boolean;
 }) {
   return (
-    <div className={`relative flex gap-3 ${last ? '' : 'pb-4'}`}>
+    <div className={`relative flex gap-3 ${last ? 'pb-4' : 'pb-4'}`}>
       <span className="relative z-10 flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-full border border-[#DDE0E9] bg-white text-[#1B7A44] shadow-[0_1px_2px_rgba(20,24,40,.05)]">
         {icon}
         <span className="absolute -right-0.5 -top-0.5 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#25A25A] text-[8.5px] font-bold text-white">{n}</span>
@@ -544,13 +568,9 @@ function MsgField({ label, value, onChange }: { label: string; value: string; on
   return (
     <div className="mb-1.5">
       <span className="mb-0.5 block text-[9.5px] font-bold uppercase tracking-[.06em] text-faint">{label}</span>
-      <textarea value={value} rows={Math.min(4, Math.max(2, value.split('\n').length))}
+      <textarea value={value} rows={Math.min(6, Math.max(3, value.split('\n').length))}
         onChange={(e) => onChange(e.target.value)}
         className={FIELD_AREA} />
     </div>
   );
-}
-
-function HoursInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return <NumField value={value} onChange={onChange} min={1} max={168} />;
 }

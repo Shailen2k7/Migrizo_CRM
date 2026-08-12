@@ -1,34 +1,23 @@
 // =============================================================================
 // AUTOMATION DRAIN — POST /api/whatsapp/automation/drain
 // -----------------------------------------------------------------------------
-// The worker behind the new-lead journey. Cron hits this every minute with
-// x-cron-secret (scheduled by migration 051); a logged-in campaign admin can
-// also call it bare — the Automation tab's "Run now" button.
+// MANUAL MODE (2026-08-12). The engine's only automatic message to a live or
+// incoming lead is the FIRST TOUCH; after that a human owns the conversation.
 //
-// Job kinds:
-//   welcome     approved template (default fresh_lead_01) to a brand-new lead;
-//               🔥 priority journeys (eligible field + willing to pay) also
-//               push-notify the whole team the moment the welcome goes out
-//   assets      the guide+video message, then the booking-link message
-//               (free text — the lead's reply opened the 24h window)
-//   reminder    re-send the welcome template at +24h / +48h of silence
-//   cold_enrol  still silent after both reminders → enrol into the chosen
-//               cold sequence (eligible fields only), else stop quietly
-//   faq         the Q&A brain — see route rules below
-//   notify      push the team ("wrong-field lead replied — review needed")
-//   inbound_intro  someone messaged US first (click-to-WhatsApp, our number
-//               saved, a website button). Reads their first message, answers it
-//               from your saved Q&A when it can, then asks for CV + LinkedIn —
-//               all as FREE TEXT, because their message opened the 24h window.
-//               Spam is ignored, anything sensitive or unknown goes to a human.
+// Job kinds still handled:
+//   welcome        approved template to an ad-form lead. 🔥 priority journeys
+//                  (eligible field + willing to pay) also push the team.
+//   inbound_intro  someone messaged US first (click-to-WhatsApp, saved number,
+//                  website button). Send the intro asking for CV + LinkedIn —
+//                  free text, because their message opened the 24h window.
+//                  A file-only opener is flagged to a human instead (asking a
+//                  person who just sent their CV to send a CV reads as a bot).
+//   notify         push the team.
 //
-// THE Q&A BRAIN'S RULES (in priority order, enforced in code):
-//   1. Discounts/negotiation, complaints, ready-to-pay, guarantees
-//        → NEVER answered by AI. Flag "needs reply" + push a human.
-//   2. Message matches a saved Q&A → send the founder's answer WORD-FOR-WORD.
-//        The AI only picks which saved answer fits — it never composes.
-//   3. Casual chatter ("ok", "thanks", sent a file) → stay silent.
-//   4. A real question nothing matches → flag + push. Silence beats guessing.
+// Everything else (assets / faq / reminder / cold_enrol) is legacy from the
+// old full-journey model: drained harmlessly, never created again. The cold &
+// hot follow-up sequences are enrolled by whatsapp_stage_autoenrol() in SQL
+// and sent by the sequences drain — not here.
 //
 // Invariants: record before send · whatsapp_can_send gates every send ·
 // suppression wins · cap exhaustion defers jobs, never burns them.
@@ -44,7 +33,6 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const BATCH = 8;
-const WINDOW_MS = 24 * 60 * 60 * 1000;
 
 interface Job {
   id: string; workspace_id: string; journey_id: string;
@@ -55,17 +43,14 @@ interface Job {
 interface Journey {
   id: string; workspace_id: string; lead_id: string; conversation_id: string | null;
   phone_e164: string; stage: string; priority: boolean; field: string | null;
-  readiness: string | null; reminders_sent: number; entry_source: string;
+  readiness: string | null; entry_source: string;
 }
 interface AutoCfg {
   enabled: boolean; welcome_template_code: string;
   pdf_url: string | null; video_url: string | null; booking_url: string | null;
-  eligible_message: string; booking_message: string;
-  auto_faq: boolean; cold_sequence_id: string | null;
   inbound_enabled: boolean; inbound_intro_message: string;
-  reminder_hours_1: number; reminder_hours_2: number; priority_push: boolean;
+  priority_push: boolean;
 }
-interface Faq { id: string; title: string; question: string; keywords: string[]; answer: string; times_used: number }
 
 const firstName = (n: string) =>
   n.replace(/^(Dr|Mr|Mrs|Ms|Prof)\.?\s+/i, '').trim().split(/\s+/)[0] || n;
@@ -89,18 +74,6 @@ function fillTokens(text: string, t: { name?: string; pdf?: string; video?: stri
     .replace(/\{\{\s*booking\s*\}\}/gi, t.booking ?? '')
     .replace(/[ \t]+\n/g, '\n').trim();
 }
-
-// Sensitive topics — checked BEFORE any Q&A matching, in plain code, so a
-// regex nobody can prompt-inject decides what never gets an automated reply.
-// (The standard price quote is a saved Q&A and is allowed; discount/negotiation
-// wording below overrides it and goes to a human.)
-const SENSITIVE = [
-  /discount|negotiat|cheaper|best price|lower price|price kam|kam kar|reduce.*(fee|price|cost)|installment|emi\b/i,
-  /complain|complaint|unhappy|disappointed|frustrat|angry|worst|scam|fraud|refund|money back|cheat/i,
-  /ready to pay|want to pay|make (the )?payment|paid|payment done|proceed with payment|send.*account|bank detail|how (do|to) i pay/i,
-  /guarantee|guaranteed|assur(e|ance).*(visa|endorsement|success)|100%|pakka|sure shot|kitna chance|success rate/i,
-];
-const sensitiveHit = (text: string) => SENSITIVE.some((re) => re.test(text));
 
 /** Push to every registered device in the workspace. Fire-and-forget safe. */
 async function pushWorkspace(admin: SupabaseClient, wsId: string, title: string, body: string, url = '/whatsapp') {
@@ -190,7 +163,7 @@ export async function POST(req: NextRequest) {
   const activity = (leadId: string | null, action: string, meta: Record<string, unknown>) =>
     admin.from('activity').insert({ workspace_id: wsId, user_id: null, lead_id: leadId, action, meta });
 
-  /** Record → sendText. Used by assets and Q&A answers. */
+  /** Record → sendText. Used by the inbound intro. */
   async function sendFree(j: Journey, body: string, step: string): Promise<{ ok: boolean; err?: string; retry?: boolean }> {
     const { data: rec } = await admin.rpc('whatsapp_record_outbound', {
       p_workspace_id: wsId, p_phone: j.phone_e164, p_body: body,
@@ -213,7 +186,7 @@ export async function POST(req: NextRequest) {
     return { ok: false, err: result.detail || result.code || 'send_failed', retry: transient };
   }
 
-  /** Record → sendTemplate. Used by welcome and reminders. */
+  /** Record → sendTemplate. Used by the welcome. */
   async function sendWelcomeTemplate(j: Journey, step: string): Promise<{ ok: boolean; suppressed?: boolean; convId?: string; err?: string; retry?: boolean; permanent?: string }> {
     const { data: tpl } = await admin.from('whatsapp_templates')
       .select('code, body, variables, language, category, meta_status, active')
@@ -257,63 +230,13 @@ export async function POST(req: NextRequest) {
     return { ok: true, convId: r.conversation_id };
   }
 
-  /**
-   * Is the 24-hour window open for this journey?
-   *
-   * The conversation's cached last_inbound_at LIED to us once: an assets job
-   * fired 36 seconds before the cache caught up with the very reply that
-   * triggered it, the check saw "closed", and a hot lead got silence. So the
-   * source of truth is now the newest INBOUND MESSAGE ROW itself — the thing
-   * that cannot be stale, because it is the thing that queued the job.
-   */
-  async function windowOpen(j: Journey): Promise<boolean> {
-    let convId = j.conversation_id;
-    if (!convId) {
-      const { data: c } = await admin.from('whatsapp_conversations')
-        .select('id').eq('workspace_id', wsId).eq('phone_e164', j.phone_e164).maybeSingle();
-      convId = c?.id ?? null;
-    }
-    if (!convId) return false;
-    const { data: m } = await admin.from('whatsapp_messages')
-      .select('created_at').eq('conversation_id', convId).eq('direction', 'in')
-      .order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (!m?.created_at) return false;
-    return Date.now() - new Date(m.created_at).getTime() < WINDOW_MS;
-  }
-
-  /**
-   * Has the lead spoken since OUR last message?
-   *
-   * "Do they have any inbound message at all" is the wrong question: a lead who
-   * messaged us first (entry_source = whatsapp_inbound) always has one, so that
-   * test would silently cancel every reminder for them. What matters is whether
-   * the newest message in the thread is theirs or ours.
-   */
-  async function leadHasReplied(j: Journey): Promise<boolean> {
-    let convId = j.conversation_id;
-    if (!convId) {
-      const { data: conv } = await admin.from('whatsapp_conversations')
-        .select('id').eq('workspace_id', wsId).eq('phone_e164', j.phone_e164).maybeSingle();
-      convId = conv?.id ?? null;
-    }
-    if (!convId) return false;
-    const newest = async (dir: 'in' | 'out') => {
-      const { data } = await admin.from('whatsapp_messages')
-        .select('created_at').eq('conversation_id', convId!).eq('direction', dir)
-        .order('created_at', { ascending: false }).limit(1).maybeSingle();
-      return data?.created_at ? new Date(data.created_at).getTime() : 0;
-    };
-    const [lastIn, lastOut] = await Promise.all([newest('in'), newest('out')]);
-    return lastIn > lastOut;
-  }
-
   for (const job of jobs) {
     const { data: jRow } = await admin.from('whatsapp_journeys').select('*').eq('id', job.journey_id).maybeSingle();
     const j = jRow as Journey | null;
     if (!j) { await fail(job.id, 'journey_missing'); failed++; continue; }
 
     try {
-      // ════ WELCOME ════════════════════════════════════════════════════════
+      // ════ WELCOME — the first touch for an ad-form lead ═══════════════════
       if (job.kind === 'welcome') {
         if (j.stage !== 'welcome_queued') { await done(job.id); results.push({ kind: job.kind, note: 'stage_moved_on' }); continue; }
         if (remaining <= 0) { await defer(job, 'daily_cap', 30); deferred++; continue; }
@@ -329,17 +252,13 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        // First touch delivered. From here a human owns the conversation —
+        // no reminders, no assets, nothing queued behind it.
         await admin.from('whatsapp_journeys').update({
           stage: 'awaiting_reply', conversation_id: res.convId ?? j.conversation_id,
         }).eq('id', j.id);
 
-        // Reminder 1 arms the moment the welcome goes out.
-        await admin.from('whatsapp_auto_jobs').insert({
-          workspace_id: wsId, journey_id: j.id, kind: 'reminder', payload: { n: 1 },
-          due_at: new Date(Date.now() + cfg.reminder_hours_1 * 3600_000).toISOString(),
-        });
-
-        // 🔥 Hot lane: eligible field + willing to pay → the team hears about it now.
+        // 🔥 Hot lane: eligible field + willing to pay → the team hears now.
         if (j.priority && cfg.priority_push) {
           const { data: lead } = await admin.from('leads').select('full_name').eq('id', j.lead_id).maybeSingle();
           await pushWorkspace(admin, wsId!, '🔥 Hot lead — willing to pay',
@@ -350,116 +269,10 @@ export async function POST(req: NextRequest) {
         results.push({ kind: job.kind, ok: true, priority: j.priority, dryRun });
       }
 
-      // ════ REMINDER (re-send the welcome at +24h / +48h of silence) ═══════
-      else if (job.kind === 'reminder') {
-        const n = job.payload.n ?? 1;
-        if (['booked', 'stopped', 'not_eligible'].includes(j.stage) || await leadHasReplied(j)) {
-          await done(job.id); results.push({ kind: job.kind, note: 'lead_active' }); continue;
-        }
-        if (remaining <= 0) { await defer(job, 'daily_cap', 30); deferred++; continue; }
-
-        const res = await sendWelcomeTemplate(j, `auto:reminder_${n}`);
-        if (res.suppressed) {
-          await admin.from('whatsapp_journeys').update({ stage: 'stopped', stop_reason: 'suppressed' }).eq('id', j.id);
-          await done(job.id); continue;
-        }
-        if (!res.ok) { await fail(job.id, res.permanent ?? res.err!, !res.permanent && res.retry); failed++; continue; }
-
-        await admin.from('whatsapp_journeys').update({ reminders_sent: n }).eq('id', j.id);
-        if (n === 1) {
-          const gap = Math.max(1, cfg.reminder_hours_2 - cfg.reminder_hours_1);
-          await admin.from('whatsapp_auto_jobs').insert({
-            workspace_id: wsId, journey_id: j.id, kind: 'reminder', payload: { n: 2 },
-            due_at: new Date(Date.now() + gap * 3600_000).toISOString(),
-          });
-        } else {
-          // Both reminders out. One more day of silence → cold sequence (or stop).
-          await admin.from('whatsapp_auto_jobs').insert({
-            workspace_id: wsId, journey_id: j.id, kind: 'cold_enrol',
-            due_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
-          });
-        }
-        await activity(j.lead_id, 'whatsapp_auto_reminder_sent', { n, dry_run: dryRun });
-        await done(job.id); sent++; remaining--;
-        results.push({ kind: job.kind, n, ok: true });
-      }
-
-      // ════ COLD ENROL (silent after both reminders) ═══════════════════════
-      else if (job.kind === 'cold_enrol') {
-        if (['booked', 'stopped', 'not_eligible'].includes(j.stage) || await leadHasReplied(j)) {
-          await done(job.id); results.push({ kind: job.kind, note: 'lead_active' }); continue;
-        }
-        const eligible = ['tech', 'research', 'engineering', 'art'].includes(j.field ?? '');
-        if (eligible && cfg.cold_sequence_id) {
-          await admin.from('whatsapp_sequence_enrollments').upsert({
-            workspace_id: wsId, sequence_id: cfg.cold_sequence_id,
-            lead_id: j.lead_id, phone_e164: j.phone_e164,
-            status: 'active', current_step: 0,
-            next_send_at: new Date().toISOString(),   // claim_due clamps to the send window
-          }, { onConflict: 'sequence_id,phone_e164', ignoreDuplicates: true });
-          await admin.from('whatsapp_journeys').update({ stage: 'stopped', stop_reason: 'cold_sequence' }).eq('id', j.id);
-          await activity(j.lead_id, 'whatsapp_auto_cold_enrolled', { sequence_id: cfg.cold_sequence_id });
-          results.push({ kind: job.kind, enrolled: true });
-        } else {
-          await admin.from('whatsapp_journeys').update({ stage: 'stopped', stop_reason: 'no_reply' }).eq('id', j.id);
-          results.push({ kind: job.kind, enrolled: false, why: eligible ? 'no_cold_sequence_chosen' : 'field_not_eligible' });
-        }
-        await done(job.id);
-      }
-
-      // ════ ASSETS — guide + video, then the booking link ══════════════════
-      else if (job.kind === 'assets') {
-        if (['booked', 'stopped'].includes(j.stage)) { await done(job.id); continue; }
-        const missing = [
-          !cfg.pdf_url && 'PDF link', !cfg.video_url && 'video link', !cfg.booking_url && 'booking link',
-        ].filter(Boolean);
-        if (missing.length) { await fail(job.id, `fill in the ${missing.join(', ')} on the Automation tab first`); failed++; continue; }
-        if (remaining < 2) { await defer(job, 'daily_cap', 30); deferred++; continue; }
-
-        if (!(await windowOpen(j))) {
-          // A closed window right after a reply is almost always a caching
-          // race, not reality — so retry twice before giving up. Only a
-          // genuinely day-old job deserves the permanent failure.
-          if (job.attempts < 3) { await defer(job, 'window_check_retry', 2); deferred++; continue; }
-          await fail(job.id, 'their 24h window closed before the assets went out — send a template from the inbox');
-          if (j.conversation_id) await admin.from('whatsapp_conversations').update({ needs_attention: true }).eq('id', j.conversation_id);
-          failed++; continue;
-        }
-
-        const { data: lead } = await admin.from('leads').select('full_name').eq('id', j.lead_id).maybeSingle();
-        const tokens = {
-          name: firstName(lead?.full_name ?? ''),
-          pdf: cfg.pdf_url!, video: cfg.video_url!, booking: cfg.booking_url!,
-        };
-        const m1 = await sendFree(j, fillTokens(cfg.eligible_message, tokens), 'auto:assets');
-        if (!m1.ok) { await fail(job.id, m1.err!, m1.retry); failed++; continue; }
-        sent++; remaining--;
-        const m2 = await sendFree(j, fillTokens(cfg.booking_message, tokens), 'auto:booking');
-        if (!m2.ok) { await fail(job.id, `guide sent, booking message failed: ${m2.err}`, m2.retry); failed++; continue; }
-        sent++; remaining--;
-
-        await admin.from('whatsapp_journeys').update({ stage: 'waiting_booking' }).eq('id', j.id);
-        await activity(j.lead_id, 'whatsapp_auto_assets_sent', { dry_run: dryRun });
-        await done(job.id);
-        results.push({ kind: job.kind, ok: true, dryRun });
-      }
-
-      // ════ NOTIFY — the team must look at this one ════════════════════════
-      else if (job.kind === 'notify') {
-        const { data: lead } = await admin.from('leads').select('full_name, industry').eq('id', j.lead_id).maybeSingle();
-        await pushWorkspace(admin, wsId!, '👀 Lead needs a human',
-          `${lead?.full_name ?? 'A lead'} (${lead?.industry ?? 'field unknown'}) replied — outside the 4 GTV fields, review before promising anything`);
-        await done(job.id);
-        results.push({ kind: job.kind, ok: true });
-      }
-
       // ════ INBOUND INTRO — they messaged US first ═════════════════════════
-      // The one job that reads intent before it says anything. Their message
-      // opened the 24h window, so everything here is free text: no template,
-      // no approval, no marketing frequency cap.
       else if (job.kind === 'inbound_intro') {
         if (!cfg.inbound_enabled) { await done(job.id); continue; }
-        if (['booked', 'stopped', 'not_eligible'].includes(j.stage)) { await done(job.id); continue; }
+        if (j.stage !== 'intro_queued') { await done(job.id); results.push({ kind: job.kind, note: 'stage_moved_on' }); continue; }
 
         const { data: msg } = await admin.from('whatsapp_messages')
           .select('body, media_path, conversation_id').eq('id', job.payload.message_id ?? '').maybeSingle();
@@ -469,56 +282,24 @@ export async function POST(req: NextRequest) {
         const { data: lead } = await admin.from('leads').select('full_name').eq('id', j.lead_id).maybeSingle();
         const name = greetName(lead?.full_name);
 
-        const flagHuman = async (why: string, title: string) => {
-          if (convId) await admin.from('whatsapp_conversations').update({ needs_attention: true }).eq('id', convId);
-          await admin.from('whatsapp_journeys').update({ stage: 'needs_review' }).eq('id', j.id);
-          await pushWorkspace(admin, wsId!, title, `${j.phone_e164}: “${(text || 'sent a file').slice(0, 90)}”`);
-          await activity(j.lead_id, 'whatsapp_inbound_escalated', { why, conversation_id: convId, text: text.slice(0, 200) });
-          await done(job.id);
-          results.push({ kind: job.kind, escalated: why });
-        };
+        // Someone typing STOP as their opener is not a lead.
+        if (/^(stop|unsubscribe|remove me)\b/i.test(text)) {
+          await admin.from('whatsapp_journeys').update({ stage: 'stopped', stop_reason: 'not_a_lead' }).eq('id', j.id);
+          await done(job.id); results.push({ kind: job.kind, note: 'opt_out_opener' }); continue;
+        }
 
         // They opened by sending a document — asking for a CV would be absurd.
-        if (!text && msg?.media_path) { await flagHuman('opened_with_file', '📎 New enquiry — sent a file'); continue; }
-
-        // The four always-human topics, decided in code before any AI runs.
-        if (text && sensitiveHit(text)) { await flagHuman('sensitive_topic', '💬 New enquiry — sensitive question'); continue; }
-
-        const { data: faqRows } = await admin.from('whatsapp_faqs')
-          .select('*').eq('workspace_id', wsId).eq('active', true).order('sort_order');
-        const faqs = (faqRows ?? []) as Faq[];
-
-        const intent = await classifyInbound(text, faqs);
-
-        if (intent.action === 'ignore') {
-          // Spam, a wrong number, or a bot. Say nothing, bother nobody.
-          await admin.from('whatsapp_journeys').update({ stage: 'stopped', stop_reason: 'not_a_lead' }).eq('id', j.id);
-          await done(job.id);
-          results.push({ kind: job.kind, note: 'ignored_not_a_lead' });
-          continue;
-        }
-        if (intent.action === 'human') { await flagHuman('no_match', '❓ New enquiry — needs a human'); continue; }
-
-        if (remaining <= 0) { await defer(job, 'daily_cap', 15); deferred++; continue; }
-
-        // A question we have an answer for: answer it FIRST, in your words,
-        // then ask for the documents. Answering before asking is the whole
-        // difference between a helpful business and an interrogation.
-        if (intent.action === 'answer_then_intro' && intent.faq) {
-          const answer = fillTokens(intent.faq.answer, {
-            name, pdf: cfg.pdf_url ?? '', video: cfg.video_url ?? '', booking: cfg.booking_url ?? '',
-          });
-          const a = await sendFree(j, answer, 'auto:inbound_answer');
-          if (!a.ok) { await fail(job.id, a.err!, a.retry); failed++; continue; }
-          sent++; remaining--;
-          await admin.from('whatsapp_faqs')
-            .update({ times_used: intent.faq.times_used + 1 }).eq('id', intent.faq.id);
-          await activity(j.lead_id, 'whatsapp_faq_answered', {
-            faq_id: intent.faq.id, faq: intent.faq.title, conversation_id: convId, dry_run: dryRun,
-          });
+        // Flag it and let a human answer like a human.
+        if (!text && msg?.media_path) {
+          if (convId) await admin.from('whatsapp_conversations').update({ needs_attention: true }).eq('id', convId);
+          await admin.from('whatsapp_journeys').update({ stage: 'handed_over' }).eq('id', j.id);
+          await pushWorkspace(admin, wsId!, '📎 New enquiry — sent a file', `${j.phone_e164}: opened the chat with an attachment`);
+          await activity(j.lead_id, 'whatsapp_inbound_escalated', { why: 'opened_with_file', conversation_id: convId });
+          await done(job.id); results.push({ kind: job.kind, escalated: 'opened_with_file' }); continue;
         }
 
         if (remaining <= 0) { await defer(job, 'daily_cap', 15); deferred++; continue; }
+
         const intro = fillTokens(cfg.inbound_intro_message, {
           name, pdf: cfg.pdf_url ?? '', video: cfg.video_url ?? '', booking: cfg.booking_url ?? '',
         });
@@ -534,81 +315,21 @@ export async function POST(req: NextRequest) {
           await pushWorkspace(admin, wsId!, '🔥 Hot lead — willing to pay',
             `${greetName(lead?.full_name)} · ${j.field ?? 'eligible'} · messaged us directly, jump in early`);
         }
-
-        // Same silence handling as an ad-form lead: two reminders, then cold.
-        // Those go out as a TEMPLATE because by then the window has shut.
-        await admin.from('whatsapp_auto_jobs').insert({
-          workspace_id: wsId, journey_id: j.id, kind: 'reminder', payload: { n: 1 },
-          due_at: new Date(Date.now() + cfg.reminder_hours_1 * 3600_000).toISOString(),
-        });
-        await activity(j.lead_id, 'whatsapp_inbound_intro_sent', {
-          answered_first: intent.action === 'answer_then_intro', dry_run: dryRun,
-        });
+        await activity(j.lead_id, 'whatsapp_inbound_intro_sent', { dry_run: dryRun });
         await done(job.id);
-        results.push({ kind: job.kind, ok: true, intent: intent.action, dryRun });
+        results.push({ kind: job.kind, ok: true, dryRun });
       }
 
-      // ════ Q&A BRAIN ══════════════════════════════════════════════════════
-      else if (job.kind === 'faq') {
-        if (!cfg.auto_faq) { await done(job.id); continue; }
-        const { data: msg } = await admin.from('whatsapp_messages')
-          .select('body, conversation_id').eq('id', job.payload.message_id ?? '').maybeSingle();
-        const text = (msg?.body ?? '').trim();
-        const convId = msg?.conversation_id ?? job.payload.conversation_id ?? null;
-        if (!text) { await done(job.id); continue; }
-
-        const escalate = async (why: string, title: string) => {
-          if (convId) await admin.from('whatsapp_conversations').update({ needs_attention: true }).eq('id', convId);
-          const { data: lead } = await admin.from('leads').select('full_name').eq('id', j.lead_id).maybeSingle();
-          await pushWorkspace(admin, wsId!, title, `${lead?.full_name ?? 'A lead'}: “${text.slice(0, 90)}”`);
-          await activity(j.lead_id, 'whatsapp_qa_escalated', { why, conversation_id: convId, text: text.slice(0, 200) });
-          await done(job.id);
-          results.push({ kind: job.kind, escalated: why });
-        };
-
-        // Rule 1 — the four always-human topics. Code, not AI, decides this.
-        if (sensitiveHit(text)) { await escalate('sensitive_topic', '💬 Reply needed — sensitive question'); continue; }
-
-        const { data: faqRows } = await admin.from('whatsapp_faqs')
-          .select('*').eq('workspace_id', wsId).eq('active', true).order('sort_order');
-        const faqs = (faqRows ?? []) as Faq[];
-
-        // Rule 2 — find the founder's matching Q&A (AI picks, never writes).
-        const picked = await matchQa(text, faqs);
-        if (picked.action === 'answer' && picked.faq) {
-          // Once per Q&A per chat per 24h.
-          const { data: recent } = await admin.from('activity')
-            .select('id').eq('workspace_id', wsId).eq('action', 'whatsapp_faq_answered')
-            .eq('meta->>faq_id', picked.faq.id).eq('meta->>conversation_id', convId ?? '')
-            .gte('created_at', new Date(Date.now() - WINDOW_MS).toISOString()).limit(1);
-          if (recent?.length) { await done(job.id); results.push({ kind: job.kind, note: 'already_answered' }); continue; }
-          if (remaining <= 0) { await defer(job, 'daily_cap', 30); deferred++; continue; }
-
-          const { data: lead } = await admin.from('leads').select('full_name').eq('id', j.lead_id).maybeSingle();
-          const answer = fillTokens(picked.faq.answer, {
-            name: firstName(lead?.full_name ?? ''),
-            pdf: cfg.pdf_url ?? '', video: cfg.video_url ?? '', booking: cfg.booking_url ?? '',
-          });
-          const res = await sendFree(j, answer, 'auto:qa');
-          if (!res.ok) { await fail(job.id, res.err!, res.retry); failed++; continue; }
-          sent++; remaining--;
-          await admin.from('whatsapp_faqs').update({ times_used: picked.faq.times_used + 1 }).eq('id', picked.faq.id);
-          await activity(j.lead_id, 'whatsapp_faq_answered', {
-            faq_id: picked.faq.id, faq: picked.faq.title, conversation_id: convId, dry_run: dryRun,
-          });
-          await done(job.id);
-          results.push({ kind: job.kind, answered: picked.faq.title, dryRun });
-        } else if (picked.action === 'human') {
-          // Rule 4 — a real question with no saved answer.
-          await escalate('no_match', '❓ Reply needed — new question');
-        } else {
-          // Rule 3 — chatter. Silence is a feature.
-          await done(job.id);
-          results.push({ kind: job.kind, note: 'ignored' });
-        }
+      // ════ NOTIFY — the team must look at this one ════════════════════════
+      else if (job.kind === 'notify') {
+        const { data: lead } = await admin.from('leads').select('full_name, industry').eq('id', j.lead_id).maybeSingle();
+        await pushWorkspace(admin, wsId!, '👀 Lead needs a human',
+          `${lead?.full_name ?? 'A lead'} (${lead?.industry ?? 'field unknown'}) replied — open the chat`);
+        await done(job.id);
+        results.push({ kind: job.kind, ok: true });
       }
 
-      // legacy job kind from the 050 draft, drained harmlessly
+      // legacy kinds from the old full-journey model, drained harmlessly
       else { await done(job.id); results.push({ kind: job.kind, note: 'legacy_skipped' }); }
     } catch (e) {
       await fail(job.id, (e as Error).message, true); failed++;
@@ -617,155 +338,4 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, claimed: jobs.length, sent, failed, deferred, dryRun, results });
-}
-
-// ═════ Q&A MATCHING — AI picks a saved answer; it NEVER composes one ════════
-type QaVerdict = { action: 'answer' | 'human' | 'ignore'; faq?: Faq };
-
-async function matchQa(text: string, faqs: Faq[]): Promise<QaVerdict> {
-  const lower = text.toLowerCase();
-
-  // Fast path: strong keyword overlap decides without an API call.
-  let best: Faq | null = null, bestScore = 0;
-  for (const f of faqs) {
-    const score = (f.keywords ?? []).filter((k) => k && lower.includes(k.toLowerCase())).length;
-    if (score > bestScore) { bestScore = score; best = f; }
-  }
-  if (best && bestScore >= 2) return { action: 'answer', faq: best };
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey || faqs.length === 0) {
-    // No AI available: single-keyword hit still answers; a question mark with
-    // no match goes to a human; anything else stays silent.
-    if (best && bestScore >= 1) return { action: 'answer', faq: best };
-    return /[?？]|kya|how|what|when|why|can i|kitna/i.test(text)
-      ? { action: 'human' } : { action: 'ignore' };
-  }
-
-  try {
-    const list = faqs.map((f, i) => `${i + 1}. ${f.title} — example: "${f.question || f.keywords.join(', ')}"`).join('\n');
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
-        max_tokens: 120,
-        messages: [{
-          role: 'user',
-          content:
-`You route WhatsApp messages for a UK-visa consultancy. You may ONLY pick from the saved answers below — never invent a reply.
-
-SAVED ANSWERS:
-${list}
-
-LEAD'S MESSAGE (may be Hindi/Hinglish): "${text.slice(0, 500)}"
-
-Rules:
-- The message clearly asks something a saved answer covers → {"action":"answer","index":N}
-- Casual chatter, greetings, thanks, confirmations, or they just sent a file → {"action":"ignore"}
-- A real question none of the saved answers covers, or anything about discounts, complaints, payments, or guarantees → {"action":"human"}
-When unsure between answer and human, choose human.
-
-Reply with ONLY the JSON.`,
-        }],
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) return best && bestScore >= 1 ? { action: 'answer', faq: best } : { action: 'human' };
-    const json = await res.json() as { content?: Array<{ type: string; text?: string }> };
-    const raw = (json.content ?? []).find((c) => c.type === 'text')?.text ?? '';
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (!m) return { action: 'human' };
-    const parsed = JSON.parse(m[0]) as { action?: string; index?: number };
-    if (parsed.action === 'answer' && parsed.index && faqs[parsed.index - 1]) {
-      return { action: 'answer', faq: faqs[parsed.index - 1] };
-    }
-    if (parsed.action === 'ignore') return { action: 'ignore' };
-    return { action: 'human' };
-  } catch {
-    // AI down → keyword hit answers, an apparent question goes to a human.
-    if (best && bestScore >= 1) return { action: 'answer', faq: best };
-    return /[?？]/.test(text) ? { action: 'human' } : { action: 'ignore' };
-  }
-}
-
-// ═════ FIRST-MESSAGE INTENT — what does this stranger actually want? ═══════
-// Deliberately narrow: it decides between four ACTIONS, never what to say.
-// Anything it is unsure about becomes 'human', because a wrong guess on
-// someone's first ever message is the most expensive kind of wrong.
-type Intent =
-  | { action: 'intro' }                                   // interest / greeting
-  | { action: 'answer_then_intro'; faq: Faq }             // a question we answer
-  | { action: 'human' }                                   // real but unanswerable
-  | { action: 'ignore' };                                 // spam / wrong number
-
-async function classifyInbound(text: string, faqs: Faq[]): Promise<Intent> {
-  const t = text.toLowerCase().trim();
-  if (!t) return { action: 'intro' };                     // "hi" with no words
-
-  // Obvious non-leads, decided without spending an API call.
-  if (/^(stop|unsubscribe|remove me)\b/i.test(t)) return { action: 'ignore' };
-  if (t.length < 2) return { action: 'intro' };
-
-  // Strong keyword overlap → we already know the answer, no AI needed.
-  let best: Faq | null = null, bestScore = 0;
-  for (const f of faqs) {
-    const score = (f.keywords ?? []).filter((k) => k && t.includes(k.toLowerCase())).length;
-    if (score > bestScore) { bestScore = score; best = f; }
-  }
-  if (best && bestScore >= 2) return { action: 'answer_then_intro', faq: best };
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    // No AI: a single keyword hit still answers; everything else gets the
-    // intro, which is always a reasonable thing to say to a new enquiry.
-    return best && bestScore >= 1 ? { action: 'answer_then_intro', faq: best } : { action: 'intro' };
-  }
-
-  try {
-    const list = faqs.map((f, i) => `${i + 1}. ${f.title} — example: "${f.question || f.keywords.join(', ')}"`).join('\n');
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
-        max_tokens: 120,
-        messages: [{
-          role: 'user',
-          content:
-`Someone just messaged a UK-visa consultancy on WhatsApp for the FIRST time. Decide what we should do. You may only choose from the saved answers below — never invent a reply.
-
-SAVED ANSWERS:
-${list || '(none saved yet)'}
-
-THEIR FIRST MESSAGE (may be Hindi/Hinglish): "${text.slice(0, 500)}"
-
-Choose one:
-- They ask something a saved answer covers → {"action":"answer_then_intro","index":N}
-- They show interest, greet us, or ask about the visa in general with no saved answer that fits → {"action":"intro"}
-- A real question we cannot answer from the list, or anything about discounts, complaints, payments or guarantees → {"action":"human"}
-- Spam, a wrong number, a bot, or clearly unrelated to visas → {"action":"ignore"}
-
-Use "ignore" only when you are certain it is not a potential client. When torn between intro and human, choose human.
-
-Reply with ONLY the JSON.`,
-        }],
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) return best && bestScore >= 1 ? { action: 'answer_then_intro', faq: best } : { action: 'intro' };
-    const json = await res.json() as { content?: Array<{ type: string; text?: string }> };
-    const raw = (json.content ?? []).find((c) => c.type === 'text')?.text ?? '';
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (!m) return { action: 'intro' };
-    const parsed = JSON.parse(m[0]) as { action?: string; index?: number };
-    if (parsed.action === 'answer_then_intro' && parsed.index && faqs[parsed.index - 1]) {
-      return { action: 'answer_then_intro', faq: faqs[parsed.index - 1] };
-    }
-    if (parsed.action === 'human') return { action: 'human' };
-    if (parsed.action === 'ignore') return { action: 'ignore' };
-    return { action: 'intro' };
-  } catch {
-    return best && bestScore >= 1 ? { action: 'answer_then_intro', faq: best } : { action: 'intro' };
-  }
 }

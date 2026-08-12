@@ -63,6 +63,12 @@ export interface WaSavedReply {
   title: string;
   body: string;
   sort_order: number;
+  media_path?: string | null;
+  media_type?: string | null;
+  media_name?: string | null;
+  media_mime?: string | null;
+  media_size?: number | null;
+  times_used?: number;
 }
 
 export interface WaTemplateVar {

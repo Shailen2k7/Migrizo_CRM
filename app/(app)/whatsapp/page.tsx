@@ -31,7 +31,8 @@ import LeadPanel, { type SeqState } from '@/components/whatsapp/lead-panel';
 import TemplatePicker from '@/components/whatsapp/template-picker';
 import NewConversation from '@/components/whatsapp/new-conversation';
 import AutomationTab from '@/components/whatsapp/automation-tab';
-import QaTab from '@/components/whatsapp/qa-tab';
+import RepliesTab from '@/components/whatsapp/replies-tab';
+import QuickReplyPalette, { filterReplies } from '@/components/whatsapp/quick-reply-palette';
 import SequencesTab, { type SeqOverviewRow } from '@/components/whatsapp/sequences-tab';
 import TemplatesTab from '@/components/whatsapp/templates-tab';
 import SettingsTab from '@/components/whatsapp/settings-tab';
@@ -48,12 +49,12 @@ import {
 const EMOJI = ['👍','🙏','😊','🎉','✅','📄','📞','🇬🇧','🚀','💡','⏰','❤️'];
 
 type Filter = 'all' | 'unread' | 'attention' | 'open' | 'failed';
-type TabKey = 'inbox' | 'automation' | 'qa' | 'sequences' | 'templates' | 'settings';
+type TabKey = 'inbox' | 'automation' | 'replies' | 'sequences' | 'templates' | 'settings';
 
 const SUB_TABS: Array<[TabKey, string, React.ReactNode]> = [
   ['inbox', 'Inbox', <MessageSquare key="i" className="h-[13px] w-[13px]" />],
   ['automation', 'Automation', <Bot key="a" className="h-[13px] w-[13px]" />],
-  ['qa', 'Q&A', <ShieldCheck key="q" className="h-[13px] w-[13px]" />],
+  ['replies', 'Quick replies', <ShieldCheck key="q" className="h-[13px] w-[13px]" />],
   ['sequences', 'Sequences', <Zap key="s" className="h-[13px] w-[13px]" />],
   ['templates', 'Templates', <FileText key="t" className="h-[13px] w-[13px]" />],
   ['settings', 'Settings', <Settings2 key="g" className="h-[13px] w-[13px]" />],
@@ -103,8 +104,19 @@ export default function WhatsAppPage() {
   const [newConvOpen, setNewConvOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
-  const [savedOpen, setSavedOpen] = useState(false);
   const [savedReplies, setSavedReplies] = useState<WaSavedReply[]>([]);
+  // "/" command palette state — the parent owns it so the textarea's keydown
+  // can drive ↑↓/Enter without two components fighting over the event.
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [slashIdx, setSlashIdx] = useState(0);
+  // An attachment a quick reply carries, waiting to go with the next send.
+  const [pendingMedia, setPendingMedia] = useState<{
+    path: string; mediaType: 'image' | 'document' | 'audio' | 'video';
+    name: string; mime: string; size: number;
+  } | null>(null);
+  // {{pdf}} {{video}} {{booking}} live on the automation settings row.
+  const [tokenLinks, setTokenLinks] = useState<{ pdf?: string; video?: string; booking?: string }>({});
   // Only true on a genuinely cold thread. A cached one paints with no spinner.
   const [threadLoading, setThreadLoading] = useState(false);
   const [chatMenu, setChatMenu] = useState(false);
@@ -115,7 +127,8 @@ export default function WhatsAppPage() {
   const [tab, setTabState] = useState<TabKey>('inbox');
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    if (t === 'automation' || t === 'qa' || t === 'sequences' || t === 'templates' || t === 'settings') setTabState(t);
+    if (t === 'automation' || t === 'replies' || t === 'sequences' || t === 'templates' || t === 'settings') setTabState(t);
+    if (t === 'qa') setTabState('replies');   // old bookmarks land on the successor
   }, []);
   const setTab = useCallback((t: TabKey) => {
     setTabState(t);
@@ -209,6 +222,13 @@ export default function WhatsAppPage() {
       supabase.from('whatsapp_saved_replies').select('*')
         .eq('workspace_id', workspace.id).order('sort_order')
         .then((r) => { setSavedReplies((r.data ?? []) as WaSavedReply[]); return r; }),
+      supabase.from('whatsapp_automation')
+        .select('pdf_url, video_url, booking_url').eq('workspace_id', workspace.id).maybeSingle()
+        .then((r) => {
+          const a = r.data as { pdf_url?: string | null; video_url?: string | null; booking_url?: string | null } | null;
+          setTokenLinks({ pdf: a?.pdf_url ?? '', video: a?.video_url ?? '', booking: a?.booking_url ?? '' });
+          return r;
+        }),
     ]);
     setTemplates((tRes.data || []) as WaTemplate[]);
     setSettings((sRes.data || null) as WaSettings | null);
@@ -519,6 +539,53 @@ export default function WhatsAppPage() {
     }
   }, [active, drafts, send]);
 
+  // ── quick replies ("/" palette) ───────────────────────────────────────────
+  const slashResults = useMemo(() => filterReplies(savedReplies, slashQuery), [savedReplies, slashQuery]);
+
+  // Switching chats drops palette state and any staged attachment — a file
+  // meant for one person must never ride along into another conversation.
+  useEffect(() => {
+    setPendingMedia(null); setSlashOpen(false); setSlashQuery(''); setSlashIdx(0);
+  }, [activeId]);
+
+  /** Tokens are filled the moment a reply is inserted, so what you see in the
+   *  box is exactly what the lead receives. */
+  const fillReplyTokens = useCallback((body: string) => {
+    const raw = active?.lead_name ?? '';
+    const name = !raw || /^whatsapp\s/i.test(raw) || /^[+\d\s-]+$/.test(raw) ? 'there' : firstName(raw);
+    return body
+      .replace(/\{\{\s*name\s*\}\}/gi, name)
+      .replace(/\{\{\s*pdf\s*\}\}/gi, tokenLinks.pdf ?? '')
+      .replace(/\{\{\s*video\s*\}\}/gi, tokenLinks.video ?? '')
+      .replace(/\{\{\s*booking\s*\}\}/gi, tokenLinks.booking ?? '')
+      .replace(/[ \t]+\n/g, '\n').trim();
+  }, [active?.lead_name, tokenLinks]);
+
+  const pickReply = useCallback((r: WaSavedReply) => {
+    if (!active) return;
+    const body = fillReplyTokens(r.body);
+    setDrafts((d) => ({ ...d, [active.id]: body }));
+    const el = textarea.current;
+    if (el) {
+      el.value = body;
+      el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 130)}px`;
+      el.focus();
+    }
+    if (r.media_path) {
+      setPendingMedia({
+        path: r.media_path,
+        mediaType: (['image', 'document', 'audio', 'video'].includes(r.media_type ?? '')
+          ? r.media_type : 'document') as 'image' | 'document' | 'audio' | 'video',
+        name: r.media_name ?? 'attachment',
+        mime: r.media_mime ?? 'application/octet-stream',
+        size: r.media_size ?? 0,
+      });
+    }
+    setSlashOpen(false); setSlashQuery(''); setSlashIdx(0);
+    // Usage count is bookkeeping — it must never block or fail the insert.
+    void supabase.rpc('whatsapp_saved_reply_used', { p_id: r.id }).then(() => {}, () => {});
+  }, [active, fillReplyTokens, supabase]);
+
   // Open a conversation in its own window — double-click a row, or the button
   // in the header. Sized like a messaging app, not a browser tab.
   const popOut = useCallback((conversationId: string) => {
@@ -689,7 +756,10 @@ export default function WhatsAppPage() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-[calc(100vh-56px)] flex-col bg-[#EEF0F4]">
+    // Full height. The 56px allowance is the MOBILE top bar only — on desktop
+    // (md:) the app shell has no header, and subtracting a phantom 56px was
+    // exactly the dead strip that sat under the composer.
+    <div className="flex h-[calc(100dvh-56px)] flex-col bg-[#EEF0F4] md:h-[100dvh]">
       {/* top bar — the approved design: wordmark · centred segmented tabs · presence pill */}
       <div className="relative flex h-[46px] flex-shrink-0 items-center gap-2.5 border-b border-[#E8EAF0] bg-white px-[14px]">
         <div className="flex min-w-0 items-center gap-2">
@@ -745,9 +815,9 @@ export default function WhatsAppPage() {
           <AutomationTab workspaceId={workspace.id} templates={templates} />
         </div>
       )}
-      {tab === 'qa' && (
+      {tab === 'replies' && (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <QaTab workspaceId={workspace.id} />
+          <RepliesTab workspaceId={workspace.id} onChanged={reload} />
         </div>
       )}
       {tab === 'sequences' && (
@@ -1095,53 +1165,77 @@ export default function WhatsAppPage() {
                           ))}
                         </div>
                       )}
-                      {savedOpen && (
-                        <div className="absolute bottom-full left-2 z-20 mb-2 w-[320px] overflow-hidden rounded-xl border border-[#E8EAF0] bg-white shadow-[0_12px_28px_-12px_rgba(20,24,40,.3)]">
-                          <div className="flex items-center justify-between border-b border-[#E8EAF0] px-3 py-2">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#7A8095]">Saved replies</span>
-                            <button onClick={() => setSavedOpen(false)} className="text-[#7A8095] hover:text-[#0F1728]"><X className="h-3.5 w-3.5" /></button>
-                          </div>
-                          <div className="max-h-[260px] overflow-y-auto p-1">
-                            {savedReplies.length === 0 && (
-                              <p className="m-0 px-3 py-4 text-center text-[12px] text-[#7A8095]">
-                                None yet. Migration 048 seeds four to start with.
-                              </p>
-                            )}
-                            {savedReplies.map((r) => (
-                              <button key={r.id}
-                                onClick={() => {
-                                  const el = textarea.current;
-                                  setDrafts((d) => ({ ...d, [active.id]: r.body }));
-                                  if (el) { el.value = r.body; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 130)}px`; el.focus(); }
-                                  setSavedOpen(false);
-                                }}
-                                className="mb-px block w-full rounded-md px-3 py-2 text-left transition hover:bg-[#F4F5F8]">
-                                <span className="flex items-center gap-2">
-                                  <b className="text-[12.5px] font-semibold text-[#0F1728]">{r.title}</b>
-                                  <code className="rounded bg-[#F4F5F8] px-1.5 py-px text-[10.5px] text-[#7A8095]">/{r.shortcut}</code>
-                                </span>
-                                <span className="mt-0.5 block line-clamp-2 text-[11.5px] leading-[1.5] text-[#7A8095]">{r.body}</span>
-                              </button>
-                            ))}
-                          </div>
+                      {slashOpen && (
+                        <QuickReplyPalette
+                          replies={slashResults}
+                          query={slashQuery}
+                          selectedIndex={slashIdx}
+                          onPick={pickReply}
+                          onHover={setSlashIdx}
+                          onManage={() => { setSlashOpen(false); setTab('replies'); }}
+                        />
+                      )}
+                      {pendingMedia && (
+                        <div className="flex items-center gap-2 border-b border-[#E8EAF0] bg-[#F7FDF9] px-3 py-1.5">
+                          <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-[#1B7A44]" />
+                          <span className="min-w-0 truncate text-[11.8px] font-semibold text-[#1B7A44]">{pendingMedia.name}</span>
+                          <span className="text-[10.5px] text-[#7A8095]">goes with this message</span>
+                          <button onClick={() => setPendingMedia(null)} title="Remove attachment"
+                            className="ml-auto rounded p-1 text-[#1B7A44] transition hover:bg-[#D7F3E1]">
+                            <X className="h-3 w-3" />
+                          </button>
                         </div>
                       )}
                       <textarea
                         ref={textarea}
                         rows={1}
                         defaultValue={drafts[active.id] || ''}
-                        placeholder={`Reply to ${firstName(active.lead_name)}…`}
+                        placeholder={`Reply to ${firstName(active.lead_name)} — or type / for a quick reply…`}
                         onInput={(e) => {
                           const el = e.currentTarget;
                           el.style.height = 'auto';
                           el.style.height = `${Math.min(el.scrollHeight, 130)}px`;
                           setDrafts((d) => ({ ...d, [active.id]: el.value }));
+                          // "/" as the first character summons the palette;
+                          // everything typed after it filters the list live.
+                          if (el.value.startsWith('/')) {
+                            setSlashOpen(true); setSlashQuery(el.value.slice(1)); setSlashIdx(0);
+                          } else if (slashOpen) {
+                            setSlashOpen(false); setSlashQuery('');
+                          }
                         }}
                         onKeyDown={(e) => {
+                          // Palette navigation owns the keys while it is open.
+                          if (slashOpen) {
+                            if (e.key === 'ArrowDown') {
+                              e.preventDefault();
+                              setSlashIdx((i) => Math.min(i + 1, Math.max(0, slashResults.length - 1)));
+                              return;
+                            }
+                            if (e.key === 'ArrowUp') {
+                              e.preventDefault();
+                              setSlashIdx((i) => Math.max(i - 1, 0));
+                              return;
+                            }
+                            if (e.key === 'Enter' || e.key === 'Tab') {
+                              e.preventDefault();
+                              const r = slashResults[slashIdx];
+                              if (r) pickReply(r);
+                              return;
+                            }
+                            if (e.key === 'Escape') {
+                              e.preventDefault();
+                              setSlashOpen(false); setSlashQuery('');
+                              return;
+                            }
+                          }
                           if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
                             const v = e.currentTarget.value.trim();
-                            if (v && !sending) send(v);
+                            if ((v || pendingMedia) && !sending) {
+                              send(v, undefined, pendingMedia ?? undefined);
+                              setPendingMedia(null);
+                            }
                           }
                         }}
                         className="block max-h-[120px] min-h-[46px] w-full resize-none border-0 bg-transparent p-3 text-[13px] leading-[1.6] outline-none placeholder:text-[#7A8095]"
@@ -1159,13 +1253,23 @@ export default function WhatsAppPage() {
                             className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728] disabled:opacity-50">
                             {uploading ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Paperclip className="h-[18px] w-[18px]" />}
                           </button>
-                          <button onClick={() => { setEmojiOpen((v) => !v); setSavedOpen(false); }} title="Emoji"
+                          <button onClick={() => { setEmojiOpen((v) => !v); setSlashOpen(false); }} title="Emoji"
                             className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728]">
                             <Smile className="h-[18px] w-[18px]" />
                           </button>
-                          <button onClick={() => { setSavedOpen((v) => !v); setEmojiOpen(false); }} title="Saved replies"
-                            className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728]">
-                            <FileText className="h-[18px] w-[18px]" />
+                          <button
+                            onClick={() => {
+                              setEmojiOpen(false);
+                              setSlashOpen((v) => !v); setSlashQuery(''); setSlashIdx(0);
+                              textarea.current?.focus();
+                            }}
+                            title="Quick replies  (/)"
+                            className={cn(
+                              'flex items-center gap-1 rounded px-1.5 py-1.5 transition-colors',
+                              slashOpen ? 'bg-[#EDFAF1] text-[#1B7A44]' : 'text-[#7A8095] hover:bg-[#E8EAF0] hover:text-[#0F1728]'
+                            )}>
+                            <span className="font-mono text-[13px] font-bold leading-none">/</span>
+                            <span className="text-[11px] font-semibold">Quick reply</span>
                           </button>
                         </div>
                         <div className="flex items-center gap-3">
@@ -1175,8 +1279,11 @@ export default function WhatsAppPage() {
                           {/* Not disabled while a send is in flight — the bubble is
                               already on screen; only an empty box disables it. */}
                           <button
-                            disabled={!(drafts[active.id] || '').trim()}
-                            onClick={() => { const v = (drafts[active.id] || '').trim(); if (v) send(v); }}
+                            disabled={!(drafts[active.id] || '').trim() && !pendingMedia}
+                            onClick={() => {
+                              const v = (drafts[active.id] || '').trim();
+                              if (v || pendingMedia) { send(v, undefined, pendingMedia ?? undefined); setPendingMedia(null); }
+                            }}
                             className="flex items-center gap-2 rounded-md bg-[#131b2d] px-4 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#2a3040] disabled:opacity-40"
                           >
                             Send <SendIcon className="h-[13px] w-[13px]" />
