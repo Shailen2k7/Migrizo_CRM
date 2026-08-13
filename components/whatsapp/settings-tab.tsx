@@ -116,7 +116,7 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
     setDraining(true);
     setDrainResult(null);
     try {
-      const res = await fetch('/api/whatsapp/sequences/drain', { method: 'POST' });
+      const res = await fetch('/api/whatsapp/campaigns/run', { method: 'POST' });
       const json = (await res.json()) as DrainResult;
       setDrainResult(json);
       if (!json.ok) toast.error(json.reason || 'Drain failed');
@@ -221,12 +221,12 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
         {/* ── engine ── */}
         <Card icon={<Zap />} title="Sequence engine" sub="The cron that does the actual sending">
           <p className="m-0 mb-[10px] text-[12.4px] leading-[1.6] text-ink-2">
-            A scheduler should call this every 10 minutes. Each run sends a small
+            The scheduler calls this every 5 minutes. Each run sends a small
             batch of whatever is due — window, caps and opt-outs are enforced in
             the database before anything is handed to Interakt.
           </p>
           <div className="mb-[12px] rounded-[10px] bg-[#0F172A] px-[13px] py-[10px] font-mono text-[11.2px] leading-[1.7] text-[#A5F3B4]">
-            POST https://crm.migrizo.com/api/whatsapp/sequences/drain<br />
+            POST https://crm.migrizo.com/api/whatsapp/campaigns/run<br />
             x-cron-secret: &lt;CRON_SECRET&gt;
           </div>
           <button onClick={runDrain} disabled={draining}
