@@ -78,11 +78,26 @@ const EXPERTISE_RULES: [Industry, RegExp][] = [
   ['other',       /^other$|not listed|none of|prefer not/],
 ];
 
+/**
+ * Meta does not always send the label a person saw. When the form option has
+ * no separate label it sends the OPTION SLUG — "tech_", "art_", "not_sure",
+ * "arts_culture". Underscore is a word character, so `\btech\b` does not match
+ * "tech_" and the answer fell through every rule to null. Worse, "not_sure"
+ * skipped the MAYBE rule (which reads "not sure", with a space) and was caught
+ * by `sure` inside the YES rule — an undecided lead tagged willing to pay.
+ *
+ * Both disappear if the slug is read as the words it stands for. The RAW answer
+ * is still stored exactly as it arrived; only matching sees this.
+ */
+function forMatching(s: string): string {
+  return s.toLowerCase().replace(/[_\-+]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /** Free-text expertise answer -> a clean industry key, or null when unreadable. */
 export function mapExpertise(raw: unknown): Industry | null {
   const s = flattenAnswer(raw);
   if (!s) return null;
-  const t = s.toLowerCase();
+  const t = forMatching(s);
   for (const [industry, re] of EXPERTISE_RULES) {
     if (re.test(t)) return industry;
   }
@@ -115,7 +130,7 @@ const READINESS_RULES: [Readiness, RegExp][] = [
 export function mapReadiness(raw: unknown): Readiness | null {
   const s = flattenAnswer(raw);
   if (!s) return null;
-  const t = s.toLowerCase();
+  const t = forMatching(s);
   for (const [readiness, re] of READINESS_RULES) {
     if (re.test(t)) return readiness;
   }
@@ -136,7 +151,7 @@ export interface MapTrace<T extends string> {
 export function traceExpertise(raw: unknown): MapTrace<Industry> {
   const s = flattenAnswer(raw);
   if (!s) return { raw: null, value: null, rule: null };
-  const t = s.toLowerCase();
+  const t = forMatching(s);
   for (const [industry, re] of EXPERTISE_RULES) {
     if (re.test(t)) return { raw: s, value: industry, rule: re.source };
   }
@@ -146,7 +161,7 @@ export function traceExpertise(raw: unknown): MapTrace<Industry> {
 export function traceReadiness(raw: unknown): MapTrace<Readiness> {
   const s = flattenAnswer(raw);
   if (!s) return { raw: null, value: null, rule: null };
-  const t = s.toLowerCase();
+  const t = forMatching(s);
   for (const [readiness, re] of READINESS_RULES) {
     if (re.test(t)) return { raw: s, value: readiness, rule: re.source };
   }
