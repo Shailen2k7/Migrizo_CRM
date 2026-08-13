@@ -32,7 +32,7 @@ import TemplatePicker from '@/components/whatsapp/template-picker';
 import NewConversation from '@/components/whatsapp/new-conversation';
 import RepliesTab from '@/components/whatsapp/replies-tab';
 import QuickReplyPalette, { filterReplies } from '@/components/whatsapp/quick-reply-palette';
-import CampaignsTab, { type SeqOverviewRow } from '@/components/whatsapp/campaigns-tab';
+import CampaignCenter from '@/components/whatsapp/campaign-center';
 import TemplatesTab from '@/components/whatsapp/templates-tab';
 import SettingsTab from '@/components/whatsapp/settings-tab';
 import { MessageBubble } from '@/components/whatsapp/message-bubble';
@@ -141,17 +141,10 @@ export default function WhatsAppPage() {
     window.history.replaceState(null, '', u.toString());
   }, []);
 
-  // Sequence overview backs the Sequences tab AND the lead panel's step count.
-  const [overview, setOverview] = useState<SeqOverviewRow[]>([]);
-  const loadOverview = useCallback(async () => {
-    const { data } = await supabase.rpc('whatsapp_sequence_overview', { p_workspace_id: workspace.id });
-    setOverview((data ?? []) as SeqOverviewRow[]);
-  }, [supabase, workspace.id]);
-  useEffect(() => { loadOverview(); }, [loadOverview]);
-
-  // The active lead's enrollment, so Pause/Resume/Stop in the panel are real.
+  // The active lead's campaign membership, so Pause/Resume/Stop in the panel
+  // are real. One row per lead per campaign (wa_campaign_people, mig 062).
   const [enrollment, setEnrollment] = useState<{
-    id: string; status: string; current_step: number; seq_id: string; seq_name: string;
+    id: string; status: string; current_step: number; total_steps: number; seq_name: string;
   } | null>(null);
   const [panelTab, setPanelTab] = useState<'info' | 'activity'>('info');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -226,16 +219,12 @@ export default function WhatsAppPage() {
       supabase.from('whatsapp_saved_replies').select('*')
         .eq('workspace_id', workspace.id).order('sort_order')
         .then((r) => { setSavedReplies((r.data ?? []) as WaSavedReply[]); return r; }),
-      supabase.from('whatsapp_automation')
-        .select('pdf_url, video_url, booking_url').eq('workspace_id', workspace.id).maybeSingle()
-        .then((r) => {
-          const a = r.data as { pdf_url?: string | null; video_url?: string | null; booking_url?: string | null } | null;
-          setTokenLinks({ pdf: a?.pdf_url ?? '', video: a?.video_url ?? '', booking: a?.booking_url ?? '' });
-          return r;
-        }),
     ]);
     setTemplates((tRes.data || []) as WaTemplate[]);
     setSettings((sRes.data || null) as WaSettings | null);
+    // {{pdf}} / {{video}} / {{booking}} live on the settings row since mig 062.
+    const s = sRes.data as (WaSettings & { pdf_url?: string | null; video_url?: string | null; booking_url?: string | null }) | null;
+    setTokenLinks({ pdf: s?.pdf_url ?? '', video: s?.video_url ?? '', booking: s?.booking_url ?? '' });
     if (sRes.error) setLoadError(sRes.error.message);
   }, [supabase, workspace.id, loadConvs, loadStats]);
 
@@ -645,24 +634,24 @@ export default function WhatsAppPage() {
     loadConvs();
   }
 
-  // The panel's Pause/Resume/Stop act on the real enrollment. The rule stands:
-  // a reply never stops anything — these three buttons are the only way.
+  // The panel's Pause/Resume/Stop act on the person's real campaign row.
   async function seqAction(a: 'pause' | 'resume' | 'stop') {
     if (!enrollment) {
-      toast('This lead is not in a sequence — enrol them from the Sequences tab');
+      toast('This lead is not in a campaign — campaigns fill themselves from the lead stage');
       return;
     }
-    const { data, error } = await supabase.rpc('whatsapp_enrollment_action', {
-      p_enrollment_id: enrollment.id, p_action: a,
+    const { data, error } = await supabase.rpc('wa_person_action', {
+      p_person_id: enrollment.id, p_action: a,
     });
     if (error) { toast.error(error.message); return; }
     const next = String(data);
+    if (next === 'not_campaign_admin') { toast.error('Only a campaign admin can do that'); return; }
     setEnrollment({ ...enrollment, status: next });
-    loadOverview();
     toast.success(
-      next === 'paused' ? 'Sequence paused for this lead'
-        : next === 'active' ? 'Sequence resumed — next send inside the window'
-        : 'Stopped — this lead gets nothing further from the sequence'
+      next === 'paused' ? 'Campaign paused for this lead'
+        : next === 'waiting' ? 'Resumed — their next message goes out on the next engine run'
+        : next === 'stopped' ? 'Stopped — this lead gets nothing further from the campaign'
+        : 'Nothing to change'
     );
   }
 
@@ -719,43 +708,46 @@ export default function WhatsAppPage() {
   const wLeft = active ? windowLeftMs(active.last_inbound_at) : 0;
   const focusOn = hideList && hidePanel;
 
-  // Enrollment lookup for the lead panel — one tiny query per selected lead.
+  // Campaign lookup for the lead panel — one tiny query per selected lead.
   useEffect(() => {
     const leadId = activeLead?.id;
     if (!leadId) { setEnrollment(null); return; }
     let alive = true;
     (async () => {
       const { data } = await supabase
-        .from('whatsapp_sequence_enrollments')
-        .select('id, status, current_step, sequence:whatsapp_sequences(id, name)')
+        .from('wa_campaign_people')
+        .select('id, status, next_step, sent_count, campaign:wa_campaigns(name, steps:wa_campaign_steps(count))')
         .eq('lead_id', leadId)
         .order('created_at', { ascending: false })
         .limit(1);
       if (!alive) return;
       const row = (data ?? [])[0] as {
-        id: string; status: string; current_step: number;
-        sequence: { id: string; name: string } | { id: string; name: string }[] | null;
+        id: string; status: string; next_step: number; sent_count: number;
+        campaign: { name: string; steps: Array<{ count: number }> }
+          | Array<{ name: string; steps: Array<{ count: number }> }> | null;
       } | undefined;
-      const seq = Array.isArray(row?.sequence) ? row?.sequence[0] : row?.sequence;
+      const camp = Array.isArray(row?.campaign) ? row?.campaign[0] : row?.campaign;
       setEnrollment(row
-        ? { id: row.id, status: row.status, current_step: row.current_step,
-            seq_id: seq?.id ?? '', seq_name: seq?.name ?? 'Sequence' }
+        ? { id: row.id, status: row.status, current_step: row.sent_count,
+            total_steps: camp?.steps?.[0]?.count ?? 0,
+            seq_name: camp?.name ?? 'Campaign' }
         : null);
     })();
     return () => { alive = false; };
   }, [activeLead?.id, supabase]);
 
   const seqState: SeqState = enrollment
-    ? (enrollment.status === 'active' ? 'active'
-       : enrollment.status === 'paused' ? 'paused'
+    ? (enrollment.status === 'waiting' ? 'active'
+       : enrollment.status === 'paused' || enrollment.status === 'replied' ? 'paused'
        : 'stopped')
     : (active?.suppressed ? 'stopped' : 'none');
-  const seqSteps = overview.find((o) => o.id === enrollment?.seq_id)?.step_count ?? null;
+  const seqSteps = enrollment?.total_steps || null;
   const seqLabel = enrollment
     ? `${enrollment.seq_name} · ${
-        enrollment.status === 'completed' ? 'completed'
-          : `step ${enrollment.current_step}${seqSteps ? `/${seqSteps}` : ''}`}`
-    : 'No sequence';
+        enrollment.status === 'done' ? 'completed'
+          : enrollment.status === 'replied' ? 'replied — paused'
+          : `sent ${enrollment.current_step}${seqSteps ? `/${seqSteps}` : ''}`}`
+    : 'No campaign';
 
 
   // ── render ────────────────────────────────────────────────────────────────
@@ -820,13 +812,9 @@ export default function WhatsAppPage() {
         </div>
       )}
       {tab === 'sequences' && (
-        <CampaignsTab
-          workspaceId={workspace.id}
-          templates={templates}
-          leads={leads}
-          overview={overview}
-          reloadOverview={loadOverview}
-        />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <CampaignCenter workspaceId={workspace.id} templates={templates} />
+        </div>
       )}
       {tab === 'templates' && <TemplatesTab templates={templates} onChanged={reload} />}
       {tab === 'settings' && (
