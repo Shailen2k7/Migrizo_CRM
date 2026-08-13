@@ -87,13 +87,22 @@ export default function RepliesTab({
       media_path: draft.media_path, media_type: draft.media_type,
       media_name: draft.media_name, media_mime: draft.media_mime, media_size: draft.media_size,
     };
-    const { error } = draft.id
-      ? await supabase.from('whatsapp_saved_replies').update(payload).eq('id', draft.id)
-      : await supabase.from('whatsapp_saved_replies').insert(payload);
+    // .select() forces a permission-blocked write to show itself: RLS silently
+    // filters rows on UPDATE (no error, 0 rows), which used to fake a "saved".
+    const { data, error } = draft.id
+      ? await supabase.from('whatsapp_saved_replies').update(payload).eq('id', draft.id).select('id')
+      : await supabase.from('whatsapp_saved_replies').insert(payload).select('id');
     setSaving(false);
     if (error) {
       toast.error(/duplicate|unique/i.test(error.message)
-        ? `“/${shortcut}” is taken — pick another shortcut` : error.message);
+        ? `“/${shortcut}” is taken — pick another shortcut`
+        : /row-level security|policy/i.test(error.message)
+          ? 'Not saved — your account is not a campaign admin. The workspace owner can add you.'
+          : error.message);
+      return;
+    }
+    if (!data?.length) {
+      toast.error('Not saved — your account is not a campaign admin. The workspace owner can add you.');
       return;
     }
     toast.success(draft.id ? 'Reply updated' : `Saved — type /${shortcut} in any chat`);
@@ -103,7 +112,10 @@ export default function RepliesTab({
 
   const remove = async (r: WaSavedReply) => {
     if (!window.confirm(`Delete “${r.title}” (/${r.shortcut})?\n\nThis cannot be undone.`)) return;
-    const { error } = await supabase.from('whatsapp_saved_replies').delete().eq('id', r.id);
+    const { data, error: delError } = await supabase.from('whatsapp_saved_replies')
+      .delete().eq('id', r.id).select('id');
+    const error = delError ?? (!data?.length
+      ? { message: 'Not deleted — your account is not a campaign admin.' } : null);
     if (error) { toast.error(error.message); return; }
     toast.success('Deleted');
     load(); onChanged();

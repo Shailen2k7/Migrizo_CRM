@@ -109,8 +109,16 @@ export default function CampaignCenter({ workspaceId, templates }: {
   // ── actions ────────────────────────────────────────────────────────────────
   const toggleCampaign = async (c: Campaign) => {
     const next = c.status === 'running' ? 'paused' : 'running';
-    const { error } = await supabase.from('wa_campaigns').update({ status: next }).eq('id', c.id);
+    // .select() makes a permission-blocked update VISIBLE: the database filters
+    // rows you cannot touch without raising an error, so "no error + 0 rows"
+    // used to masquerade as success while the switch silently snapped back.
+    const { data, error } = await supabase.from('wa_campaigns')
+      .update({ status: next }).eq('id', c.id).select('id');
     if (error) { toast.error(error.message); return; }
+    if (!data?.length) {
+      toast.error('Not saved — your account is not a campaign admin. The workspace owner can add you (one line of SQL, ask your developer).');
+      return;
+    }
     if (next === 'running') await supabase.rpc('wa_sync', { p_workspace_id: workspaceId });
     toast.success(next === 'running'
       ? `${c.name} is ON — everyone in the stage is in, sends resume inside your hours`
