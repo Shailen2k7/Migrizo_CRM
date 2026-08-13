@@ -38,7 +38,16 @@ function dayKeyIn(tz: string, at: Date): string {
 export interface SlotQuery {
   tz: string;                       // member timezone
   workingHours: WorkingHours;
-  slotMinutes: number;
+  slotMinutes: number;              // how long the CALL runs
+  /**
+   * How often a slot is OFFERED. Separate from slotMinutes on purpose: the grid
+   * used to step by the call's duration, so changing a call to 60 minutes
+   * silently turned an every-30-minutes page into an hourly one. With
+   * stepMinutes the two decisions are independent — 30/30 gives back-to-back
+   * half-hour calls, 30/60 offers a slot every half hour for an hour-long call.
+   * Falls back to slotMinutes so old callers behave exactly as before.
+   */
+  stepMinutes?: number;
   bufferMinutes: number;
   fromUtc: Date;                    // range start (inclusive)
   toUtc: Date;                      // range end (exclusive)
@@ -49,6 +58,9 @@ export interface SlotQuery {
 /** All free slot start times (UTC) inside the range. */
 export function computeSlots(q: SlotQuery): Date[] {
   const out: Date[] = [];
+  // A zero or negative step would spin this loop forever, so it is clamped
+  // here as well as in the database — a bad row must never hang the page.
+  const step = Math.max(5, Math.min(240, q.stepMinutes || q.slotMinutes));
   const minStart = new Date(Date.now() + (q.minNoticeMinutes ?? 60) * 60000);
   const buffered = q.busy.map((b) => ({
     start: new Date(b.start.getTime() - q.bufferMinutes * 60000),
@@ -71,7 +83,7 @@ export function computeSlots(q: SlotQuery): Date[] {
         const slotEnd = new Date(t.getTime() + q.slotMinutes * 60000);
         const clash = buffered.some((b) => t < b.end && slotEnd > b.start);
         if (!clash && t >= minStart && t >= q.fromUtc && t < q.toUtc) out.push(new Date(t));
-        t = new Date(t.getTime() + q.slotMinutes * 60000);
+        t = new Date(t.getTime() + step * 60000);
       }
     }
     // advance one day (member-tz midnight ≈ +24h; Intl re-derives the day key)

@@ -13,7 +13,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const admin = createClient(url, key, { auth: { persistSession: false } });
 
   const { data: member } = await admin.from('scheduler_members')
-    .select('id, display_name, title, bio, timezone, slot_minutes, buffer_minutes, working_hours, active')
+    .select('id, display_name, title, bio, timezone, slot_minutes, slot_step_minutes, buffer_minutes, working_hours, active')
     .eq('slug', slug).maybeSingle();
   if (!member || !member.active) return NextResponse.json({ ok: false, reason: 'not_found' }, { status: 404 });
 
@@ -29,7 +29,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
 
   const slots = computeSlots({
     tz: member.timezone, workingHours: member.working_hours as WorkingHours,
-    slotMinutes: member.slot_minutes, bufferMinutes: member.buffer_minutes,
+    slotMinutes: member.slot_minutes, stepMinutes: member.slot_step_minutes ?? 30,
+    bufferMinutes: member.buffer_minutes,
     fromUtc: from, toUtc: to,
     busy: (busyRows || []).map((b) => ({ start: new Date(b.starts_at), end: new Date(b.ends_at) })),
   });

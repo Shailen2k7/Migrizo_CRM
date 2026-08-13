@@ -18,7 +18,7 @@ interface Meeting {
   starts_at: string; ends_at: string; status: string; notes: string | null;
   meet_link: string | null; manage_token: string; created_at: string;
 }
-interface Member { id: string; user_id: string; slug: string; display_name: string; title: string; meeting_link: string | null; timezone: string; slot_minutes: number; buffer_minutes: number; working_hours: Record<string, [string, string][]>; active: boolean; }
+interface Member { id: string; user_id: string; slug: string; display_name: string; title: string; meeting_link: string | null; timezone: string; slot_minutes: number; slot_step_minutes: number; buffer_minutes: number; working_hours: Record<string, [string, string][]>; active: boolean; }
 interface Reminder { id: string; kind: string; send_at: string; status: string; attempts: number; error: string | null; sent_at: string | null; }
 interface Activity { id: string; event: string; meta: Record<string, unknown>; created_at: string; }
 
@@ -448,7 +448,7 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
   const supabase = useMemo(() => createClient(), []);
   const [m, setM] = useState<Partial<Member>>(myMember || {
     slug: '', display_name: '', title: 'GTV Consultation', meeting_link: '', timezone: 'Asia/Kolkata',
-    slot_minutes: 30, buffer_minutes: 10, active: true,
+    slot_minutes: 30, slot_step_minutes: 30, buffer_minutes: 0, active: true,
     working_hours: { mon: [['10:00', '22:00']], tue: [['10:00', '22:00']], wed: [['10:00', '22:00']], thu: [['10:00', '22:00']], fri: [['10:00', '22:00']], sat: [], sun: [['10:00', '22:00']] },
   });
   const [saving, setSaving] = useState(false);
@@ -471,7 +471,12 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
       slug: m.slug!.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
       display_name: m.display_name!.trim(), title: m.title || 'Consultation', bio: null,
       meeting_link: m.meeting_link || null, timezone: m.timezone || 'Asia/Kolkata',
-      slot_minutes: Number(m.slot_minutes) || 30, buffer_minutes: Number(m.buffer_minutes) || 10,
+      slot_minutes: Number(m.slot_minutes) || 30,
+      slot_step_minutes: Math.max(5, Math.min(240, Number(m.slot_step_minutes) || 30)),
+      // Deliberately NOT `|| 0` guarded with a fallback — 0 is the useful value
+      // here (it is what makes back-to-back slots possible), so an empty field
+      // must read as zero, not silently become 10 again.
+      buffer_minutes: Math.max(0, Number(m.buffer_minutes) || 0),
       working_hours: m.working_hours, active: m.active !== false, updated_at: new Date().toISOString(),
     };
     const q = myMember
@@ -507,14 +512,26 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
           className="w-full px-3 py-2 border border-border rounded-lg text-[13px] mb-1 focus:border-indigo outline-none" />
         <p className="text-[11px] text-faint mb-3">Sent on every confirmation and reminder. (Auto-created Meet links arrive with the Google Calendar phase.)</p>
 
-        <div className="grid grid-cols-3 gap-2.5 mb-4">
-          <div><label className="block text-[12px] font-medium text-muted mb-1">Duration (min)</label>
+        {/* Grid spacing and call length are separate questions. Keeping them in
+            one number was the bug: a 60-minute call quietly turned an
+            every-30-minutes page into an hourly one. */}
+        <div className="grid grid-cols-3 gap-2.5 mb-1">
+          <div><label className="block text-[12px] font-medium text-muted mb-1">Slot every (min)</label>
+            <select value={m.slot_step_minutes ?? 30} onChange={(e) => setM({ ...m, slot_step_minutes: Number(e.target.value) })}
+              className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none bg-surface">
+              {[15, 20, 30, 45, 60].map((v) => <option key={v} value={v}>{v} min</option>)}
+            </select></div>
+          <div><label className="block text-[12px] font-medium text-muted mb-1">Call length (min)</label>
             <input type="number" value={m.slot_minutes || 30} onChange={(e) => setM({ ...m, slot_minutes: Number(e.target.value) })} className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none" /></div>
-          <div><label className="block text-[12px] font-medium text-muted mb-1">Buffer (min)</label>
-            <input type="number" value={m.buffer_minutes ?? 10} onChange={(e) => setM({ ...m, buffer_minutes: Number(e.target.value) })} className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none" /></div>
-          <div><label className="block text-[12px] font-medium text-muted mb-1">Timezone</label>
-            <input value={m.timezone || ''} onChange={(e) => setM({ ...m, timezone: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none" /></div>
+          <div><label className="block text-[12px] font-medium text-muted mb-1">Gap after (min)</label>
+            <input type="number" min={0} value={m.buffer_minutes ?? 0} onChange={(e) => setM({ ...m, buffer_minutes: Number(e.target.value) })} className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none" /></div>
         </div>
+        <p className="text-[11px] text-faint mb-3 leading-[1.5]">
+          <b className="text-ink-2">Slot every 30 · call 30 · gap 0</b> offers 10:00, 10:30, 11:00 — and booking 2:00pm still leaves 2:30pm open.
+          Any gap above 0 is enforced on <i>both</i> sides of a booking, so it removes the neighbouring slot.
+        </p>
+        <label className="block text-[12px] font-medium text-muted mb-1">Timezone</label>
+        <input value={m.timezone || ''} onChange={(e) => setM({ ...m, timezone: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg text-[13px] mb-4 focus:border-indigo outline-none" />
 
         <div className="text-[11px] font-bold uppercase tracking-wide text-muted mb-2">Working hours</div>
         <div className="space-y-2 mb-5">

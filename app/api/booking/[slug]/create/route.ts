@@ -45,7 +45,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     .lte('starts_at', new Date(starts.getTime() + 24 * 3600 * 1000).toISOString());
   const valid = computeSlots({
     tz: member.timezone, workingHours: member.working_hours as WorkingHours,
-    slotMinutes: member.slot_minutes, bufferMinutes: member.buffer_minutes,
+    slotMinutes: member.slot_minutes, stepMinutes: member.slot_step_minutes ?? 30,
+    bufferMinutes: member.buffer_minutes,
     fromUtc: new Date(starts.getTime() - 1), toUtc: new Date(starts.getTime() + 1 + member.slot_minutes * 60000),
     busy: (busyRows || []).map((b) => ({ start: new Date(b.starts_at), end: new Date(b.ends_at) })),
   }).some((s) => s.getTime() === starts.getTime());

@@ -40,12 +40,17 @@ function VisaTag({ visa }: { visa: string | null }) {
 
 type Segment = 'all' | 'spotlight' | 'not_responding' | LeadStage;
 
-// "Not responding" is COMPUTED, not a stage anyone has to set. A lead counts
-// when it is still in play, was last touched more than 14 days ago, and has had
-// at least one attempt made. That keeps it accurate with no data entry, and it
-// clears itself the moment someone replies and the lead is updated.
+// "Not responding" comes from TWO places, and the filter shows both.
+//
+//   1. MARKED BY HAND — the Not Responding stage in the dropdown. You already
+//      know they have gone quiet; you should not have to wait two weeks for the
+//      system to agree with you.
+//   2. COMPUTED — still in play, untouched for 14+ days. Catches the ones
+//      nobody remembered to mark, with no data entry at all, and clears itself
+//      the moment the lead is updated again.
 const NOT_RESPONDING_DAYS = 14;
 function isNotResponding(l: Lead): boolean {
+  if (l.stage === 'not_responding') return true;      // a human said so
   if (l.stage === 'won' || l.stage === 'junk') return false;
   const touched = l.updated_at || l.created_at;
   if (!touched) return false;
@@ -80,9 +85,11 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
       hot: 0, cold: 0, mr_coming_soon: 0, invoice_sent: 0, won: 0, junk: 0,
     };
     leads.forEach((l) => {
+      // The stage tally already covers anyone MARKED not-responding; the second
+      // line adds only the ones the 14-day rule found, so nobody is counted twice.
       c[l.stage] = (c[l.stage] || 0) + 1;
       if (l.is_spotlight) c.spotlight += 1;
-      if (isNotResponding(l)) c.not_responding += 1;
+      if (l.stage !== 'not_responding' && isNotResponding(l)) c.not_responding += 1;
     });
     return c;
   }, [leads]);
@@ -217,7 +224,10 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
 
   // Invoice Sent is dropped from the chips — that state is obvious inside the
 // lead drawer, and the row is worth more to "Not responding".
-const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter((s) => s !== 'mr_coming_soon' && s !== 'invoice_sent')];
+// not_responding is excluded too: it already has its own orange chip above,
+// which counts the marked AND the computed ones together.
+const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter(
+  (s) => s !== 'mr_coming_soon' && s !== 'invoice_sent' && s !== 'not_responding')];
 
   return (
     <>
@@ -237,7 +247,7 @@ const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter((s) => s !
         <button
           onClick={() => setSegment('not_responding')}
           className={cn('filter-chip', segment === 'not_responding' && 'active')}
-          title={`Still open, untouched for ${NOT_RESPONDING_DAYS}+ days`}
+          title={`Marked Not Responding, or still open and untouched for ${NOT_RESPONDING_DAYS}+ days`}
           style={segment === 'not_responding'
             ? { background: '#EA580C', color: '#fff', borderColor: '#EA580C' }
             : { background: '#FFF3EA', color: '#9A3412', borderColor: '#FBD7BC' }}

@@ -5,6 +5,7 @@
 export type LeadStage =
   | 'hot'
   | 'cold'
+  | 'not_responding'
   | 'mr_coming_soon'
   | 'invoice_sent'
   | 'won'
@@ -125,6 +126,10 @@ export interface Activity {
 export const STAGE_META: Record<LeadStage, { label: string; bg: string; fg: string; dot: string }> = {
   hot:            { label: 'Hot',             bg: '#FEE2E2', fg: '#B91C1C', dot: '#EF4444' },
   cold:           { label: 'Cold',            bg: '#DBEAFE', fg: '#1E40AF', dot: '#3B82F6' },
+  // Set by hand when someone has clearly gone quiet. The Leads filter shows
+  // these AND the ones that go stale on their own, so marking one is a
+  // shortcut, never a requirement.
+  not_responding: { label: 'Not Responding',  bg: '#FFF3EA', fg: '#9A3412', dot: '#EA580C' },
   mr_coming_soon: { label: 'Mr. Coming Soon', bg: '#FEF3C7', fg: '#B45309', dot: '#F59E0B' },
   invoice_sent:   { label: 'Invoice Sent',    bg: '#EDE9FE', fg: '#5B21B6', dot: '#7C3AED' },
   won:            { label: 'Won',             bg: '#E6F7EE', fg: '#047857', dot: '#10B981' },
@@ -132,7 +137,7 @@ export const STAGE_META: Record<LeadStage, { label: string; bg: string; fg: stri
 };
 
 // Tag order used for dropdowns + filters (logical sales-funnel order)
-export const STAGE_ORDER: LeadStage[] = ['hot', 'cold', 'mr_coming_soon', 'invoice_sent', 'won', 'junk'];
+export const STAGE_ORDER: LeadStage[] = ['hot', 'cold', 'not_responding', 'mr_coming_soon', 'invoice_sent', 'won', 'junk'];
 
 export const PAYMENT_META: Record<PaymentStatus, { label: string; bg: string; fg: string }> = {
   none:    { label: 'Not paid', bg: '#F4F4F6', fg: '#7A7A82' },
