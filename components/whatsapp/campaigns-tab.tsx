@@ -44,14 +44,26 @@ interface Audience {
   added_days: number | null;
   quiet_days: number | null;
 }
+// Simplest thing that is also safe: one stage, everyone in it. The 24-hour
+// "don't talk over a live chat" rule is always on regardless, so an empty
+// quiet_days is not a foot-gun — it just means "don't add a second rule".
 const EMPTY_AUDIENCE: Audience = {
-  stages: ['cold'], industries: [], readiness: [], visa: [], added_days: null, quiet_days: 14,
+  stages: ['cold'], industries: [], readiness: [], visa: [], added_days: null, quiet_days: null,
 };
 
 interface Preview {
   ok: boolean; matched: number; suppressed: number; meeting_booked: number;
   already_in: number; eligible: number; steps: number; total_messages: number;
 }
+interface Facets {
+  ok: boolean; total: number;
+  stage: Record<string, number>;
+  industry: Record<string, number>;
+  readiness: Record<string, number>;
+  visa: Record<string, number>;
+  blockers: Array<{ key: string; label: string; would_reach: number }>;
+}
+const NONE = '__none__';   // the "No tag" bucket, a real option with a real count
 interface StepStat { step_no: number; template: string; sent: number; failed: number }
 interface ReplyRow { enrollment_id: string; lead_name: string; phone: string; replied_at: string | null; body: string | null; conversation_id: string | null }
 interface FailRow { enrollment_id: string; lead_name: string; phone: string; error: string | null; status: string; at_step: number }
@@ -105,7 +117,9 @@ export default function CampaignsTab({ workspaceId, templates, overview, reloadO
   const [dirty, setDirty] = useState(false);          // steps / name
   const [audDirty, setAudDirty] = useState(false);    // audience / limits
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [facets, setFacets] = useState<Facets | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [saving, setSaving] = useState(false);
   const [launching, setLaunching] = useState(false);
@@ -149,25 +163,30 @@ export default function CampaignsTab({ workspaceId, templates, overview, reloadO
     return () => clearInterval(t);
   }, [selId, sel?.status, supabase]);
 
-  // ── the live count: debounced, one query, same one that sends ─────────────
+  // ── the live count AND every chip's own count, in one debounced pass ──────
+  // Both come from the same SQL family that later sends, so a number on screen
+  // is always the number you get.
   useEffect(() => {
     if (!selId) return;
     setPreviewing(true);
     const t = setTimeout(async () => {
-      const { data, error } = await supabase.rpc('whatsapp_campaign_preview', {
-        p_workspace_id: workspaceId,
-        p_audience: audience as unknown as Record<string, unknown>,
-        p_sequence_id: selId,
-      });
+      const aud = audience as unknown as Record<string, unknown>;
+      const [pRes, fRes] = await Promise.all([
+        supabase.rpc('whatsapp_campaign_preview', {
+          p_workspace_id: workspaceId, p_audience: aud, p_sequence_id: selId,
+        }),
+        supabase.rpc('whatsapp_audience_facets', { p_ws: workspaceId, p_audience: aud }),
+      ]);
       setPreviewing(false);
-      if (error) {
-        if (/does not exist|schema cache/i.test(error.message)) {
-          toast.error('Run migration 058 in Supabase first — the campaign functions are missing.');
+      if (pRes.error) {
+        if (/does not exist|schema cache/i.test(pRes.error.message)) {
+          toast.error('Run migrations 058 and 061 in Supabase first — the campaign functions are missing.');
         }
         return;
       }
-      setPreview(data as Preview);
-    }, 400);
+      setPreview(pRes.data as Preview);
+      if (!fRes.error) setFacets(fRes.data as Facets);
+    }, 350);
     return () => clearTimeout(t);
   }, [audience, selId, workspaceId, supabase]);
 
@@ -266,6 +285,31 @@ export default function CampaignsTab({ workspaceId, templates, overview, reloadO
   // ── audience edits ────────────────────────────────────────────────────────
   const editAud = (patch: Partial<Audience>) => { setAudience((a) => ({ ...a, ...patch })); setAudDirty(true); };
   const toggleIn = (arr: string[], v: string) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+
+  /** Everyone in the chosen stage. The safe default, and the way back from any mess. */
+  const reachEveryone = () => {
+    setAudience((a) => ({
+      stages: a.stages.length ? a.stages : ['cold'],
+      industries: [], readiness: [], visa: [], added_days: null, quiet_days: null,
+    }));
+    setAudDirty(true);
+    setAdvanced(false);
+  };
+
+  /** One click removes whichever filter is emptying the audience. */
+  const clearBlocker = (key: string) => {
+    const patch: Partial<Audience> =
+      key === 'industries' ? { industries: [] }
+      : key === 'readiness' ? { readiness: [] }
+      : key === 'visa' ? { visa: [] }
+      : key === 'quiet_days' ? { quiet_days: null }
+      : key === 'added_days' ? { added_days: null }
+      : { stages: [] };
+    editAud(patch);
+  };
+
+  const isNarrowed = audience.industries.length > 0 || audience.readiness.length > 0
+    || audience.visa.length > 0 || audience.added_days !== null || audience.quiet_days !== null;
 
   // ── step edits (local until Save) ────────────────────────────────────────
   const mark = (fn: (prev: StepDraft[]) => StepDraft[]) => { setSteps(fn); setDirty(true); };
@@ -385,51 +429,126 @@ export default function CampaignsTab({ workspaceId, templates, overview, reloadO
           </div>
 
           {/* ── 1 · AUDIENCE ── */}
-          <Section n={1} title="Audience" hint="the count updates as you click">
+          <Section n={1} title="Who gets this" hint="every option shows how many people are in it">
             <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_264px]">
-              <div className="grid gap-[9px]">
-                <FilterRow label="Stage">
-                  {[['hot', 'Hot'], ['cold', 'Cold'], ['not_responding', 'Not responding']].map(([v, l]) => (
-                    <Chip key={v} on={audience.stages.includes(v)} tone="green"
-                      onClick={() => editAud({ stages: toggleIn(audience.stages, v) })}>{l}</Chip>
-                  ))}
-                </FilterRow>
-                <FilterRow label="Field">
-                  {INDUSTRY_LIST.map((k) => (
-                    <Chip key={k} on={audience.industries.includes(k)}
-                      onClick={() => editAud({ industries: toggleIn(audience.industries, k) })}>
-                      {INDUSTRY_META[k].label}
-                    </Chip>
-                  ))}
-                  <Chip on={audience.industries.includes('unknown')}
-                    onClick={() => editAud({ industries: toggleIn(audience.industries, 'unknown') })}>Unknown</Chip>
-                </FilterRow>
-                <FilterRow label="Can invest">
-                  {[['yes', 'Yes'], ['maybe', 'Maybe'], ['no', 'No'], ['unknown', 'Unknown']].map(([v, l]) => (
-                    <Chip key={v} on={audience.readiness.includes(v)}
-                      onClick={() => editAud({ readiness: toggleIn(audience.readiness, v) })}>{l}</Chip>
-                  ))}
-                </FilterRow>
-                <FilterRow label="Visa">
-                  {[['gtv', 'GTV'], ['ifv', 'IFV']].map(([v, l]) => (
-                    <Chip key={v} on={audience.visa.includes(v)}
-                      onClick={() => editAud({ visa: toggleIn(audience.visa, v) })}>{l}</Chip>
-                  ))}
-                  <span className="text-[11px] text-faint">none selected = any</span>
-                </FilterRow>
-                <FilterRow label="Added">
-                  {[[7, '7 days'], [30, '30 days'], [90, '90 days'], [null, 'Any time']].map(([v, l]) => (
-                    <Chip key={String(v)} on={audience.added_days === v}
-                      onClick={() => editAud({ added_days: v as number | null })}>{l as string}</Chip>
-                  ))}
-                </FilterRow>
-                <FilterRow label="Not messaged">
-                  {[[14, 'in 14 days'], [30, 'in 30 days'], [null, "doesn't matter"]].map(([v, l]) => (
-                    <Chip key={String(v)} on={audience.quiet_days === v}
-                      onClick={() => editAud({ quiet_days: v as number | null })}>{l as string}</Chip>
-                  ))}
-                </FilterRow>
-                <div className="mt-1 flex flex-wrap items-center gap-[6px] border-t border-dashed border-[#EDEFF4] pt-[10px]">
+              <div>
+                {/* STEP ONE, and for most campaigns the only step. */}
+                <div className="mb-3">
+                  <span className="mb-1.5 block text-[11.4px] font-semibold text-[#697086]">Pick the stage</span>
+                  <div className="flex flex-wrap gap-[6px]">
+                    {[['hot', 'Hot leads'], ['cold', 'Cold leads'], ['not_responding', 'Not responding']].map(([v, l]) => (
+                      <Chip key={v} on={audience.stages.includes(v)} tone="green" big
+                        count={facets?.stage?.[v]}
+                        onClick={() => editAud({ stages: toggleIn(audience.stages, v) })}>{l}</Chip>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Everything below is optional. Say so, loudly. */}
+                {!advanced ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-[11px] border border-[#E8EAF0] bg-[#FBFBFC] px-3 py-2.5">
+                    <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-[#1B7A44]" />
+                    <span className="text-[12px] text-ink-2">
+                      {isNarrowed
+                        ? <>Narrowed by <b>{[
+                            audience.industries.length && 'field',
+                            audience.readiness.length && 'can invest',
+                            audience.visa.length && 'visa',
+                            audience.added_days !== null && 'added',
+                            audience.quiet_days !== null && 'recency',
+                          ].filter(Boolean).join(', ')}</b></>
+                        : <>Reaching <b>everyone</b> in the stage above — nobody is left out.</>}
+                    </span>
+                    <button onClick={() => setAdvanced(true)}
+                      className="ml-auto rounded-lg border border-[#DDE0E9] bg-white px-2.5 py-1 text-[11.4px] font-semibold text-ink-2 transition hover:bg-[#F4F5F8]">
+                      {isNarrowed ? 'Edit filters' : 'Narrow it down'}
+                    </button>
+                    {isNarrowed && (
+                      <button onClick={reachEveryone}
+                        className="rounded-lg border border-[#D7F3E1] bg-[#EDFAF1] px-2.5 py-1 text-[11.4px] font-semibold text-[#1B7A44] transition hover:bg-[#D7F3E1]">
+                        Reach everyone
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-[11px] border border-[#E8EAF0] bg-[#FBFBFC] p-3">
+                    <div className="mb-2.5 flex items-center gap-2">
+                      <b className="text-[12px] font-semibold">Narrow it down</b>
+                      <span className="text-[11px] text-faint">optional · leave a row untouched to include everyone</span>
+                      <button onClick={reachEveryone}
+                        className="ml-auto rounded-lg border border-[#D7F3E1] bg-[#EDFAF1] px-2.5 py-1 text-[11px] font-semibold text-[#1B7A44] transition hover:bg-[#D7F3E1]">
+                        Clear all
+                      </button>
+                      <button onClick={() => setAdvanced(false)}
+                        className="rounded-lg border border-[#DDE0E9] bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-2 transition hover:bg-[#F4F5F8]">
+                        Done
+                      </button>
+                    </div>
+                    <div className="grid gap-[9px]">
+                      <FilterRow label="Field">
+                        {INDUSTRY_LIST.map((k) => (
+                          <Chip key={k} on={audience.industries.includes(k)} count={facets?.industry?.[k]}
+                            onClick={() => editAud({ industries: toggleIn(audience.industries, k) })}>
+                            {INDUSTRY_META[k].label}
+                          </Chip>
+                        ))}
+                        <Chip on={audience.industries.includes(NONE)} count={facets?.industry?.[NONE]}
+                          onClick={() => editAud({ industries: toggleIn(audience.industries, NONE) })}>No tag</Chip>
+                      </FilterRow>
+                      <FilterRow label="Can invest">
+                        {[['yes', 'Yes'], ['maybe', 'Maybe'], ['no', 'No']].map(([v, l]) => (
+                          <Chip key={v} on={audience.readiness.includes(v)} count={facets?.readiness?.[v]}
+                            onClick={() => editAud({ readiness: toggleIn(audience.readiness, v) })}>{l}</Chip>
+                        ))}
+                        <Chip on={audience.readiness.includes(NONE)} count={facets?.readiness?.[NONE]}
+                          onClick={() => editAud({ readiness: toggleIn(audience.readiness, NONE) })}>Never asked</Chip>
+                      </FilterRow>
+                      <FilterRow label="Visa">
+                        {[['gtv', 'GTV'], ['ifv', 'IFV']].map(([v, l]) => (
+                          <Chip key={v} on={audience.visa.includes(v)} count={facets?.visa?.[v]}
+                            onClick={() => editAud({ visa: toggleIn(audience.visa, v) })}>{l}</Chip>
+                        ))}
+                        <Chip on={audience.visa.includes(NONE)} count={facets?.visa?.[NONE]}
+                          onClick={() => editAud({ visa: toggleIn(audience.visa, NONE) })}>No route set</Chip>
+                      </FilterRow>
+                      <FilterRow label="Added">
+                        {[[7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [null, 'Any time']].map(([v, l]) => (
+                          <Chip key={String(v)} on={audience.added_days === v}
+                            onClick={() => editAud({ added_days: v as number | null })}>{l as string}</Chip>
+                        ))}
+                      </FilterRow>
+                      <FilterRow label="Not messaged">
+                        {[[14, 'in 14 days'], [30, 'in 30 days'], [null, "doesn't matter"]].map(([v, l]) => (
+                          <Chip key={String(v)} on={audience.quiet_days === v}
+                            onClick={() => editAud({ quiet_days: v as number | null })}>{l as string}</Chip>
+                        ))}
+                      </FilterRow>
+                    </div>
+                  </div>
+                )}
+
+                {/* Nobody should ever see a bare zero. Name the culprit, offer the fix. */}
+                {preview && preview.eligible === 0 && (facets?.blockers?.length ?? 0) > 0 && (
+                  <div className="mt-2.5 rounded-[11px] border border-[#F8E2B8] bg-[#FEF6E6] px-3 py-2.5">
+                    <div className="mb-1.5 flex items-center gap-2">
+                      <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-[#A25D07]" />
+                      <b className="text-[12.2px] text-[#A25D07]">This reaches nobody — here is why</b>
+                    </div>
+                    {facets!.blockers.map((b) => (
+                      <div key={b.key} className="mb-1 flex flex-wrap items-center gap-2 last:mb-0">
+                        <span className="text-[11.8px] leading-[1.5] text-[#7A4A06]">
+                          Your <b>{b.label}</b> filter is removing everyone. Without it you reach <b>{b.would_reach}</b>.
+                        </span>
+                        <button onClick={() => clearBlocker(b.key)}
+                          className="rounded-lg border border-[#E8C98C] bg-white px-2.5 py-1 text-[11.2px] font-bold text-[#A25D07] transition hover:bg-[#FDEBC8]">
+                          Remove {b.label} filter
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-2.5 flex flex-wrap items-center gap-[6px] border-t border-dashed border-[#EDEFF4] pt-[10px]">
                   <span className="w-[92px] flex-shrink-0 text-[11px] font-semibold text-faint">Always off</span>
                   <Locked icon={<ShieldOff className="h-[10px] w-[10px]" />}>Opted out</Locked>
                   <Locked icon={<PhoneOff className="h-[10px] w-[10px]" />}>No valid number</Locked>
@@ -702,20 +821,37 @@ function FilterRow({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
-function Chip({ on, tone, onClick, children }: {
-  on: boolean; tone?: 'green'; onClick: () => void; children: React.ReactNode;
+/**
+ * A chip carries its own count. That single decision is what removes the
+ * arithmetic: you can see that "Never asked" holds 82 people and "Yes" holds
+ * none, so you never tick a combination that silently reaches nobody.
+ * A count of 0 is dimmed — visibly a dead end before you click it.
+ */
+function Chip({ on, tone, big, count, onClick, children }: {
+  on: boolean; tone?: 'green'; big?: boolean; count?: number;
+  onClick: () => void; children: React.ReactNode;
 }) {
+  const empty = count === 0 && !on;
   return (
     <button onClick={onClick}
       className={cn(
-        'rounded-[8px] border px-[10px] py-[4px] text-[11.6px] font-semibold transition',
+        'inline-flex items-center gap-[6px] rounded-[8px] border font-semibold transition',
+        big ? 'px-[13px] py-[7px] text-[12.6px]' : 'px-[10px] py-[4px] text-[11.6px]',
         on
           ? tone === 'green'
             ? 'border-[#BFE7CD] bg-[#EDFAF1] text-[#1B7A44]'
             : 'border-[#CBD3F5] bg-[#EEF1FD] text-[#3A48A8]'
-          : 'border-[#E3E6ED] bg-[#FAFBFC] text-[#697086] hover:border-[#CBD1DD]'
+          : empty
+            ? 'border-[#EDEFF4] bg-[#FBFBFC] text-[#BFC4D2]'
+            : 'border-[#E3E6ED] bg-[#FAFBFC] text-[#697086] hover:border-[#CBD1DD]'
       )}>
       {children}
+      {count !== undefined && (
+        <span className={cn('rounded-[5px] px-[5px] py-px text-[10px] font-bold tabular-nums',
+          on ? 'bg-white/70' : empty ? 'bg-[#F4F5F8] text-[#C6CAD6]' : 'bg-[#EDEFF4] text-[#8A90A5]')}>
+          {count}
+        </span>
+      )}
     </button>
   );
 }

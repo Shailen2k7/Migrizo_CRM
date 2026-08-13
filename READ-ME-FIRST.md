@@ -1,66 +1,65 @@
-# "tech_" — Meta sends slugs, not labels
+# No more calculating — every option tells you how many people are in it
 
 2 files. Run the migration, upload, redeploy.
 
 ```
-supabase/migrations/060_fix_option_slugs.sql   NEW — run in Supabase SQL Editor
-lib/intake.ts                                  REPLACE
+supabase/migrations/061_audience_facets.sql   NEW — run in Supabase SQL Editor
+components/whatsapp/campaigns-tab.tsx         REPLACE
 ```
 
-`tsc` clean · `next build` green · migration applied twice ·
-**18 mapper tests passing** · retroactive repair proven on a real Postgres.
+**Verified:** `tsc` clean · `next build` green · migrations 056→061 applied
+**twice in order** · **7 new facet tests** + the **8 campaign-engine tests
+re-run** (061 replaces the audience matcher, so the old suite had to prove no
+regression — it did).
 
-⚠️ Run **059 first** if you haven't — this builds on it.
+> One note on rigour: my first run of the new tests was passing *vacuously* —
+> the workspace guard was refusing the call and every assertion compared
+> against NULL, which never raises. Fixed by asserting `ok = true` before
+> anything else. The results above are real.
 
 ---
 
-## What your screenshot actually showed me
+## What went wrong — my fault, not yours
 
-`Field of expertise: tech_` — with a trailing underscore. That is not the
-label a person saw, it is Meta's **option slug**. When a form option has no
-separate label, Meta sends the slug: `tech_`, `art_`, `arts_culture`,
-`not_sure`.
+You ticked Yes / Maybe / No under "Can invest". All 82 hot leads have that
+field empty, so the filter removed every one of them and the screen said **0**
+with no reason. You had to open SQL to find out why. A filter that deletes
+people invisibly is a broken filter.
 
-Underscore is a **word character** in both JS and Postgres regex. So:
+## Three changes, and you never do arithmetic again
 
-```
-\btech\b   does NOT match  "tech_"    → Industry stayed Not set
-\barts?\b  does NOT match  "art_"     → Industry stayed Not set
-```
+**1. Every chip carries its own count.**
+`Hot leads 82` · `Tech 24` · `Never asked 82` · `Yes 0`. Chips holding nobody
+are greyed out — visibly a dead end *before* you click. Counts are true
+faceted counts: each row is counted with its own filter lifted, so a chip's
+number is exactly what you get by clicking it.
 
-But `research_` and `engineering_` mapped fine — because those rules use a
-bare substring with no closing boundary. **That is the entire reason it
-"worked for some leads and not others."** It was never about the lead; it was
-about whether the matching rule happened to end in a word boundary.
+**2. Stage is the only decision. Everything else is optional.**
+Opens with three big stage chips and one green line: *"Reaching **everyone**
+in the stage above — nobody is left out."* Filters hide behind **Narrow it
+down**; **Reach everyone** undoes any mess in one click.
 
-## The second bug — worse, and silent
+**3. A zero explains itself and offers the fix.**
 
-`not_sure` skipped the MAYBE rule (which reads `not sure`, with a space) and
-was then caught by `sure` inside the YES rule. **Undecided leads were being
-tagged "willing to invest"** — and your hot lane reads exactly that field.
-Now `not_sure` → Maybe, and migration 060 corrects the ones already stored
-wrong.
+> Your **Can invest** filter is removing everyone. Without it you reach **82**.
+> [ Remove Can invest filter ]
 
-## The fix
+**Also fixed:** "Unknown" was a dead chip that matched nothing. It is now
+**Never asked** / **No tag** / **No route set**, each with a real count — and
+Visa gained the same option, because all 82 of your hot leads have no route
+set, which made that row unusable. Audiences you already saved are migrated
+automatically. New campaigns default to stage-only with no recency rule; the
+24-hour "never talk over a live chat" safety is always on and cannot be
+switched off.
 
-A slug is read as the words it stands for: underscores, hyphens and plus
-signs become spaces before matching. Your **raw answer is untouched** — the
-drawer still shows exactly what Meta sent, which is how you spotted this.
+## Test it (30 seconds)
 
-Then `intake_rederive()` re-reads every stored answer with the corrected
-rules, so existing leads get fixed retroactively and the campaign audience
-sweep picks them up within 10 minutes.
-
-**Verified end to end:** `tech_ → Tech`, `art_ → Art`, `arts_culture → Art`,
-`not_sure → Maybe`, `no_i_cannot_afford → No`, and `Software Engineer` still
-correctly reads as Tech, not Engineering.
-
-## Test it (60 seconds)
-
-1. Run 060 → the query at the bottom prints the slug table; `tech_` shows
-   `tech`, `not_sure` shows `maybe`.
-2. Upload `lib/intake.ts`, redeploy.
-3. Open your Shailen Kumar Pathak lead → **Industry now reads Tech in the
-   dropdown**, selected automatically. No more manual picking.
-4. `/intake-test` → change the sample's expertise to `["tech_"]` → Run →
-   green, Industry = Tech, and the trace shows which rule fired.
+1. Run 061 in Supabase.
+2. Upload `campaigns-tab.tsx`, redeploy.
+3. Open **Hot Lead - Follow up** → Stage row reads **Hot leads 82** → green
+   line confirms you are reaching everyone → count card shows 82.
+4. Click **Narrow it down** → *Can invest* shows `Yes 0` `Maybe 0` `No 0`
+   `Never asked 82`. The reason your screen said 0 is now visible at a glance.
+5. Tick **Yes** only → count drops to 0 → amber panel names "Can invest" and
+   offers the one-click fix. Press it → back to 82.
+6. Press **Apply changes** to enrol them.
