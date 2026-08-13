@@ -30,10 +30,9 @@ import { toast } from 'sonner';
 import LeadPanel, { type SeqState } from '@/components/whatsapp/lead-panel';
 import TemplatePicker from '@/components/whatsapp/template-picker';
 import NewConversation from '@/components/whatsapp/new-conversation';
-import AutomationTab from '@/components/whatsapp/automation-tab';
 import RepliesTab from '@/components/whatsapp/replies-tab';
 import QuickReplyPalette, { filterReplies } from '@/components/whatsapp/quick-reply-palette';
-import SequencesTab, { type SeqOverviewRow } from '@/components/whatsapp/sequences-tab';
+import CampaignsTab, { type SeqOverviewRow } from '@/components/whatsapp/campaigns-tab';
 import TemplatesTab from '@/components/whatsapp/templates-tab';
 import SettingsTab from '@/components/whatsapp/settings-tab';
 import { MessageBubble } from '@/components/whatsapp/message-bubble';
@@ -49,13 +48,16 @@ import {
 const EMOJI = ['👍','🙏','😊','🎉','✅','📄','📞','🇬🇧','🚀','💡','⏰','❤️'];
 
 type Filter = 'all' | 'unread' | 'attention' | 'open' | 'failed';
-type TabKey = 'inbox' | 'automation' | 'replies' | 'sequences' | 'templates' | 'settings';
+type TabKey = 'inbox' | 'replies' | 'sequences' | 'templates' | 'settings';
 
+// 'sequences' stays as the URL key so old bookmarks keep working — the label
+// is Campaigns because that is what the screen became (audience + steps +
+// limits + live results). First-touch automation retired 2026-08-13: this
+// number's only job is campaigns; new leads live on the separate UK line.
 const SUB_TABS: Array<[TabKey, string, React.ReactNode]> = [
   ['inbox', 'Inbox', <MessageSquare key="i" className="h-[13px] w-[13px]" />],
-  ['automation', 'Automation', <Bot key="a" className="h-[13px] w-[13px]" />],
+  ['sequences', 'Campaigns', <Zap key="s" className="h-[13px] w-[13px]" />],
   ['replies', 'Quick replies', <ShieldCheck key="q" className="h-[13px] w-[13px]" />],
-  ['sequences', 'Sequences', <Zap key="s" className="h-[13px] w-[13px]" />],
   ['templates', 'Templates', <FileText key="t" className="h-[13px] w-[13px]" />],
   ['settings', 'Settings', <Settings2 key="g" className="h-[13px] w-[13px]" />],
 ];
@@ -120,6 +122,7 @@ export default function WhatsAppPage() {
   // Only true on a genuinely cold thread. A cached one paints with no spinner.
   const [threadLoading, setThreadLoading] = useState(false);
   const [chatMenu, setChatMenu] = useState(false);
+  const [filterMenu, setFilterMenu] = useState(false);
 
   // ── sub-tabs: Inbox · Sequences · Templates · Settings ───────────────────
   // Kept in the URL (?tab=) so a refresh or a shared link lands on the same
@@ -127,8 +130,9 @@ export default function WhatsAppPage() {
   const [tab, setTabState] = useState<TabKey>('inbox');
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    if (t === 'automation' || t === 'replies' || t === 'sequences' || t === 'templates' || t === 'settings') setTabState(t);
-    if (t === 'qa') setTabState('replies');   // old bookmarks land on the successor
+    if (t === 'replies' || t === 'sequences' || t === 'templates' || t === 'settings') setTabState(t);
+    if (t === 'qa') setTabState('replies');        // old bookmarks land on the successor
+    if (t === 'automation') setTabState('sequences'); // retired tab → Campaigns
   }, []);
   const setTab = useCallback((t: TabKey) => {
     setTabState(t);
@@ -810,18 +814,13 @@ export default function WhatsAppPage() {
         </div>
       </div>
 
-      {tab === 'automation' && (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <AutomationTab workspaceId={workspace.id} templates={templates} />
-        </div>
-      )}
       {tab === 'replies' && (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <RepliesTab workspaceId={workspace.id} onChanged={reload} />
         </div>
       )}
       {tab === 'sequences' && (
-        <SequencesTab
+        <CampaignsTab
           workspaceId={workspace.id}
           templates={templates}
           leads={leads}
@@ -846,16 +845,53 @@ export default function WhatsAppPage() {
           'flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-r bg-white transition-[width,border-width] duration-200 ease-out',
           hideList ? 'w-0 border-r-0' : 'w-[340px] border-[#E8EAF0]'
         )}>
-          <div className="flex w-[340px] flex-shrink-0 flex-col gap-3 border-b border-[#E8EAF0] p-4">
-            {/* The only way to start an outbound conversation. Deliberately the
-                most prominent control in the column — the inbox was reply-only
-                until this existed. */}
-            <button
-              onClick={() => setNewConvOpen(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#25A25A] py-2 text-[13px] font-semibold text-white transition-colors duration-150 hover:bg-[#1f874b]"
-            >
-              <Plus className="h-4 w-4" /> New conversation
-            </button>
+          {/* Compact header: half-width New button + filter dropdown on one
+              row, search below. The old chip rows spent ~46px of every scroll
+              on filters most sessions never touch. */}
+          <div className="flex w-[340px] flex-shrink-0 flex-col gap-2 border-b border-[#E8EAF0] p-3">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setNewConvOpen(true)}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#25A25A] px-2 py-[7px] text-[12.4px] font-semibold text-white transition-colors duration-150 hover:bg-[#1f874b]"
+              >
+                <Plus className="h-3.5 w-3.5" /> New
+              </button>
+              <span className="relative flex-1">
+                <button
+                  onClick={() => setFilterMenu((v) => !v)}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-1 rounded-lg border px-2.5 py-[7px] text-[12.2px] font-semibold transition-colors',
+                    filter !== 'all'
+                      ? 'border-[#D7F3E1] bg-[#EDFAF1] text-[#1B7A44]'
+                      : 'border-[#E3E6ED] bg-[#FAFBFC] text-[#45464c] hover:border-[#CBD1DD]'
+                  )}
+                >
+                  <span className="truncate">{FILTERS.find(([k]) => k === filter)?.[1]}</span>
+                  <span className="flex items-center gap-1">
+                    <b className="text-[10.5px] tabular-nums opacity-60">{counts[filter]}</b>
+                    <svg width="9" height="9" viewBox="0 0 10 10" className="flex-shrink-0 opacity-50"><path d="M1 3l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+                  </span>
+                </button>
+                {filterMenu && (
+                  <>
+                    <span className="fixed inset-0 z-10" onClick={() => setFilterMenu(false)} />
+                    <span className="absolute left-0 right-0 top-[36px] z-20 block overflow-hidden rounded-xl border border-[#E8EAF0] bg-white p-1 shadow-[0_12px_28px_-12px_rgba(20,24,40,.3)]">
+                      {FILTERS.map(([k, l]) => (
+                        <button key={k}
+                          onClick={() => { setFilter(k); setFilterMenu(false); }}
+                          className={cn(
+                            'flex w-full items-center justify-between rounded-lg px-2.5 py-[7px] text-[12.4px] transition-colors',
+                            filter === k ? 'bg-[#EDFAF1] font-semibold text-[#1B7A44]' : 'font-medium text-[#45464c] hover:bg-[#F4F5F8]'
+                          )}>
+                          {l}
+                          <b className="text-[10.5px] tabular-nums opacity-60">{counts[k]}</b>
+                        </button>
+                      ))}
+                    </span>
+                  </>
+                )}
+              </span>
+            </div>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7A8095]" />
               <input
@@ -864,19 +900,6 @@ export default function WhatsAppPage() {
                 placeholder="Search conversations…"
                 className="w-full rounded-md border border-[#E8EAF0] py-[7px] pl-9 pr-3 text-[13px] outline-none transition-all duration-150 placeholder:text-[#7A8095] focus:border-[#25A25A] focus:ring-1 focus:ring-[#25A25A]"
               />
-            </div>
-            <div className="flex flex-wrap gap-[6px]">
-              {FILTERS.map(([k, l]) => (
-                <button key={k} onClick={() => setFilter(k)}
-                  className={cn(
-                    'inline-flex items-center gap-[5px] rounded-full border px-[10px] py-1 text-[11.5px] font-medium transition-colors duration-150',
-                    filter === k
-                      ? 'border-[#25A25A] bg-[#25A25A] text-white'
-                      : 'border-[#E8EAF0] bg-[#F4F5F8] text-[#45464c] hover:bg-[#EDEFF3]'
-                  )}>
-                  {l}<b className="text-[10px] font-bold opacity-60">{counts[k]}</b>
-                </button>
-              ))}
             </div>
           </div>
 
