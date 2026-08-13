@@ -65,8 +65,15 @@ const EXPERTISE_RULES: [Industry, RegExp][] = [
   ['research',    /research|academi|academic|scientist|science|scientific|\bphd\b|post.?doc|professor|lecturer.*(univers|research)|fellowship|peer.?review|\br\s*&\s*d\b|laborator/],
   ['art',         /\barts?\b|artist|culture|cultural|creative|design(?!.*engineer)|film|cinema|music|fashion|architect|photograph|theatre|theater|dance|literature|writer|author|curator/],
   ['education',   /education|edtech|teaching|teacher|tutor|training|pedagog|school|curriculum/],
-  ['engineering', /mechanical|civil engineer|electrical|aerospace|manufactur|hardware|robotic|automotive|chemical engineer|structural/],
-  ['tech',        /\btech\b|technolog|digital|software|\bit\b|information technology|\bai\b|artificial intelligence|machine learning|\bml\b|data scien|data engineer|developer|programmer|\bsaas\b|cyber|security|cloud|devops|blockchain|web3|product manag|\bux\b|\bui\b|startup founder.*tech/],
+  // "software engineer" is a TECH profile, so the tech-flavoured engineer
+  // titles are claimed here, BEFORE the general engineering bucket below.
+  ['tech',        /software engineer|data engineer|ml engineer|ai engineer|devops engineer|cloud engineer|platform engineer|qa engineer|front.?end|back.?end|full.?stack/],
+  // THE FIX (2026-08-13): the ad form's own option is the bare word
+  // "Engineering", and this rule only knew sub-disciplines — so every lead who
+  // picked it arrived with industry NULL ("Not set" in the drawer). \bengineer
+  // now catches Engineering / engineer / engineers head-on.
+  ['engineering', /\bengineer|mechanical|civil|electrical|aerospace|manufactur|hardware|robotic|automotive|structural/],
+  ['tech',        /\btech\b|technolog|digital|software|\bit\b|information technology|\bai\b|artificial intelligence|machine learning|\bml\b|data scien|developer|programmer|\bsaas\b|cyber|security|cloud|devops|blockchain|web3|product manag|\bux\b|\bui\b|startup founder.*tech/],
   ['business',    /business|management|marketing|\bsales\b|consult|entrepreneur|founder|operations|\bhr\b|human resources|strategy|commerce|retail|logistics|supply chain/],
   ['other',       /^other$|not listed|none of|prefer not/],
 ];
@@ -113,6 +120,99 @@ export function mapReadiness(raw: unknown): Readiness | null {
     if (re.test(t)) return readiness;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// TRACED MAPPERS — same verdicts, but they also say WHICH rule fired. This is
+// what the /intake-test bench renders, so "why did this lead map to nothing"
+// is a screen you look at instead of a debugging session.
+// ---------------------------------------------------------------------------
+export interface MapTrace<T extends string> {
+  raw: string | null;        // what arrived, flattened
+  value: T | null;           // the verdict
+  rule: string | null;       // the winning pattern, or null = nothing matched
+}
+
+export function traceExpertise(raw: unknown): MapTrace<Industry> {
+  const s = flattenAnswer(raw);
+  if (!s) return { raw: null, value: null, rule: null };
+  const t = s.toLowerCase();
+  for (const [industry, re] of EXPERTISE_RULES) {
+    if (re.test(t)) return { raw: s, value: industry, rule: re.source };
+  }
+  return { raw: s, value: null, rule: null };
+}
+
+export function traceReadiness(raw: unknown): MapTrace<Readiness> {
+  const s = flattenAnswer(raw);
+  if (!s) return { raw: null, value: null, rule: null };
+  const t = s.toLowerCase();
+  for (const [readiness, re] of READINESS_RULES) {
+    if (re.test(t)) return { raw: s, value: readiness, rule: re.source };
+  }
+  return { raw: s, value: null, rule: null };
+}
+
+// ---------------------------------------------------------------------------
+// ANSWER DETECTION — find the two qualifying answers no matter how they arrive.
+//
+// "Works for some leads, not others" almost always means a SECOND ad form: the
+// Make scenario maps field IDs from form A, form B's answers arrive under a
+// different key (or only inside Meta's raw field_data array) and land as
+// blanks. So the route no longer trusts one key name. It looks, in order, at:
+//   1. the canonical keys  (expertise / investment_readiness)
+//   2. any body key whose NAME looks like the question
+//   3. Meta's raw field_data / answers array, matched by question label
+// First hit wins; where it was found is reported so Make's history shows it.
+// ---------------------------------------------------------------------------
+const EXPERTISE_KEY = /expertise|which area|field.?of|industry|domain|profession|specialis|specializ|qualify under/i;
+const READINESS_KEY = /readiness|invest|willing|budget|pay|afford/i;
+
+interface FieldDataEntry { name?: string; label?: string; question?: string; values?: unknown; value?: unknown }
+
+export interface DetectedAnswers {
+  expertiseRaw: string | null;  expertiseFrom: string | null;
+  readinessRaw: string | null;  readinessFrom: string | null;
+}
+
+export function detectAnswers(body: Record<string, unknown>, coreKeys: Set<string>): DetectedAnswers {
+  const out: DetectedAnswers = { expertiseRaw: null, expertiseFrom: null, readinessRaw: null, readinessFrom: null };
+
+  // 1. canonical keys
+  out.expertiseRaw = flattenAnswer(body.expertise);
+  if (out.expertiseRaw) out.expertiseFrom = 'expertise';
+  out.readinessRaw = flattenAnswer(body.investment_readiness);
+  if (out.readinessRaw) out.readinessFrom = 'investment_readiness';
+
+  // 2. any key whose name looks like the question
+  for (const [k, v] of Object.entries(body)) {
+    if (coreKeys.has(k) || k === 'expertise' || k === 'investment_readiness') continue;
+    const flat = flattenAnswer(v);
+    if (!flat) continue;
+    if (!out.expertiseRaw && EXPERTISE_KEY.test(k) && !READINESS_KEY.test(k)) {
+      out.expertiseRaw = flat; out.expertiseFrom = k;
+    } else if (!out.readinessRaw && READINESS_KEY.test(k)) {
+      out.readinessRaw = flat; out.readinessFrom = k;
+    }
+  }
+
+  // 3. Meta's raw field_data / answers array, matched by the question label.
+  //    Readiness first — its question contains "professional guidance", whose
+  //    "profession" would otherwise trip the expertise pattern (same trap the
+  //    click-to-WhatsApp parser hit).
+  const arr = (Array.isArray(body.field_data) ? body.field_data
+             : Array.isArray(body.answers) ? body.answers : []) as FieldDataEntry[];
+  for (const f of arr) {
+    const label = String(f.name ?? f.label ?? f.question ?? '');
+    const flat = flattenAnswer(f.values ?? f.value);
+    if (!label || !flat) continue;
+    if (!out.readinessRaw && READINESS_KEY.test(label)) {
+      out.readinessRaw = flat; out.readinessFrom = `field_data: "${label}"`;
+    } else if (!out.expertiseRaw && EXPERTISE_KEY.test(label)) {
+      out.expertiseRaw = flat; out.expertiseFrom = `field_data: "${label}"`;
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

@@ -22,7 +22,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { renderProcess } from '@/lib/email/branded';
-import { flattenAnswer, mapExpertise, mapReadiness } from '@/lib/intake';
+import { flattenAnswer, mapExpertise, mapReadiness, detectAnswers } from '@/lib/intake';
 
 // Core fields the route understands. Anything else in the body is treated as an
 // extra ad-form answer and kept verbatim in leads.intake.
@@ -69,8 +69,16 @@ export async function POST(req: Request) {
     const flat = flattenAnswer(v);
     if (flat) intake[k] = flat;
   }
-  const industry = mapExpertise(body.expertise);
-  const readiness = mapReadiness(body.investment_readiness);
+
+  // The two qualifying answers are DETECTED, not assumed: canonical key, then
+  // any key named like the question, then Meta's raw field_data array. A
+  // second ad form whose Make mapping was never updated used to land here as
+  // blanks — "works for some leads, not others". Not any more.
+  const detected = detectAnswers(body, CORE_KEYS);
+  if (detected.expertiseRaw && !intake.expertise) intake.expertise = detected.expertiseRaw;
+  if (detected.readinessRaw && !intake.investment_readiness) intake.investment_readiness = detected.readinessRaw;
+  const industry = mapExpertise(detected.expertiseRaw);
+  const readiness = mapReadiness(detected.readinessRaw);
 
   // ---- service-role client (bypasses RLS) ----------------------------------
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -185,6 +193,9 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true, id: lead.id, welcomed,
     industry, investment_readiness: readiness,
+    // Where each answer was found — visible in Make's execution history, so a
+    // remapped form shows up there instead of weeks later in a report.
+    expertise_from: detected.expertiseFrom, readiness_from: detected.readinessFrom,
   });
 }
 
