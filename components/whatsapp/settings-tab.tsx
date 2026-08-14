@@ -190,13 +190,18 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
             </div>
           )}
 
-          <Row label="Daily cap (all sends)">
+          <Row label="Daily cap (new outreach only)">
             <span className="flex items-center gap-[8px]">
               <input type="number" min={1} max={1000} value={cap} onChange={(e) => setCap(e.target.value)}
                 className={`${FIELD} w-[80px] text-center font-bold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`} />
               <span className="text-[11.6px] text-muted">used today: <b className="tabular-nums">{stats?.sent_today ?? 0}</b></span>
             </span>
           </Row>
+          {/* The rule people get wrong, said plainly where they set the number. */}
+          <p className="m-0 mt-[6px] rounded-[8px] bg-[#EDFAF1] px-[10px] py-[7px] text-[11.4px] leading-[1.55] text-[#1B7A44]">
+            This limits <b>new outreach only</b> — campaign messages and templates to people who have not written in.
+            Replying to someone whose 24-hour window is open is <b>never</b> blocked or counted, however busy the day gets.
+          </p>
           <Row label="Send window (IST)">
             <span className="flex items-center gap-[7px]">
               <input type="time" value={winStart} onChange={(e) => setWinStart(e.target.value)}

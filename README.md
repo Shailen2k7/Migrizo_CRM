@@ -1,34 +1,37 @@
-# THE fix — why the engine never ran by itself (+ Prateek's access)
+# Fix: the daily cap no longer blocks replies
 
-## Root cause, found and confirmed
-The website's security layer (middleware) has an allowlist of addresses that
-may be called without a login. My new engine address was NOT on it. So every
-automatic scheduler call was bounced to the login page → 405 Method Not
-Allowed → nothing ever sent on its own. Your "Run engine now" button worked
-because YOU are logged in. One line fixes it forever.
+## What was wrong
+The cap counted EVERY outbound message. A day of campaign sends used up the
+allowance, and then a human could not answer a lead who had just written in —
+the CRM refused with "Daily cap reached". Backwards: replying to someone who
+messaged you is the safest traffic on WhatsApp and should never be rationed.
 
-Also fixed in this package:
-- Toggles / quick-reply saves that were silently blocked now show a real error
-  instead of pretending to save.
-- Every active team member (Prateek included) becomes a campaign admin, so
-  toggles, steps and quick replies work on their logins too.
+## The rule now (same as Interakt and every good BSP)
 
-## Do these 3 things
+| Message | Counts toward the daily cap? |
+|---|---|
+| Campaign step (hot / cold follow-up) | YES |
+| Template to someone who has NOT written in (window shut) | YES |
+| Any reply inside their open 24-hour window | **NO — always free** |
+| Quick replies, follow-up answers, media in a live chat | **NO — always free** |
 
-1. Replace these 3 files in the repo, commit, push, wait for Netlify green:
-   - lib/supabase/middleware.ts          ← THE fix
-   - components/whatsapp/campaign-center.tsx
-   - components/whatsapp/replies-tab.tsx
+The decision is stamped on each message in the database the moment it is
+recorded, so no code path can forget it. The campaign engine uses the same
+definition, so a busy day of human chat can never starve the campaign of its
+quota (and vice versa).
 
-2. Supabase → SQL Editor → run supabase/migrations/063_team_access_and_fixes.sql
-   (safe twice; it prints "campaign admins: N" at the end — N should equal
-   your team size).
+## Deploy — 2 steps
 
-3. Nothing else. Do NOT press anything. Within 5 minutes of the deploy the
-   strip should flip to "ENGINE — just now" ON ITS OWN. That flip is the
-   proof: it means the scheduler finally got through.
+1. Supabase → SQL Editor → run `supabase/migrations/064_cap_only_for_outreach.sql`
+   (safe to run twice). It also back-fills history, so today's counter drops to
+   only the real outreach and your allowance is freed immediately.
 
-## What to expect tomorrow
-Sending hours are 10:00–19:00 IST. At 10:00 the engine starts on its own and
-works through the backlog at your daily cap. Replies land in "They replied —
-go talk to them". You do nothing.
+2. Replace these 2 files, commit, push:
+   - `app/api/whatsapp/send/route.ts`     ← stops refusing replies
+   - `components/whatsapp/settings-tab.tsx` ← the cap is now labelled
+     "Daily cap (new outreach only)" with the rule spelled out under it
+
+## Test it in 30 seconds
+Open the chat that just failed and send the same message again. It goes out —
+even though the counter still reads 110 of 110. Then check Settings: "used
+today" now shows outreach only, and the green note explains the rule.

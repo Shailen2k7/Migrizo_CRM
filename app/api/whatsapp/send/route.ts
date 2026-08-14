@@ -113,6 +113,15 @@ export async function POST(req: Request) {
   }
 
   // ── cap / pause / dry-run ─────────────────────────────────────────────────
+  // Is their 24-hour window open? If they wrote to us recently, this send is a
+  // REPLY, not outreach — and a reply is never rationed. The daily cap exists
+  // to stop us blasting strangers, not to stop us answering a customer who is
+  // waiting. (The database agrees: whatsapp_record_outbound stamps replies as
+  // not counting, so the allowance is not spent either.)
+  const windowOpen = lastInboundAt
+    ? Date.now() - new Date(lastInboundAt).getTime() < WINDOW_MS
+    : false;
+
   const { data: gate } = await admin.rpc('whatsapp_can_send', { p_workspace_id: wsId });
   const g = (gate ?? {}) as {
     allowed?: boolean; connected?: boolean; dry_run?: boolean; paused?: boolean;
@@ -136,11 +145,16 @@ export async function POST(req: Request) {
                 'Open WhatsApp → Settings and press "Test connection".',
       });
     }
-    if ((g.remaining ?? 0) <= 0) {
+    // The cap applies to OUTREACH only. Inside an open window we are replying,
+    // so we go straight through — this is the safest traffic on WhatsApp and
+    // blocking it was the single most damaging thing this route ever did.
+    if (!windowOpen && (g.remaining ?? 0) <= 0) {
       return NextResponse.json({
         ok: false,
         reason: 'cap_reached',
-        detail: `Daily cap reached (${g.sent_today ?? '?'} of ${g.cap ?? '?'}). Resets at midnight IST — raise it in Settings if you need more today.`,
+        detail: `Daily cap reached for new outreach (${g.sent_today ?? '?'} of ${g.cap ?? '?'}). `
+              + `Replies to people who messaged you still go out normally. `
+              + `Resets at midnight IST — raise it in Settings if you need more today.`,
       });
     }
   }
