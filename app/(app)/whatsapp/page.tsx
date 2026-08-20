@@ -21,8 +21,10 @@ import {
   Search, Clock, Lock, AlertCircle, Zap, Paperclip, Smile,
   FileText, PanelRight, Columns, Maximize2, Minimize2,
   ExternalLink, Loader2, Bot, Pause, Play, Square, ShieldCheck, Plus, Send as SendIcon,
-  MessageSquare, Settings2, X, MoreHorizontal, Eraser, Trash2,
+  MessageSquare, Settings2, X, MoreHorizontal, Eraser, Trash2, Bell, BellOff,
 } from 'lucide-react';
+import { playChime } from '@/lib/chime';
+import { waSoundMuted, setWaSoundMuted } from '@/components/whatsapp/wa-alerts';
 import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/components/shared/app-provider';
 import { initials, avatarColor, cn } from '@/lib/utils';
@@ -146,6 +148,11 @@ export default function WhatsAppPage() {
   const [enrollment, setEnrollment] = useState<{
     id: string; status: string; current_step: number; total_steps: number; seq_name: string;
   } | null>(null);
+  // Read in an effect, not in useState's initialiser: localStorage does not
+  // exist during the server render and a mismatch would break hydration.
+  const [soundMuted, setSoundMuted] = useState(false);
+  useEffect(() => { setSoundMuted(waSoundMuted()); }, []);
+
   const [panelTab, setPanelTab] = useState<'info' | 'activity'>('info');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [, setTick] = useState(0);
@@ -802,6 +809,19 @@ export default function WhatsAppPage() {
               <span className="h-[22px] w-px bg-[#E8EAF0]" />
             </>
           )}
+          {/* Message sound. Per-browser, so silencing it during a call does not
+              mute the rest of the team. */}
+          <button
+            onClick={() => { const next = setWaSoundMuted(!soundMuted); setSoundMuted(next);
+                             if (!next) playChime('message'); }}
+            title={soundMuted ? 'Message sound is off — click to turn on' : 'Message sound is on — click to mute'}
+            className={cn(
+              'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md transition-colors',
+              soundMuted ? 'text-[#B02B2B] hover:bg-[#FEEFEF]' : 'text-[#7A8095] hover:bg-[#F4F5F8] hover:text-[#1B7A44]'
+            )}
+          >
+            {soundMuted ? <BellOff className="h-[16px] w-[16px]" /> : <Bell className="h-[16px] w-[16px]" />}
+          </button>
           <ConnectionPill settings={settings} loading={loading} />
         </div>
       </div>

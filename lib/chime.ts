@@ -85,6 +85,7 @@ export type ChimeName =
   | 'meeting60'      // meeting in an hour
   | 'meeting10'      // meeting in ten minutes
   | 'meetingNow'     // meeting starting — the double chime
+  | 'message'        // a lead just wrote to us on WhatsApp
   | 'done';          // something was completed
 
 /**
@@ -155,6 +156,15 @@ export function playChime(name: ChimeName): boolean {
         fanfare(now + 0.95);   // second pass — impossible to miss
         break;
       }
+      case 'message':
+        // A lead wrote to us. This one fires many times a day, so it has to be
+        // the gentlest voice in the set: two soft notes rising a fourth, quiet
+        // and short. Pleasant on the tenth hearing is the whole design brief —
+        // anything brighter or longer becomes something people mute by lunch.
+        master.gain.setValueAtTime(0.42, now);
+        strike(c, bus, G5, now, 0.85, 0.26);
+        strike(c, bus, C6, now + 0.10, 1.25, 0.24);
+        break;
       case 'done':
         master.gain.setValueAtTime(0.6, now);
         strike(c, bus, A4 * 2, now, 0.9, 0.3);

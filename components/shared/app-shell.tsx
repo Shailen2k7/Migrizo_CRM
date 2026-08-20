@@ -9,6 +9,7 @@ import { CooBanner } from '@/components/shared/coo-banner';
 import { LeadDrawer } from '@/components/leads/lead-drawer';
 import { MeetingAlerts } from '@/components/meetings/meeting-alerts';
 import { FollowUpAlerts } from '@/components/meetings/followup-alerts';
+import { WaAlerts } from '@/components/whatsapp/wa-alerts';
 import { AddLeadDialog } from '@/components/leads/add-lead-dialog';
 import { ImportDialog } from '@/components/leads/import-dialog';
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog';
@@ -119,6 +120,10 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
             shell so they run on every page, not only on Meetings. */}
         <MeetingAlerts workspaceId={workspace.id} />
         <FollowUpAlerts workspaceId={workspace.id} onOpenLead={(id) => setDrawerLeadId(id)} />
+        {/* WhatsApp: soft chime on an inbound message + "(3) Migrizo CRM" in
+            the browser tab, from anywhere in the CRM. Admin-only, matching who
+            can see the WhatsApp screen at all. */}
+        <WaAlerts workspaceId={workspace.id} enabled={role === 'admin'} />
       </UIContext.Provider>
     </AppProvider>
   );
