@@ -5,5 +5,6 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-[build.environment]
-  NEXT_USE_NETLIFY_EDGE = "true"
+# NEXT_USE_NETLIFY_EDGE was a flag for the old Netlify Next.js Runtime v4.
+# The current runtime (v5) ignores it and decides edge vs. serverless itself,
+# so keeping it here only misleads whoever reads this file next.

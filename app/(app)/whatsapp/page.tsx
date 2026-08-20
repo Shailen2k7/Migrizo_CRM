@@ -21,10 +21,10 @@ import {
   Search, Clock, Lock, AlertCircle, Zap, Paperclip, Smile,
   FileText, PanelRight, Columns, Maximize2, Minimize2,
   ExternalLink, Loader2, Bot, Pause, Play, Square, ShieldCheck, Plus, Send as SendIcon,
-  MessageSquare, Settings2, X, MoreHorizontal, Eraser, Trash2, Bell, BellOff,
+  MessageSquare, Settings2, X, MoreHorizontal, Eraser, Trash2, Bell, BellOff, CheckCheck,
 } from 'lucide-react';
 import { playChime } from '@/lib/chime';
-import { waSoundMuted, setWaSoundMuted } from '@/components/whatsapp/wa-alerts';
+import { waSoundMuted, setWaSoundMuted, useWaUnread, setWaUnreadLocal } from '@/components/whatsapp/wa-alerts';
 import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/components/shared/app-provider';
 import { initials, avatarColor, cn } from '@/lib/utils';
@@ -152,6 +152,9 @@ export default function WhatsAppPage() {
   // exist during the server render and a mismatch would break hydration.
   const [soundMuted, setSoundMuted] = useState(false);
   useEffect(() => { setSoundMuted(waSoundMuted()); }, []);
+
+  // Shared with the sidebar badge and the browser tab title — one watcher.
+  const waUnread = useWaUnread();
 
   const [panelTab, setPanelTab] = useState<'info' | 'activity'>('info');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -808,6 +811,25 @@ export default function WhatsAppPage() {
               </button>
               <span className="h-[22px] w-px bg-[#E8EAF0]" />
             </>
+          )}
+          {/* The count must always be actionable. If it says 6 and you cannot
+              find the 6 — old threads, a colleague reading them elsewhere, a
+              counter that drifted — this clears it without hunting. */}
+          {waUnread > 0 && (
+            <button
+              onClick={async () => {
+                const { data, error } = await supabase.rpc('whatsapp_mark_all_read', { p_workspace_id: workspace.id });
+                if (error) { toast.error(error.message); return; }
+                setWaUnreadLocal(0);
+                loadConvs();
+                toast.success(`${data ?? 0} conversation${data === 1 ? '' : 's'} marked as read`);
+              }}
+              title="Set every conversation to read"
+              className="flex flex-shrink-0 items-center gap-[5px] rounded-full border border-[#DDE0E9] bg-white px-[10px] py-[5px] text-[11.5px] font-semibold text-ink-2 transition hover:border-[#2FB463] hover:bg-[#EDFAF1] hover:text-[#1B7A44]"
+            >
+              <CheckCheck className="h-[13px] w-[13px]" />
+              Mark all read ({waUnread})
+            </button>
           )}
           {/* Message sound. Per-browser, so silencing it during a call does not
               mute the rest of the team. */}

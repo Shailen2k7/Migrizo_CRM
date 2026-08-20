@@ -1,40 +1,64 @@
-# Sound on new message + unread count in the browser tab
+# Fix: slow WhatsApp screen + edge-function hardening
 
-## What you get
+## What was wrong — this one was my bug
 
-**1. A soft chime when a lead writes in.** Plays from ANY page of the CRM —
-you can be in Payments and still hear it, like WhatsApp Web in a background tab.
+The sidebar badge ALREADY had a watcher calling `whatsapp_stats()`. When I added
+the tab-title count, I added a SECOND watcher calling the same thing. And
+`whatsapp_stats()` is not cheap: it runs **7 COUNT queries**, two of them across
+the entire messages table — just to read one number.
 
-**2. The browser tab shows the count**, exactly like your screenshot:
-`(3) Migrizo CRM`. It counts unread conversations and falls back to a plain
-title the moment you have read everything. Works from every page.
+Both watchers re-ran it on *every* conversation change. Every outbound campaign
+message updates a conversation row. So while the engine was sending, each
+message set off ~14 heavy counts **in every open browser tab**. That is what
+made conversations crawl.
 
-**3. A mute button** in the WhatsApp header (bell icon, next to the number
-pill). Clicking unmute plays the sound once so you can hear what you are
-turning on. The setting is per-browser, so muting during a call does not
-silence the rest of the team.
+## What is fixed
 
-## Deliberate behaviour (so it stays pleasant, not annoying)
-
-- Only INBOUND messages chime. Campaign sends never make a sound.
-- No chime while you are actively looking at the WhatsApp screen — you can
-  already see the message land.
-- Bursts collapse: ten replies arriving together = ONE chime, not ten.
-- The sidebar's green WhatsApp badge already existed and keeps working.
-
-## Files (4) — no database change, nothing to run in Supabase
-
-| File | What changed |
+| Before | After |
 |---|---|
-| `components/whatsapp/wa-alerts.tsx` | NEW — the watcher (sound + tab title) |
-| `lib/chime.ts` | added the gentle two-note "message" voice |
-| `components/shared/app-shell.tsx` | mounts the watcher on every page |
-| `app/(app)/whatsapp/page.tsx` | the mute bell in the header |
+| 2 realtime channels for the same number | **1**, owned by the app shell |
+| `whatsapp_stats()` — 7 counts, 2 full table scans | `whatsapp_unread_count()` — **1 index-only count** (verified: Index Only Scan) |
+| Re-queried on every row change | **Debounced** — a burst of 50 changes = 1 query |
+| Listened to `*` on conversations | Only `UPDATE`, which is the only event that changes the count |
 
-## Test it in 60 seconds
-1. Deploy, open the CRM, and click anywhere once (browsers block sound until
-   you interact with the page — normal for every web app).
-2. Switch to another CRM page, e.g. Leads.
-3. Message your CRM WhatsApp number from your phone.
-4. You should hear the chime and see the browser tab become `(1) Migrizo CRM`.
-5. Open the WhatsApp tab and read it — the count disappears.
+## "It says 6 but I can't find any unread"
+
+Two things for that:
+
+1. **A "Mark all read (6)" button** now appears in the WhatsApp header whenever
+   the count is above zero. One click clears it — no hunting.
+2. Migration 065 ends with a query that **lists exactly which conversations are
+   counted as unread**, including how many inbound messages each really has.
+   Run it and you will see whether those 6 are real or a drifted counter.
+
+## The Netlify "edge function has crashed"
+
+Your site is up — I fetched it and it served normally, so that was Netlify's
+deploy-time screenshot, not a live outage. But it should never be *possible*,
+so the auth middleware is now hardened: if Supabase is slow during a token
+refresh (exactly what the query storm above would cause), it no longer throws
+and takes the whole site down with it. It fails soft and lets the request
+through — security is unchanged, because the real check is the server-side
+`getUser()` in the app layout, which still runs.
+
+Also removed `NEXT_USE_NETLIFY_EDGE` from netlify.toml — a dead flag from the
+old Netlify runtime v4.
+
+## Deploy — 2 steps
+
+1. Supabase → SQL Editor → run `supabase/migrations/065_unread_count_fast.sql`
+   **Run this FIRST**, before deploying the code — the new code calls the
+   function it creates. (Safe to run twice. It prints your unread conversations
+   at the end.)
+
+2. Replace these files, commit, push:
+   - `middleware.ts`                        (crash guard)
+   - `lib/supabase/middleware.ts`           (soft-fail auth refresh)
+   - `netlify.toml`                         (dead flag removed)
+   - `components/whatsapp/wa-alerts.tsx`    (one cheap, debounced watcher)
+   - `components/sidebar.tsx`               (reads the shared count)
+   - `app/(app)/whatsapp/page.tsx`          (Mark all read button)
+
+## Test
+Open WhatsApp — the list should load at its old speed. Press "Mark all read" and
+the badge, the tab title and the list all drop to zero together.

@@ -4,8 +4,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Megaphone, ListChecks, MessageCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { createClient as createBrowserClient } from '@/lib/supabase/client';
 import { createClient } from '@/lib/supabase/client';
+import { useWaUnread } from '@/components/whatsapp/wa-alerts';
 import { initials } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -61,27 +61,12 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
   const supabase = createClient();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Live WhatsApp unread count. Realtime, so the badge moves the moment a lead
-  // replies — you never have to open the tab to find out something is waiting.
+  // Live WhatsApp unread count. This used to run its OWN realtime channel and
+  // call whatsapp_stats() — seven count queries — on every conversation change.
+  // <WaAlerts> in the app shell already maintains this number from a single
+  // cheap query, so the badge now just reads it. One watcher, not two.
   const { workspace } = useApp();
-  const [waUnread, setWaUnread] = useState(0);
-  useEffect(() => {
-    if (role !== 'admin') return;
-    const sb = createBrowserClient();
-    let alive = true;
-    const read = async () => {
-      const { data } = await sb.rpc('whatsapp_stats', { p_workspace_id: workspace.id });
-      const n = (data as { unread?: number } | null)?.unread;
-      if (alive && typeof n === 'number') setWaUnread(n);
-    };
-    read();
-    const ch = sb.channel(`nav-wa-${workspace.id}`)
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'whatsapp_conversations', filter: `workspace_id=eq.${workspace.id}` },
-        () => read())
-      .subscribe();
-    return () => { alive = false; sb.removeChannel(ch); };
-  }, [workspace.id, role]);
+  const waUnread = useWaUnread();
 
   // Hide the Payments item for team members the admin hasn't granted access to.
   // Payments: hidden unless granted. Cases: admin/owner only.

@@ -42,10 +42,28 @@ export async function updateSession(request: NextRequest) {
   // (~once an hour). getUser() was a network round-trip on EVERY request —
   // pages, prefetches, API calls — which stacked with Netlify cold starts.
   // Real verification still happens server-side in the (app) layout's getUser().
-  const { data: { session } } = await supabase.auth.getSession();
-  const user = session?.user ?? null;
+  //
+  // WHY THIS IS WRAPPED: getSession() usually reads the cookie locally, but
+  // when the token is due for refresh it calls Supabase over the network. If
+  // that call fails or times out — Supabase under load, a cold edge worker, a
+  // transient DNS blip — an unhandled rejection here takes down the whole
+  // Netlify Edge Function and every visitor sees "edge function invocation
+  // failed" instead of a page. Auth middleware must never be able to kill the
+  // site. So we fail SOFT: treat the request as unauthenticated and let it
+  // continue. Nothing is exposed by doing so, because the real check is the
+  // (app) layout's server-side getUser() — that still runs and still redirects.
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
+
+  let user: { id: string } | null = null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    user = data.session?.user ?? null;
+  } catch {
+    // Degrade, do not crash. A public path proceeds; a private one falls
+    // through to the redirect below, which is the safe direction to fail.
+    user = null;
+  }
 
   if (!user && !isPublic) {
     const u = request.nextUrl.clone();
