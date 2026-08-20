@@ -1,64 +1,53 @@
-# Fix: slow WhatsApp screen + edge-function hardening
+# Industry (Tech / Research / …) in the lead exports
 
-## What was wrong — this one was my bug
+## What you get
 
-The sidebar badge ALREADY had a watcher calling `whatsapp_stats()`. When I added
-the tab-title count, I added a SECOND watcher calling the same thing. And
-`whatsapp_stats()` is not cheap: it runs **7 COUNT queries**, two of them across
-the entire messages table — just to read one number.
+The CSV now has an **Industry** column showing `Tech`, `Research`, `Art`,
+`Engineering`, `Education`, `Business`, `Healthcare`, `Finance`, `Other` —
+placed right after "Current stage", next to the other "what kind of lead is
+this" columns, so it sorts and pivots naturally in Excel.
 
-Both watchers re-ran it on *every* conversation change. Every outbound campaign
-message updates a conversation row. So while the engine was sending, each
-message set off ~14 heavy counts **in every open browser tab**. That is what
-made conversations crawl.
+A **Tags** column comes with it, for the free-form labels like `meta-lead`
+(comma-separated when a lead has several).
 
-## What is fixed
+## Two extra things worth knowing
 
-| Before | After |
+**1. It rescues leads whose tag looked blank.** Facebook sends option slugs
+like `tech_` and `art_`. Those match nothing in our list, so they would have
+exported as an empty cell even though the lead is clearly tagged. The export
+now normalises them — `tech_` exports as `Tech`. If any of your leads were
+saved with the raw slug, they appear correctly from now on.
+
+**2. It never silently drops a value.** An industry we have no entry for is
+tidied and shown (`quantum_computing` → `Quantum computing`) rather than
+vanishing. An export that quietly loses data is worse than one showing
+something unexpected. A lead with genuinely no industry gives an empty cell, so
+Excel's filter treats it as "(Blanks)".
+
+## Also fixed while I was there
+
+- The **Leads page** export had the same missing column — fixed identically, so
+  both files match.
+- The Leads page export was missing its UTF-8 marker, so Excel mangled accented
+  names on opening. Added. (Daily tracker already had it.)
+
+## Files (3) — no database change, nothing to run in Supabase
+
+| File | What changed |
 |---|---|
-| 2 realtime channels for the same number | **1**, owned by the app shell |
-| `whatsapp_stats()` — 7 counts, 2 full table scans | `whatsapp_unread_count()` — **1 index-only count** (verified: Index Only Scan) |
-| Re-queried on every row change | **Debounced** — a burst of 50 changes = 1 query |
-| Listened to `*` on conversations | Only `UPDATE`, which is the only event that changes the count |
+| `lib/types.ts` | new `industryLabel()` helper — one source of truth for both exports |
+| `components/daily-tracker/daily-tracker-view.tsx` | Industry + Tags columns |
+| `app/(app)/leads/page.tsx` | Industry + Tags columns, UTF-8 fix |
 
-## "It says 6 but I can't find any unread"
+## How it was verified
+- 14 unit cases on the label helper: null, empty, whitespace, every normal
+  value, the `tech_` / `art_` slugs, and unknown values — all pass.
+- The real CSV builder was run over sample leads and asserted on: header
+  present, `tech_` → `Tech`, names containing commas correctly quoted,
+  multi-tag cells quoted, blank industry giving an empty cell (not the word
+  "null"), and every row having exactly as many columns as the header.
+- `tsc --noEmit` clean, `next build` green.
 
-Two things for that:
-
-1. **A "Mark all read (6)" button** now appears in the WhatsApp header whenever
-   the count is above zero. One click clears it — no hunting.
-2. Migration 065 ends with a query that **lists exactly which conversations are
-   counted as unread**, including how many inbound messages each really has.
-   Run it and you will see whether those 6 are real or a drifted counter.
-
-## The Netlify "edge function has crashed"
-
-Your site is up — I fetched it and it served normally, so that was Netlify's
-deploy-time screenshot, not a live outage. But it should never be *possible*,
-so the auth middleware is now hardened: if Supabase is slow during a token
-refresh (exactly what the query storm above would cause), it no longer throws
-and takes the whole site down with it. It fails soft and lets the request
-through — security is unchanged, because the real check is the server-side
-`getUser()` in the app layout, which still runs.
-
-Also removed `NEXT_USE_NETLIFY_EDGE` from netlify.toml — a dead flag from the
-old Netlify runtime v4.
-
-## Deploy — 2 steps
-
-1. Supabase → SQL Editor → run `supabase/migrations/065_unread_count_fast.sql`
-   **Run this FIRST**, before deploying the code — the new code calls the
-   function it creates. (Safe to run twice. It prints your unread conversations
-   at the end.)
-
-2. Replace these files, commit, push:
-   - `middleware.ts`                        (crash guard)
-   - `lib/supabase/middleware.ts`           (soft-fail auth refresh)
-   - `netlify.toml`                         (dead flag removed)
-   - `components/whatsapp/wa-alerts.tsx`    (one cheap, debounced watcher)
-   - `components/sidebar.tsx`               (reads the shared count)
-   - `app/(app)/whatsapp/page.tsx`          (Mark all read button)
-
-## Test
-Open WhatsApp — the list should load at its old speed. Press "Mark all read" and
-the badge, the tab title and the list all drop to zero together.
+## Deploy
+Replace the 3 files, commit, push. Then Daily tracker → Export CSV and open it:
+Industry is column E.

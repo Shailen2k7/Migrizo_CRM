@@ -6,6 +6,7 @@ import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
 import { Topbar } from '@/components/topbar';
 import { LeadsTable } from '@/components/leads/leads-table';
+import { industryLabel } from '@/lib/types';
 import { toast } from 'sonner';
 
 function LeadsPageInner() {
@@ -22,10 +23,18 @@ function LeadsPageInner() {
 
   const exportCsv = () => {
     if (leads.length === 0) { toast.error('No leads to export'); return; }
-    const headers = ['Full Name', 'Phone', 'Email', 'Visa Type', 'Stage', 'Score', 'Next Follow-up', 'Payment Status', 'Amount Paid', 'Last Note'];
-    const rows = leads.map((l) => [l.full_name, l.phone || '', l.email || '', l.visa_type || '', l.stage, l.score, l.next_follow_up || '', l.payment_status, l.amount_paid, l.last_note || '']);
+    const headers = ['Full Name', 'Phone', 'Email', 'Industry', 'Tags', 'Visa Type', 'Stage', 'Score', 'Next Follow-up', 'Payment Status', 'Amount Paid', 'Last Note'];
+    const rows = leads.map((l) => [
+      l.full_name, l.phone || '', l.email || '',
+      industryLabel(l.industry), (l.tags || []).join(', '),
+      l.visa_type || '', l.stage, l.score, l.next_follow_up || '',
+      l.payment_status, l.amount_paid, l.last_note || '',
+    ]);
     const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
+    // The ﻿ byte-order mark tells Excel the file is UTF-8. Without it Excel
+    // assumes the local codepage and mangles any accented name on opening — the
+    // daily-tracker export already had this; this one did not.
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `migrizo-leads-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     URL.revokeObjectURL(url);

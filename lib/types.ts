@@ -391,3 +391,37 @@ export function getIndustryMeta(industry: string | null | undefined) {
   if (!industry) return null;
   return INDUSTRY_META[industry as Industry] || null;
 }
+
+/**
+ * The industry as a human would write it — "Tech", "Research" — for exports and
+ * anywhere else that needs plain text rather than a coloured chip.
+ *
+ * Two things it deliberately does that a bare lookup does not:
+ *
+ *  1. Recovers Meta's option slugs. Facebook sends values like "tech_" and
+ *     "art_", which match no key and would otherwise export as blank even
+ *     though the lead is clearly tagged. Punctuation is normalised first.
+ *  2. Never silently drops a value. An industry we have no entry for is
+ *     returned tidied up ("quantum_computing" -> "Quantum computing") instead
+ *     of vanishing, because an export that quietly loses data is worse than one
+ *     showing something unexpected.
+ *
+ * Returns '' only when there genuinely is no industry, which keeps the CSV cell
+ * empty and lets Excel's filters treat it as "(Blanks)".
+ */
+export function industryLabel(industry: string | null | undefined): string {
+  if (!industry) return '';
+  const raw = String(industry).trim();
+  if (!raw) return '';
+
+  const direct = INDUSTRY_META[raw as Industry];
+  if (direct) return direct.label;
+
+  const cleaned = raw.toLowerCase().replace(/[_\-+]+/g, ' ').trim();
+  if (!cleaned) return '';
+
+  const normalised = INDUSTRY_META[cleaned as Industry];
+  if (normalised) return normalised.label;
+
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}

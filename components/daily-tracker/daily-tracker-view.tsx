@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '@/components/shared/app-provider';
 import type { Lead, LeadStage } from '@/lib/types';
-import { STAGE_META, getStageMeta, isFollowUpOverdue, isFollowUpToday } from '@/lib/types';
+import { STAGE_META, getStageMeta, industryLabel, isFollowUpOverdue, isFollowUpToday } from '@/lib/types';
 import { Users, Flame, Snowflake, Trash2, Calendar, Download, AlertTriangle, ChevronRight, MessageCircle, Trophy, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { cn, initials, avatarColor, formatINRFull, formatMoney, toINR } from '@/lib/utils';
 import { IndustryChip } from '@/components/shared/industry-chip';
@@ -174,7 +174,11 @@ export function DailyTrackerView() {
       toast.error('No leads to export for this view');
       return;
     }
-    const headers = ['Name', 'Email', 'Phone', 'Current stage', 'Visa type', 'Date added', 'Time added', 'Added by', 'Amount paid', 'Last note', 'Notes preview'];
+    // Industry sits right after the stage: it is what these exports get sorted
+    // and pivoted by, so it belongs next to the other "what kind of lead is
+    // this" columns rather than tacked on at the end. Tags follows it for the
+    // free-form labels (e.g. meta-lead) that are not part of the fixed list.
+    const headers = ['Name', 'Email', 'Phone', 'Current stage', 'Industry', 'Tags', 'Visa type', 'Date added', 'Time added', 'Added by', 'Amount paid', 'Last note', 'Notes preview'];
     const rows: (string | number | null)[][] = [headers];
     for (const l of filteredList) {
       const created = new Date(l.created_at);
@@ -183,6 +187,8 @@ export function DailyTrackerView() {
         l.email || '',
         l.phone || '',
         getStageMeta(l.stage).label,
+        industryLabel(l.industry),
+        (l.tags || []).join(', '),
         l.visa_type || '',
         created.toLocaleDateString('en-IN'),
         created.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
