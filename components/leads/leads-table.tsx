@@ -5,7 +5,7 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel,
   flexRender, type ColumnDef, type SortingState
 } from '@tanstack/react-table';
-import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Search, Star, Copy, Check, Tag } from 'lucide-react';
+import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Star, Copy, Check, Tag } from 'lucide-react';
 import { DealTag } from '@/components/shared/deal-tag';
 import { useApp } from '@/components/shared/app-provider';
 import type { Lead, LeadStage, OfferType } from '@/lib/types';
@@ -66,7 +66,6 @@ interface Props {
 export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
   const { leads, updateLead, toggleSpotlight } = useApp();
   const [segment, setSegment] = useState<Segment>(initialSegment);
-  const [search, setSearch] = useState('');
   const [sorting, setSorting] = useState<SortingState>([{ id: 'updated_at', desc: true }]);
   const [stageMenu, setStageMenu] = useState<{ leadId: string; x: number; y: number } | null>(null);
 
@@ -211,14 +210,11 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
   const table = useReactTable({
     data: segmented,
     columns,
-    state: { sorting, globalFilter: search },
+    // Search lives in the page Topbar, which already covers name, phone, email
+    // and notes — a second box on the same screen was two places to type the
+    // same thing. Rows are narrowed by the chips above and nothing else.
+    state: { sorting },
     onSortingChange: setSorting,
-    onGlobalFilterChange: setSearch,
-    globalFilterFn: (row, _id, value) => {
-      const q = String(value).toLowerCase();
-      const l = row.original;
-      return l.full_name.toLowerCase().includes(q) || (l.phone || '').toLowerCase().includes(q) || (l.email || '').toLowerCase().includes(q) || (l.last_note || '').toLowerCase().includes(q) || (l.visa_type || '').toLowerCase().includes(q);
-    },
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -289,13 +285,6 @@ const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter(
             </button>
           );
         })}
-        </div>
-        <div className="sm:ml-auto flex items-center gap-2 w-full sm:w-auto">
-          <div className="relative w-full sm:w-auto">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, phone, email…"
-              className="pl-8 pr-3 py-2 text-[12.5px] w-full sm:w-[280px] rounded-md border border-border bg-surface focus:outline-none focus:border-indigo focus:ring-4 focus:ring-indigo-soft text-ink" />
-          </div>
         </div>
       </div>
 
