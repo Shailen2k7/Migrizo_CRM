@@ -5,11 +5,11 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel,
   flexRender, type ColumnDef, type SortingState
 } from '@tanstack/react-table';
-import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Search, Star, Copy, Check } from 'lucide-react';
+import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Search, Star, Copy, Check, Tag } from 'lucide-react';
 import { DealTag } from '@/components/shared/deal-tag';
 import { useApp } from '@/components/shared/app-provider';
-import type { Lead, LeadStage } from '@/lib/types';
-import { STAGE_META, STAGE_ORDER, PAYMENT_META, getStageMeta, getVisaMeta } from '@/lib/types';
+import type { Lead, LeadStage, OfferType } from '@/lib/types';
+import { STAGE_META, STAGE_ORDER, PAYMENT_META, OFFER_META, getStageMeta, getVisaMeta, hasOffer, offerBadge, offerLabel } from '@/lib/types';
 import { initials, avatarColor, formatMoney, scoreColor, timeAgo, cn } from '@/lib/utils';
 import { IndustryChip } from '@/components/shared/industry-chip';
 
@@ -38,7 +38,7 @@ function VisaTag({ visa }: { visa: string | null }) {
   );
 }
 
-type Segment = 'all' | 'spotlight' | 'not_responding' | LeadStage;
+type Segment = 'all' | 'spotlight' | 'offer' | 'not_responding' | LeadStage;
 
 // "Not responding" comes from TWO places, and the filter shows both.
 //
@@ -75,13 +75,14 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
   const segmented = useMemo(() => {
     if (segment === 'all') return leads;
     if (segment === 'spotlight') return leads.filter((l) => l.is_spotlight);
+    if (segment === 'offer') return leads.filter(hasOffer);
     if (segment === 'not_responding') return leads.filter(isNotResponding);
     return leads.filter((l) => l.stage === segment);
   }, [leads, segment]);
 
   const counts = useMemo(() => {
     const c: Record<Segment, number> = {
-      all: leads.length, spotlight: 0, not_responding: 0,
+      all: leads.length, spotlight: 0, offer: 0, not_responding: 0,
       hot: 0, cold: 0, mr_coming_soon: 0, invoice_sent: 0, won: 0, junk: 0,
     };
     leads.forEach((l) => {
@@ -89,6 +90,7 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
       // line adds only the ones the 14-day rule found, so nobody is counted twice.
       c[l.stage] = (c[l.stage] || 0) + 1;
       if (l.is_spotlight) c.spotlight += 1;
+      if (hasOffer(l)) c.offer += 1;
       if (l.stage !== 'not_responding' && isNotResponding(l)) c.not_responding += 1;
     });
     return c;
@@ -113,6 +115,15 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
               <div className="font-semibold text-ink leading-tight text-[13.5px]">{l.full_name}</div>
               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                 <VisaTag visa={l.visa_type} />
+                {hasOffer(l) && (
+                  <span
+                    title={offerLabel(l)}
+                    className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none whitespace-nowrap"
+                    style={{ background: OFFER_META[l.offer_type as OfferType].bg, color: OFFER_META[l.offer_type as OfferType].fg }}
+                  >
+                    <Tag className="w-2.5 h-2.5" style={{ marginRight: 3 }} />{offerBadge(l)}
+                  </span>
+                )}
                 {l.industry && <IndustryChip industry={l.industry} size="xs" />}
                 <DealTag lead={l} />
               </div>
@@ -243,6 +254,19 @@ const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter(
         >
           <Star className="w-3 h-3" style={{ fill: 'currentColor', marginRight: 4 }} />Spotlight
           <span className="count" style={segment === 'spotlight' ? { background: 'rgba(255,255,255,0.25)', color: '#fff' } : undefined}>{counts.spotlight}</span>
+        </button>
+        {/* Special offer. Violet keeps it clearly apart from the stage colours,
+            because it is not a stage — these leads still live in Hot or Cold. */}
+        <button
+          onClick={() => setSegment('offer')}
+          className={cn('filter-chip', segment === 'offer' && 'active')}
+          title="Leads given a discounted (£500) or free quote"
+          style={segment === 'offer'
+            ? { background: '#7C3AED', color: '#fff', borderColor: '#7C3AED' }
+            : { background: '#F1ECFE', color: '#5B21B6', borderColor: '#DDD2FB' }}
+        >
+          <Tag className="w-3 h-3" style={{ marginRight: 4 }} />Special offer
+          <span className="count" style={segment === 'offer' ? { background: 'rgba(255,255,255,0.25)', color: '#fff' } : undefined}>{counts.offer}</span>
         </button>
         <button
           onClick={() => setSegment('not_responding')}

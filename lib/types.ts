@@ -73,6 +73,15 @@ export interface Lead {
   // question was never asked, which is not the same as 'no'.
   investment_readiness?: 'yes' | 'maybe' | 'no' | null;
   intake?: Record<string, unknown> | null;
+  // Special pricing used to win a high-quality case (migration 066). This sits
+  // ALONGSIDE the stage, never replacing it — a lead can be Hot AND on a free
+  // offer, and overwriting stage would drop them out of their WhatsApp campaign.
+  offer_type?: OfferType | null;
+  offer_amount?: number | null;
+  offer_currency?: 'GBP' | 'INR' | 'USD' | null;
+  offer_note?: string | null;
+  offer_at?: string | null;
+  offer_by?: string | null;
   is_spotlight: boolean;
   created_at: string;
   created_by: string | null;
@@ -366,6 +375,53 @@ export function formatFollowUpTime(scheduledAt: string): string {
   if (date >= tomorrow && date < dayAfter) return `Tomorrow, ${time}`;
   if (date >= today && date < weekFromToday) return `${date.toLocaleDateString('en-IN', { weekday: 'short' })}, ${time}`;
   return `${date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })}, ${time}`;
+}
+
+// =========================================
+// SPECIAL OFFER (£500 / FREE)
+// =========================================
+// Deliberately NOT a stage. See migration 066 for the reasoning: a lead on an
+// offer is still Hot or Cold, and the WhatsApp engine enrols by stage.
+export type OfferType = 'discount' | 'free';
+
+export const OFFER_META: Record<OfferType, { label: string; bg: string; fg: string; dot: string }> = {
+  discount: { label: 'Discounted quote', bg: '#F1ECFE', fg: '#5B21B6', dot: '#7C3AED' },
+  free:     { label: 'Free case',        bg: '#EDE9FE', fg: '#4C1D95', dot: '#6D28D9' },
+};
+
+const CURRENCY_SYMBOL: Record<string, string> = { GBP: '£', INR: '₹', USD: '$' };
+
+/** True when this lead has been given special pricing. */
+export function hasOffer(lead: Pick<Lead, 'offer_type'>): boolean {
+  return lead.offer_type === 'discount' || lead.offer_type === 'free';
+}
+
+/**
+ * The short badge shown on the row — "£500" or "FREE".
+ *
+ * A discount with no amount recorded falls back to the word "OFFER" rather than
+ * rendering a bare currency symbol, so a half-filled record still reads sensibly.
+ */
+export function offerBadge(lead: Pick<Lead, 'offer_type' | 'offer_amount' | 'offer_currency'>): string {
+  if (lead.offer_type === 'free') return 'FREE';
+  if (lead.offer_type !== 'discount') return '';
+  const amount = lead.offer_amount;
+  if (amount === null || amount === undefined) return 'OFFER';
+  const symbol = CURRENCY_SYMBOL[lead.offer_currency || 'GBP'] || '';
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return 'OFFER';
+  // Whole numbers read better without ".00" on a compact table row.
+  const text = Number.isInteger(n) ? n.toLocaleString('en-GB') : n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${symbol}${text}`;
+}
+
+/** Full description for the drawer and exports — "Free case", "Discounted quote · £500". */
+export function offerLabel(lead: Pick<Lead, 'offer_type' | 'offer_amount' | 'offer_currency'>): string {
+  if (!hasOffer(lead)) return '';
+  const meta = OFFER_META[lead.offer_type as OfferType];
+  if (lead.offer_type === 'free') return meta.label;
+  const badge = offerBadge(lead);
+  return badge && badge !== 'OFFER' ? `${meta.label} · ${badge}` : meta.label;
 }
 
 // =========================================

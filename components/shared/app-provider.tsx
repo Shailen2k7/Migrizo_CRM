@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { Lead, Payment, Activity, Workspace, Note, Case, CaseChecklistItem, CaseActivity, CaseStage, ChecklistStatus, FollowUp } from '@/lib/types';
+import type { Lead, Payment, Activity, Workspace, Note, Case, CaseChecklistItem, CaseActivity, CaseStage, ChecklistStatus, FollowUp, OfferType } from '@/lib/types';
 import type { CaseJourneyState } from '@/lib/journey';
 import { buildSampleLeads } from '@/lib/sample-data';
 import { toast } from 'sonner';
@@ -40,6 +40,7 @@ interface AppData {
   updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
   toggleSpotlight: (id: string) => Promise<void>;
+  setLeadOffer: (id: string, offer: { type: OfferType | null; amount?: number | null; currency?: 'GBP' | 'INR' | 'USD' | null; note?: string | null }) => Promise<void>;
   addNote: (leadId: string, body: string) => Promise<void>;
   getNotes: (leadId: string) => Promise<Note[]>;
   recordPayment: (input: Partial<Payment> & { lead_id: string; milestone: Payment['milestone']; amount: number }) => Promise<void>;
@@ -339,6 +340,44 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     }
     toast.success(next ? 'Added to Spotlight' : 'Removed from Spotlight');
   }, [supabase, leads]);
+
+  // Grant or withdraw special pricing. Stamps WHO and WHEN, because this is a
+  // deliberate commercial decision — six months from now "why is this one free?"
+  // needs an answer, and it is also the only way to measure whether discounting
+  // actually wins more approvals.
+  const setLeadOffer = useCallback(async (
+    id: string,
+    offer: { type: OfferType | null; amount?: number | null; currency?: 'GBP' | 'INR' | 'USD' | null; note?: string | null },
+  ) => {
+    const before = leads.find((l) => l.id === id);
+    if (!before) return;
+
+    const patch: Partial<Lead> = offer.type === null
+      // Withdrawing clears the whole record rather than leaving an orphan amount
+      // behind that would reappear if the offer were granted again later.
+      ? { offer_type: null, offer_amount: null, offer_currency: null, offer_note: null, offer_at: null, offer_by: null }
+      : {
+          offer_type: offer.type,
+          offer_amount: offer.type === 'free' ? 0 : (offer.amount ?? null),
+          offer_currency: offer.type === 'free' ? null : (offer.currency ?? 'GBP'),
+          offer_note: offer.note ?? before.offer_note ?? null,
+          offer_at: new Date().toISOString(),
+          offer_by: user.id,
+        };
+
+    setLeads((prev) => prev.map((l) => l.id === id ? { ...l, ...patch } : l));
+    const { data, error } = await supabase.from('leads').update(patch).eq('id', id).select('id');
+    if (error || !data?.length) {
+      setLeads((prev) => prev.map((l) => l.id === id ? before : l));   // put it back
+      toast.error(error ? `Couldn't save: ${error.message}` : "Couldn't save — you may not have permission");
+      return;
+    }
+    toast.success(
+      offer.type === null ? 'Special offer removed'
+        : offer.type === 'free' ? 'Marked as a free case'
+        : 'Discounted offer saved'
+    );
+  }, [supabase, leads, user.id]);
 
   const setMemberPaymentAccess = useCallback(async (userId: string, canView: boolean) => {
     if (role !== 'admin') { toast.error('Only the admin can change this'); return; }
@@ -792,7 +831,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     user, workspace, role, leads, payments, activity, cases, followUps, members, loading,
     canViewPayments, canSendEmails, setMemberPaymentAccess,
     refresh, refreshMembers, refreshCases, refreshFollowUps, memberNameById,
-    createLead, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
+    createLead, updateLead, deleteLead, toggleSpotlight, setLeadOffer, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
     createCase, updateCase, updateCaseJourney, sendClientUpdate, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
     createFollowUp, updateFollowUp, deleteFollowUp, completeFollowUp, reopenFollowUp, cancelFollowUp,
   };

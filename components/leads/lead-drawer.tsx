@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star, Pencil, Send, Inbox, Eye, ClipboardList } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { Lead, Note, Payment, LeadStage } from '@/lib/types';
-import { STAGE_META, MILESTONE_META, getVisaMeta, INDUSTRY_LIST, INDUSTRY_META } from '@/lib/types';
+import { STAGE_META, MILESTONE_META, OFFER_META, getVisaMeta, hasOffer, INDUSTRY_LIST, INDUSTRY_META } from '@/lib/types';
 import { useApp } from '@/components/shared/app-provider';
 import { usePipelines, getStageColor } from '@/lib/pipelines';
 import { Select } from '@/components/shared/select';
@@ -31,7 +31,7 @@ interface Props {
 }
 
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
-  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, addNote, getNotes, createFollowUp, role, memberNameById, canViewPayments, canSendEmails, workspace, user: appUser } = useApp();
+  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, setLeadOffer, addNote, getNotes, createFollowUp, role, memberNameById, canViewPayments, canSendEmails, workspace, user: appUser } = useApp();
   const pl = usePipelines(workspace.id);
   const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups' | 'emails' | 'roadmap' | 'route'>('overview');
   const [emailLog, setEmailLog] = useState<EmailLogEntry[] | null>(null);
@@ -350,6 +350,79 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                         })()}
                       </div>
                     </Row>
+                    {/* Special pricing sits directly under Stage — the two are
+                        read together — but is a SEPARATE field on purpose. A
+                        lead on a free case is still Hot, still in their WhatsApp
+                        campaign, still counted in the funnel. Saves immediately
+                        rather than joining the pending patch, because granting a
+                        discount is a decision worth stamping with a time and a
+                        name the moment it is made. */}
+                    <Row label="Special offer">
+                      <div style={{ maxWidth: 220 }}>
+                        <Select<string>
+                          value={effectiveLead.offer_type ?? 'none'}
+                          onChange={(v) => {
+                            if (v === (effectiveLead.offer_type ?? 'none')) return;
+                            if (v === 'none') { setLeadOffer(effectiveLead.id, { type: null }); return; }
+                            if (v === 'free') { setLeadOffer(effectiveLead.id, { type: 'free' }); return; }
+                            setLeadOffer(effectiveLead.id, {
+                              type: 'discount',
+                              amount: effectiveLead.offer_amount ?? 500,
+                              currency: effectiveLead.offer_currency ?? 'GBP',
+                            });
+                          }}
+                          options={[
+                            { value: 'none',     label: 'No offer',          color: '#D1D5DB' },
+                            { value: 'discount', label: 'Discounted quote',  color: OFFER_META.discount.dot },
+                            { value: 'free',     label: 'Free case',         color: OFFER_META.free.dot },
+                          ]}
+                          size="sm"
+                        />
+                      </div>
+                    </Row>
+                    {effectiveLead.offer_type === 'discount' && (
+                      <Row label="Offer amount">
+                        <div className="flex items-center gap-2">
+                          <select
+                            className="input py-1.5 px-2 text-[12px] w-auto"
+                            value={effectiveLead.offer_currency ?? 'GBP'}
+                            onChange={(e) => setLeadOffer(effectiveLead.id, {
+                              type: 'discount',
+                              amount: effectiveLead.offer_amount ?? 500,
+                              currency: e.target.value as 'GBP' | 'INR' | 'USD',
+                            })}
+                          >
+                            <option value="GBP">£ GBP</option>
+                            <option value="INR">₹ INR</option>
+                            <option value="USD">$ USD</option>
+                          </select>
+                          <input
+                            type="number" min={0} step={50}
+                            className="input py-1.5 px-2.5 w-28 text-[12px]"
+                            defaultValue={effectiveLead.offer_amount ?? 500}
+                            // onBlur, not onChange: saving on every keystroke would
+                            // fire a write (and a toast) for "5", "50", "500".
+                            onBlur={(e) => {
+                              const n = Number(e.target.value);
+                              if (!Number.isFinite(n) || n < 0) { e.target.value = String(effectiveLead.offer_amount ?? 500); return; }
+                              if (n === effectiveLead.offer_amount) return;
+                              setLeadOffer(effectiveLead.id, {
+                                type: 'discount', amount: n,
+                                currency: effectiveLead.offer_currency ?? 'GBP',
+                              });
+                            }}
+                          />
+                        </div>
+                      </Row>
+                    )}
+                    {hasOffer(effectiveLead) && effectiveLead.offer_at && (
+                      <Row label="Offer given">
+                        <span className="text-[12px] text-muted">
+                          {new Date(effectiveLead.offer_at).toLocaleDateString('en-IN')}
+                          {effectiveLead.offer_by ? ` · ${memberNameById(effectiveLead.offer_by)}` : ''}
+                        </span>
+                      </Row>
+                    )}
                     <Row label="Lead score">
                       <div className="flex items-center gap-2">
                         <input type="range" min={0} max={100} value={effectiveLead.score} onChange={(e) => setLeadPending({ score: Number(e.target.value) })} className="w-40" style={{ accentColor: scoreColor(effectiveLead.score) }} />
