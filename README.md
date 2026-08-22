@@ -1,65 +1,58 @@
-# Roadmap Builder v3 — corrected criteria, full IFV, redesigned
+# Roadmap Builder v5 — IFV built properly, zero GTV bleed
 
-Replaces every earlier roadmap zip. One bundle, end to end.
+Replaces every earlier roadmap zip. 5 SQL + 3 files.
 
-## 1 · Your criteria corrections are in (migration 069)
+## What was actually broken
 
-| Code | Now means |
+Not wording — structure. I seeded "general" activities with no visa attached,
+and "general" meant **shown for every route**. So GTV admin work leaked into
+founder plans: Evidence audit, CV and personal statement, Final evidence
+consolidation, and **Recommendation letters** — which an IFV applicant needs
+none of.
+
+A general activity now belongs to a **visa**. GTV generals appear only on GTV
+routes, IFV generals only on IFV. Criterion-linked activities were already safe.
+And the Manage library dialog now stamps the visa when you add a general
+activity, so the same leak cannot come back through the UI.
+
+## IFV, from your list
+
+**Four tests, not three.** Innovative + Viable + Scalable, plus the one that was
+missing entirely: proof the applicant genuinely **is the founder / key person
+and will run the business day to day** — judged separately from the idea, so it
+is now its own criterion.
+
+| | Activities |
 |---|---|
-| **MC** | **Third-party recognition** — media publications, awards, high salary / increments, promotions, independent industry recognition |
-| **OC1** | **Innovation** — track record of innovation in digital technology |
-| **OC2** | **Work beyond the occupation** — open source, mentoring, judging, talks, community |
-| **OC3** | **Commercial contribution** — revenue, growth, GTM impact with numbers |
-| **OC4** | **Academic contribution** — papers, articles, publications |
+| **INN · Innovative** | Business idea document · Innovation / USP evidence · Market research · Competitor analysis · IP, patents or proprietary tech |
+| **VIA · Viable** | Detailed business plan · Financial projections · Funding & source of funds · Founder skills & experience · Costing and pricing model |
+| **SCA · Scalable** | Go-to-market plan · UK job creation plan · Growth & expansion plan · Traction evidence (website, users, customers, revenue, pilots) · Partnerships & contracts |
+| **ROLE · Founder role & day-to-day** | Proof of founder role (incorporation, shareholding, directorship) · Day-to-day involvement plan · Team & org structure |
+| **Admin** | Passport & personal details · Updated CV / founder profile · Endorsing body selection · Pitch deck · Endorsement interview prep · Final application pack |
 
-The activities were re-mapped to match (the old mis-mapped seeds are retired,
-anything your team added by hand is untouched). MC now carries media features,
-award submissions, salary/promotion evidence and recognition letters — your
-exact list.
+24 IFV activities. **No recommendation letters. No GTV work anywhere.**
 
-## 2 · Innovator Founder — end to end
-
-Switching the route to Innovator Founder lights up its whole world:
-Innovation / Viability / Scalability (all three required), plus a full library —
-market research, MVP evidence, business plan, funding and runway, founder CV,
-UK hiring plan, expansion plan, endorsing-body selection, pitch deck, interview
-prep, letters of support. **And no Grade field** — IFV has no Talent/Promise,
-so the builder hides it and the document says "Innovator Founder" instead.
-
-## 3 · The redesign
-
-- **Route switcher leads the screen** — four colour-coded cards (GTV indigo,
-  Research sky, Arts pink, IFV teal). Pick one and the entire module recolours
-  and reloads that visa's criteria and activities.
-- Numbered grey circles are gone — sections are now "Step 1 · You decide",
-  "Step 2 · Build the plan", "Step 3 · Pace it" with the route's accent.
-- Criteria and activity cards select with the route colour, not generic indigo.
-- The sticky bar shows a live pulse: criteria · activities (essentials) · weeks.
-- **The drawer tab strip is fixed** — labels never wrap ("Visa route" no longer
-  breaks onto two lines), counts are proper little pills, narrow drawers scroll
-  the strip sideways instead of stacking it.
+The earlier IFV guesses (Business plan — innovation section, Financial model,
+Founder capability evidence, etc.) are retired rather than deleted, so any
+roadmap already sent still renders.
 
 ## Deploy
 
-1. Supabase → SQL Editor, in order (each safe to run twice):
-   `067_roadmap_library.sql` → `068_roadmap_routes_complete.sql` → `069_gtv_ifv_corrected.sql`
-   (Run all three even if 067/068 are already in — 069 is the corrections.)
+1. Supabase → SQL Editor, in order (all safe to run twice):
+   `067` → `068` → `069` → `070` → **`071_ifv_proper.sql`** (new)
 
 2. Replace these 3 files, commit, push:
    - `lib/roadmap/library.ts`
    - `components/roadmap/roadmap-builder.tsx`
    - `components/leads/lead-drawer.tsx`
 
-## Fishy things found and fixed along the way
-- Grade was being sent for IFV clients ("Exceptional Promise" on a founder
-  document) — now impossible.
-- Switching routes used to keep activities from the previous visa's criteria in
-  the plan — now switching clears them, so a founder plan can never contain GTV
-  items.
-- The tab strip wrapping (your screenshot) — fixed as above.
-
 ## Verified
-069 applied twice with zero errors and no duplicates. Criteria read back with
-your corrected titles: MC=Third-party recognition, OC1=Innovation, OC2=Work
-beyond the occupation, OC3=Commercial, OC4=Academic. IFV shows 3 required
-criteria with 13 active activities + 4 general. `tsc` clean, `next build` green.
+- **Leak check on the database**: querying everything an IFV plan can see
+  returns zero rows matching recommendation letters, evidence audit, personal
+  statement or evidence consolidation.
+- **12 logic cases**: IFV never offers any of the four GTV admin items; IFV does
+  offer passport, founder CV and final application pack; GTV keeps its
+  recommendation letters and never sees IFV admin; criterion-linked activities
+  survive on both; an unset visa still sees everything so nobody hits a dead
+  screen.
+- 071 applied twice, zero errors, no duplicates. `tsc` clean, `next build` green.

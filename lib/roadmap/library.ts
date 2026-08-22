@@ -23,15 +23,35 @@ export type RouteMode = 'criteria' | 'pathway' | 'simple';
 export interface RmRoute {
   id: string; name: string; sort_order: number; active: boolean;
   mode: RouteMode;
+  /**
+   * Which VISA this route belongs to (migration 070).
+   *
+   * Innovator Founder is not a Global Talent route — it is a different visa.
+   * GTV has disciplines you choose between (Digital Technology, Arts,
+   * Academia); IFV is a single route with nothing to choose. The builder shows
+   * only the routes for the lead's own visa, so an IFV client is never offered
+   * "Arts and Culture" as if it were an alternative.
+   */
+  visa: 'gtv' | 'ifv';
 }
 export interface RmCriterion  {
   id: string; route_id: string; code: string;
   kind: 'mandatory' | 'optional' | 'pathway';
   title: string; description: string | null; sort_order: number; active: boolean;
 }
-export interface RmActivity   {
+export interface RmActivity {
   id: string; criterion_id: string | null; title: string; detail: string | null;
   priority: Priority; sort_order: number; active: boolean;
+  /**
+   * Only meaningful for GENERAL activities (criterion_id === null): which visa
+   * they belong to (migration 071).
+   *
+   * Without this, "general" meant "every route", which is how GTV admin work —
+   * evidence audit, personal statement, recommendation letters — ended up on
+   * Innovator Founder plans. A founder needs none of it. Criterion-linked rows
+   * are already scoped through their route, so this is null for those.
+   */
+  visa: 'gtv' | 'ifv' | null;
 }
 
 export type Priority = 'ESSENTIAL' | 'IMPORTANT' | 'GOOD TO HAVE';
@@ -107,6 +127,25 @@ export function routeTheme(name: string): { accent: string; soft: string; ink: s
   return { accent: '#4F46E5', soft: '#EEF2FF', ink: '#3730A3', grades: GRADES };
 }
 export const DURATIONS = [4, 6, 8, 12];
+
+export const VISA_LABEL: Record<'gtv' | 'ifv', string> = {
+  gtv: 'Global Talent Visa',
+  ifv: 'Innovator Founder Visa',
+};
+
+/**
+ * Resolve a lead's stored visa_type to 'gtv' | 'ifv', or null when it has never
+ * been set. Mirrors getVisaMeta in lib/types so free-text legacy values
+ * ("Global Talent", "innovator founder") still resolve.
+ */
+export function leadVisa(visaType: string | null | undefined): 'gtv' | 'ifv' | null {
+  if (!visaType) return null;
+  const k = visaType.toLowerCase().trim();
+  if (k === 'gtv' || k === 'ifv') return k;
+  if (k.includes('innovator') || k.includes('founder') || k.includes('ifv')) return 'ifv';
+  if (k.includes('global') || k.includes('talent') || k.includes('gtv')) return 'gtv';
+  return null;
+}
 
 export function emptyBuilder(): BuilderState {
   return {

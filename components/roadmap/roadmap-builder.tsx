@@ -29,7 +29,7 @@ import type { RoadmapData } from '@/lib/roadmap/types';
 import { renderRoadmapEmail } from '@/lib/roadmap/template';
 import {
   emptyBuilder, autoSchedule, weekLabel, sortItems, PRIORITY_META, PRIORITIES,
-  DURATIONS, criteriaCopy, routeTheme,
+  DURATIONS, criteriaCopy, routeTheme, leadVisa, VISA_LABEL,
   type BuilderState, type BuilderItem, type Priority,
   type RmRoute, type RmCriterion, type RmActivity, type RouteMode,
 } from '@/lib/roadmap/library';
@@ -137,12 +137,33 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
     return () => { alive = false; };
   }, [leadId, workspace.id]);
 
-  // Default the route so the screen is never blank.
+  /**
+   * The lead's visa decides which routes exist for them at all.
+   *
+   * IFV is a separate visa, not a Global Talent discipline — so an IFV lead is
+   * shown their one route and no picker, and a GTV lead is shown only the three
+   * GTV disciplines. When a lead has no visa recorded yet we fall back to the
+   * full list rather than blocking the consultant.
+   */
+  const visa = useMemo(() => leadVisa(lead?.visa_type), [lead?.visa_type]);
+  const visaRoutes = useMemo(
+    () => (visa ? routes.filter((r) => r.visa === visa) : routes),
+    [routes, visa],
+  );
+
+  // Default (or correct) the route: never blank, and never a route from the
+  // other visa — which is exactly what a saved GTV plan on a re-tagged IFV
+  // lead would otherwise leave behind.
   useEffect(() => {
-    if (!b.route_id && routes.length) {
-      setB((prev) => ({ ...prev, route_id: routes[0].id, route_name: routes[0].name }));
-    }
-  }, [routes, b.route_id]);
+    if (!visaRoutes.length) return;
+    const valid = visaRoutes.some((r) => r.id === b.route_id);
+    if (valid) return;
+    const first = visaRoutes[0];
+    setB((prev) => ({
+      ...prev, route_id: first.id, route_name: first.name,
+      ...(prev.route_id ? { criterion_ids: [], items: [] } : {}),
+    }));
+  }, [visaRoutes, b.route_id]);
 
   const routeCriteria = useMemo(() => criteria.filter((c) => c.route_id === b.route_id), [criteria, b.route_id]);
   const chosenCriteria = useMemo(() => routeCriteria.filter((c) => b.criterion_ids.includes(c.id)), [routeCriteria, b.criterion_ids]);
@@ -164,12 +185,27 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
     if (theme.grades.length > 0 && !b.grade) setB((prev) => ({ ...prev, grade: theme.grades[1] ?? theme.grades[0] }));
   }, [theme.grades, b.grade]);
 
-  /** A route with no criteria set offers the whole library — never a dead end. */
+  /**
+   * What the consultant may pick from.
+   *
+   * GENERAL activities (no criterion) are scoped by VISA — this is the rule
+   * that stops GTV admin work, recommendation letters above all, appearing on
+   * an Innovator Founder plan. Criterion-linked activities are already safe,
+   * because a criterion belongs to a route and a route to a visa.
+   *
+   * A route with no criteria set still offers its visa's whole library rather
+   * than a dead screen.
+   */
+  const generalForVisa = useCallback(
+    (a: RmActivity) => a.visa === null || a.visa === (visa ?? a.visa),
+    [visa],
+  );
   const offered = useMemo(() => {
-    if (routeCriteria.length === 0) return activities;
+    const pool = activities.filter((a) => a.criterion_id !== null || generalForVisa(a));
+    if (routeCriteria.length === 0) return pool;
     const ids = new Set(b.criterion_ids);
-    return activities.filter((a) => a.criterion_id === null || ids.has(a.criterion_id));
-  }, [activities, b.criterion_ids, routeCriteria.length]);
+    return pool.filter((a) => a.criterion_id === null || ids.has(a.criterion_id));
+  }, [activities, b.criterion_ids, routeCriteria.length, generalForVisa]);
 
   const isPicked = useCallback((a: RmActivity) => b.items.some((i) => i.activity_id === a.id), [b.items]);
 
@@ -385,35 +421,59 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
       <div className="mb-6 overflow-hidden rounded-2xl border border-border bg-white">
         <div className="h-[3px] w-full" style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent}66)` }} />
         <div className="p-4">
-          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-faint">Visa route</span>
-          <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
-            {routes.map((r) => {
-              const t = routeTheme(r.name);
-              const on = r.id === b.route_id;
-              return (
-                <button key={r.id} type="button"
-                  onClick={() => {
-                    if (on) return;
-                    // A new route is a new world: its own criteria and library.
-                    // Clearing is honest — items from another visa's criteria
-                    // have no meaning here.
-                    patch({ route_id: r.id, route_name: r.name, criterion_ids: [], items: [] });
-                  }}
-                  className="rounded-xl border px-3 py-2.5 text-left transition"
-                  style={on
-                    ? { borderColor: t.accent, background: t.soft, boxShadow: `0 0 0 3px ${t.accent}1f` }
-                    : { borderColor: '#E8EAF0', background: '#fff' }}>
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full" style={{ background: t.accent }} />
-                    <span className="truncate text-[12px] font-bold" style={{ color: on ? t.ink : '#45464c' }}>{r.name}</span>
-                  </span>
-                  <span className="mt-0.5 block text-[10.5px] text-faint">
-                    {r.mode === 'pathway' ? 'Pick one pathway' : 'Tick criteria'}
-                  </span>
-                </button>
-              );
-            })}
+          {/* The visa comes from the lead, not from a guess. It is shown, not
+              chosen — an IFV client is never offered "Arts and Culture". */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: theme.soft, color: theme.ink }}>
+              {visa ? VISA_LABEL[visa] : 'Visa not set on this lead'}
+            </span>
+            {visaRoutes.length > 1 && (
+              <span className="text-[11px] text-faint">· choose the discipline</span>
+            )}
+            {!visa && (
+              <span className="text-[11px] text-[#A25D07]">Set the visa on the Visa route tab to narrow this list.</span>
+            )}
           </div>
+
+          {visaRoutes.length > 1 ? (
+            <div className={`mt-2.5 grid gap-2 ${visaRoutes.length > 2 ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-2'}`}>
+              {visaRoutes.map((r) => {
+                const t = routeTheme(r.name);
+                const on = r.id === b.route_id;
+                return (
+                  <button key={r.id} type="button"
+                    onClick={() => {
+                      if (on) return;
+                      // A different discipline is a different criteria set, so
+                      // items chosen under the old one are cleared.
+                      patch({ route_id: r.id, route_name: r.name, criterion_ids: [], items: [] });
+                    }}
+                    className="rounded-xl border px-3 py-2.5 text-left transition"
+                    style={on
+                      ? { borderColor: t.accent, background: t.soft, boxShadow: `0 0 0 3px ${t.accent}1f` }
+                      : { borderColor: '#E8EAF0', background: '#fff' }}>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: t.accent }} />
+                      <span className="truncate text-[12px] font-bold" style={{ color: on ? t.ink : '#45464c' }}>{r.name}</span>
+                    </span>
+                    <span className="mt-0.5 block text-[10.5px] text-faint">
+                      {r.mode === 'pathway' ? 'Pick one pathway' : 'Tick criteria'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            /* One route means nothing to choose — show it, do not fake a picker. */
+            <div className="mt-2.5 flex items-center gap-2 rounded-xl border px-3 py-2.5"
+              style={{ borderColor: theme.accent, background: theme.soft }}>
+              <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: theme.accent }} />
+              <span className="text-[13px] font-bold" style={{ color: theme.ink }}>{b.route_name || '—'}</span>
+              <span className="ml-auto text-[10.5px] text-faint">
+                {routeMode === 'pathway' ? 'Pick one pathway below' : 'Tick criteria below'}
+              </span>
+            </div>
+          )}
 
           <div className={`mt-3 grid gap-2.5 sm:grid-cols-2 ${theme.grades.length ? 'lg:grid-cols-3' : ''}`}>
             {theme.grades.length > 0 && (
@@ -627,6 +687,7 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
       {libOpen && (
         <LibraryManager
           workspaceId={workspace.id}
+          visa={visa}
           routeId={b.route_id}
           criteria={routeCriteria}
           activities={activities}
@@ -640,12 +701,16 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
 }
 
 // ── library manager (overlay — Settings and sidebar untouched) ─────────────
-function LibraryManager({ workspaceId, routeId, criteria, activities, accent, onClose, onChanged }: {
-  workspaceId: string; routeId: string | null;
+function LibraryManager({ workspaceId, visa, routeId, criteria, activities, accent, onClose, onChanged }: {
+  workspaceId: string; visa: 'gtv' | 'ifv' | null; routeId: string | null;
   criteria: RmCriterion[]; activities: RmActivity[]; accent: string;
   onClose: () => void; onChanged: (next: RmActivity[]) => void;
 }) {
-  const [rows, setRows] = useState<RmActivity[]>(activities);
+  const [rows, setRows] = useState<RmActivity[]>(
+    // Show what this visa can actually use: its criterion-linked activities
+    // plus its own general work.
+    activities.filter((a) => a.criterion_id !== null || a.visa === null || a.visa === visa),
+  );
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<{ title: string; detail: string; criterion_id: string; priority: Priority }>(
     { title: '', detail: '', criterion_id: '', priority: 'IMPORTANT' });
@@ -657,6 +722,10 @@ function LibraryManager({ workspaceId, routeId, criteria, activities, accent, on
     const { data, error } = await sb.from('roadmap_activities').insert({
       workspace_id: workspaceId,
       criterion_id: draft.criterion_id || null,
+      // A GENERAL activity added here belongs to the visa you are working in.
+      // Leaving it unscoped is exactly how GTV admin work leaked into founder
+      // plans in the first place; a criterion-linked one is scoped by its route.
+      visa: draft.criterion_id ? null : visa,
       title: draft.title.trim(), detail: draft.detail.trim() || null,
       priority: draft.priority, sort_order: rows.length,
     }).select('*').single();
