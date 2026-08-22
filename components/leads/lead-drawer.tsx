@@ -276,16 +276,35 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-1 mx-6 mt-5 p-1 rounded-md bg-surface-2 w-fit">
-                {(['overview', 'route', 'notes', 'followups', ...(canViewPayments ? ['payments'] as const : []), ...(canSendEmails ? (['emails', 'roadmap'] as const) : [])] as const).map((t) => (
-                  <button key={t} onClick={() => setTab(t)} className={cn('px-3 py-1.5 rounded-md text-[12.5px] font-medium', tab === t ? 'bg-surface shadow-sm' : 'text-muted hover:bg-surface')}>
-                    {t === 'followups' ? 'Follow-ups' : t === 'emails' ? 'Emails' : t === 'roadmap' ? 'Roadmap' : t === 'route' ? 'Visa route' : t.charAt(0).toUpperCase() + t.slice(1)}
-                    {t === 'notes' && notes.length > 0 ? ` · ${notes.length}` : ''}
-                    {t === 'followups' && pendingFollowUps > 0 ? ` · ${pendingFollowUps}` : ''}
-                    {t === 'payments' && leadPayments.length > 0 ? ` · ${leadPayments.length}` : ''}
-                    {t === 'emails' && emailLog && emailLog.length > 0 ? ` · ${emailLog.length}` : ''}
-                  </button>
-                ))}
+              {/* Tab strip. Labels must NEVER wrap — "Visa route" breaking onto
+                  two lines is what made this read as unfinished. Counts sit in
+                  proper pills instead of loose "· 7" text, and on a narrow
+                  drawer the strip scrolls sideways rather than stacking. */}
+              <div className="mx-6 mt-5 flex w-fit max-w-[calc(100%-3rem)] items-center gap-0.5 overflow-x-auto rounded-lg bg-surface-2 p-1 no-scrollbar">
+                {(['overview', 'route', 'notes', 'followups', ...(canViewPayments ? ['payments'] as const : []), ...(canSendEmails ? (['emails', 'roadmap'] as const) : [])] as const).map((t) => {
+                  const count =
+                    t === 'notes' ? notes.length
+                    : t === 'followups' ? pendingFollowUps
+                    : t === 'payments' ? leadPayments.length
+                    : t === 'emails' ? (emailLog?.length ?? 0)
+                    : 0;
+                  const active = tab === t;
+                  return (
+                    <button key={t} onClick={() => setTab(t)}
+                      className={cn(
+                        'flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-[12.5px] font-semibold transition-colors',
+                        active ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:bg-surface hover:text-ink-2'
+                      )}>
+                      {t === 'followups' ? 'Follow-ups' : t === 'emails' ? 'Emails' : t === 'roadmap' ? 'Roadmap' : t === 'route' ? 'Visa route' : t.charAt(0).toUpperCase() + t.slice(1)}
+                      {count > 0 && (
+                        <span className={cn(
+                          'rounded-full px-1.5 py-[1px] text-[10px] font-bold tabular-nums',
+                          active ? 'bg-[#EEF2FF] text-[#3730A3]' : 'bg-[#E8EAF0] text-[#6B7280]'
+                        )}>{count}</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
               <div className="flex-1 overflow-y-auto px-6 py-5">

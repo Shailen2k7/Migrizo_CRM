@@ -91,6 +91,21 @@ export function criteriaCopy(mode: RouteMode): { title: string; hint: string; em
 }
 
 export const GRADES = ['Exceptional Talent', 'Exceptional Promise'];
+
+/**
+ * Per-route look and grading. Accents keep the four routes visually distinct
+ * (a founder plan should not look like a research plan), and grades exist only
+ * where the endorsing body actually awards them — Innovator Founder has no
+ * Talent/Promise split, so its grade list is empty and the UI hides the field.
+ */
+export function routeTheme(name: string): { accent: string; soft: string; ink: string; grades: string[] } {
+  const n = (name || '').toLowerCase();
+  if (n.includes('innovator')) return { accent: '#0D9488', soft: '#F0FDFA', ink: '#115E59', grades: [] };
+  if (n.includes('academia') || n.includes('research'))
+    return { accent: '#0284C7', soft: '#F0F9FF', ink: '#075985', grades: GRADES };
+  if (n.includes('art')) return { accent: '#DB2777', soft: '#FDF2F8', ink: '#9D174D', grades: GRADES };
+  return { accent: '#4F46E5', soft: '#EEF2FF', ink: '#3730A3', grades: GRADES };
+}
 export const DURATIONS = [4, 6, 8, 12];
 
 export function emptyBuilder(): BuilderState {

@@ -1,71 +1,65 @@
-# Roadmap Builder — complete (replaces the earlier roadmap-builder.zip)
+# Roadmap Builder v3 — corrected criteria, full IFV, redesigned
 
-You were right about the zeros. This fixes them, and fixes the deeper mistake
-underneath them.
+Replaces every earlier roadmap zip. One bundle, end to end.
 
-## The mistake
+## 1 · Your criteria corrections are in (migration 069)
 
-067 assumed **every route works like Tech Nation** — one mandatory criterion
-plus optional ones. It doesn't. A research client would have opened the builder
-and found an empty screen.
+| Code | Now means |
+|---|---|
+| **MC** | **Third-party recognition** — media publications, awards, high salary / increments, promotions, independent industry recognition |
+| **OC1** | **Innovation** — track record of innovation in digital technology |
+| **OC2** | **Work beyond the occupation** — open source, mentoring, judging, talks, community |
+| **OC3** | **Commercial contribution** — revenue, growth, GTM impact with numbers |
+| **OC4** | **Academic contribution** — papers, articles, publications |
 
-## What each route actually is
+The activities were re-mapped to match (the old mis-mapped seeds are retired,
+anything your team added by hand is untouched). MC now carries media features,
+award submissions, salary/promotion evidence and recognition letters — your
+exact list.
 
-| Route | Shape | What you pick |
-|---|---|---|
-| Digital Technology | criteria | MC + 2 of 4 optional |
-| Arts and Culture | criteria | Mandatory standard + supporting evidence |
-| Innovator Founder | criteria | Innovation · Viability · Scalability — **all three required** |
-| **Academia and Research** | **pathway** | **ONE of four qualifying routes** |
+## 2 · Innovator Founder — end to end
 
-## Your research question, answered
+Switching the route to Innovator Founder lights up its whole world:
+Innovation / Viability / Scalability (all three required), plus a full library —
+market research, MVP evidence, business plan, funding and runway, founder CV,
+UK hiring plan, expansion plan, endorsing-body selection, pitch deck, interview
+prep, letters of support. **And no Grade field** — IFV has no Talent/Promise,
+so the builder hides it and the document says "Innovator Founder" instead.
 
-Research does **not** run on OC/MC. It has four qualifying pathways, and the
-applicant needs exactly one:
+## 3 · The redesign
 
-1. **Academic or research appointment** — an eligible senior role
-2. **Individual fellowship** — from the approved list, current or within 5 years
-3. **Endorsed funder** — named on an approved research grant
-4. **Peer review** — no appointment, fellowship or grant
+- **Route switcher leads the screen** — four colour-coded cards (GTV indigo,
+  Research sky, Arts pink, IFV teal). Pick one and the entire module recolours
+  and reloads that visa's criteria and activities.
+- Numbered grey circles are gone — sections are now "Step 1 · You decide",
+  "Step 2 · Build the plan", "Step 3 · Pace it" with the route's accent.
+- Criteria and activity cards select with the route colour, not generic indigo.
+- The sticky bar shows a live pulse: criteria · activities (essentials) · weeks.
+- **The drawer tab strip is fixed** — labels never wrap ("Visa route" no longer
+  breaks onto two lines), counts are proper little pills, narrow drawers scroll
+  the strip sideways instead of stacking it.
 
-The crucial operational point: **for 1–3 there is nothing to build.** The person
-either holds it or they does not. Their "roadmap" is document collection — offer
-letter, HR statement of guarantee, award letter, institutional statement. Those
-activities are seeded and marked Essential.
+## Deploy
 
-**Only pathway 4 (peer review) is an evidence-building exercise**, so that is the
-one with publications, expert letters, research statement and talks.
+1. Supabase → SQL Editor, in order (each safe to run twice):
+   `067_roadmap_library.sql` → `068_roadmap_routes_complete.sql` → `069_gtv_ifv_corrected.sql`
+   (Run all three even if 067/068 are already in — 069 is the corrections.)
 
-The builder knows the difference. On a pathway route, section 2 says
-*"Qualifying pathway — pick the ONE route this applicant qualifies under"*, each
-option is tagged **Pick one**, and selecting one deselects the others. On a
-criteria route it stays a multi-select. Same control, different rule.
-
-## The other bug fixed
-
-If a route had no criteria, section 3 offered nothing and you were stuck. Now a
-route with no criteria set offers the **whole library**, with a note explaining
-why. A consultant with a client in front of them can never hit a dead screen
-because the library is unfinished.
-
-## Deploy — 2 steps
-
-1. Supabase → SQL Editor, in order:
-   - `067_roadmap_library.sql` (skip if already run)
-   - `068_roadmap_routes_complete.sql`
-   Both safe to run twice, and neither overwrites wording you have edited.
-
-2. Replace / add these files, commit, push:
+2. Replace these 3 files, commit, push:
    - `lib/roadmap/library.ts`
    - `components/roadmap/roadmap-builder.tsx`
-   - `components/leads/lead-drawer.tsx` (2 lines vs original)
+   - `components/leads/lead-drawer.tsx`
 
-## Still yours to own
-The criteria wording is a **starting point**. I have written the standard shape
-of each route so nothing is empty on day one, and flagged the research grant
-thresholds as needing verification before you advise on them. Open **Manage
-library** and make every line Migrizo's own.
+## Fishy things found and fixed along the way
+- Grade was being sent for IFV clients ("Exceptional Promise" on a founder
+  document) — now impossible.
+- Switching routes used to keep activities from the previous visa's criteria in
+  the plan — now switching clears them, so a founder plan can never contain GTV
+  items.
+- The tab strip wrapping (your screenshot) — fixed as above.
 
 ## Verified
-Every route reports a non-zero criteria count and a mode. Both migrations run
-twice with no duplication. `tsc` clean, `next build` green.
+069 applied twice with zero errors and no duplicates. Criteria read back with
+your corrected titles: MC=Third-party recognition, OC1=Innovation, OC2=Work
+beyond the occupation, OC3=Commercial, OC4=Academic. IFV shows 3 required
+criteria with 13 active activities + 4 general. `tsc` clean, `next build` green.
