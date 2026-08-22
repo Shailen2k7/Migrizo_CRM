@@ -14,7 +14,7 @@ import { FollowUpsList } from '@/components/followups/followups-list';
 import { AddFollowUpDialog } from '@/components/followups/add-followup-dialog';
 import { PaymentRow } from '@/components/payments/payment-row';
 import { ComposeDialog, LeadEmailThread, type LeadEmailRow } from '@/components/emails/compose-dialog';
-import { RoadmapTab } from '@/components/roadmap/roadmap-tab';
+import { RoadmapBuilder } from '@/components/roadmap/roadmap-builder';
 import { IndustryChip } from '@/components/shared/industry-chip';
 import { READINESS_LIST, READINESS_META, getReadinessMeta, intakeEntries } from '@/lib/intake';
 import { initials, avatarColor, formatMoney, timeAgo, scoreColor, cn } from '@/lib/utils';
@@ -836,7 +836,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                 )}
 
                 {tab === 'roadmap' && (
-                  <RoadmapTab leadId={lead.id} clientEmail={effectiveLead?.email || null} onSent={refreshEmails} />
+                  <RoadmapBuilder leadId={lead.id} clientEmail={effectiveLead?.email || null} onSent={refreshEmails} />
                 )}
 
                 {isDirty && <div className="h-20" />}

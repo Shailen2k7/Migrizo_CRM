@@ -1,70 +1,71 @@
-# Special offer (£500 / FREE) on leads
+# Roadmap Builder — complete (replaces the earlier roadmap-builder.zip)
 
-## The one design decision, and why
+You were right about the zeros. This fixes them, and fixes the deeper mistake
+underneath them.
 
-You asked for it in the status dropdown. I built it as a **separate field that
-sits next to Stage** instead, because making it a stage would have quietly
-broken three things:
+## The mistake
 
-- A lead on a £500 offer is still **Hot** or **Cold**. A stage holds one value;
-  you need both facts.
-- The WhatsApp engine enrols people **by stage**. Moving someone to a "special
-  offer" stage would have silently dropped them out of their follow-up campaign
-  — the same class of invisible failure that cost us a day on the send engine.
-- Your funnel counts (2280 / 89 / 1325 …) would have stopped adding up.
+067 assumed **every route works like Tech Nation** — one mandatory criterion
+plus optional ones. It doesn't. A research client would have opened the builder
+and found an empty screen.
 
-So: stage keeps working exactly as before, and a lead can be "Hot + FREE case",
-which is the combination actually worth looking at.
+## What each route actually is
 
-## What you get
+| Route | Shape | What you pick |
+|---|---|---|
+| Digital Technology | criteria | MC + 2 of 4 optional |
+| Arts and Culture | criteria | Mandatory standard + supporting evidence |
+| Innovator Founder | criteria | Innovation · Viability · Scalability — **all three required** |
+| **Academia and Research** | **pathway** | **ONE of four qualifying routes** |
 
-**1. A "Special offer" chip** in the Leads toolbar, next to Spotlight, with a
-live count. Click it to see only those leads. Violet, so it reads as separate
-from the stage colours.
+## Your research question, answered
 
-**2. A badge on the row** — `£500` or `FREE` — right beside the name, next to
-the visa and industry tags. You can spot them while scanning.
+Research does **not** run on OC/MC. It has four qualifying pathways, and the
+applicant needs exactly one:
 
-**3. In the lead drawer**, directly under Stage:
-   - **Special offer**: No offer / Discounted quote / Free case
-   - **Offer amount** (appears only for a discount): currency + amount,
-     pre-filled at £500
-   - **Offer given**: the date and who granted it
+1. **Academic or research appointment** — an eligible senior role
+2. **Individual fellowship** — from the approved list, current or within 5 years
+3. **Endorsed funder** — named on an approved research grant
+4. **Peer review** — no appointment, fellowship or grant
 
-The offer saves the moment you pick it — it does not wait for the Save button,
-because granting a discount is a commercial decision worth stamping with a name
-and a time immediately.
+The crucial operational point: **for 1–3 there is nothing to build.** The person
+either holds it or they does not. Their "roadmap" is document collection — offer
+letter, HR statement of guarantee, award letter, institutional statement. Those
+activities are seeded and marked Essential.
 
-## Why "who and when" is recorded
+**Only pathway 4 (peer review) is an evidence-building exercise**, so that is the
+one with publications, expert letters, research statement and talks.
 
-Six months from now, "why is this one free?" needs an answer. More importantly,
-this is an **experiment** — you are discounting to win more approved cases. With
-`offer_at` and `offer_by` stored, we can later measure whether discounted leads
-actually convert better than full-price ones. Without it, the experiment is
-unmeasurable.
+The builder knows the difference. On a pathway route, section 2 says
+*"Qualifying pathway — pick the ONE route this applicant qualifies under"*, each
+option is tagged **Pick one**, and selecting one deselects the others. On a
+criteria route it stays a multi-select. Same control, different rule.
+
+## The other bug fixed
+
+If a route had no criteria, section 3 offered nothing and you were stuck. Now a
+route with no criteria set offers the **whole library**, with a note explaining
+why. A consultant with a client in front of them can never hit a dead screen
+because the library is unfinished.
 
 ## Deploy — 2 steps
 
-1. Supabase → SQL Editor → run `supabase/migrations/066_special_offer.sql`
-   (safe to run twice; adds nullable columns only, so existing leads are
-   untouched). It prints a summary of who is on an offer at the end.
+1. Supabase → SQL Editor, in order:
+   - `067_roadmap_library.sql` (skip if already run)
+   - `068_roadmap_routes_complete.sql`
+   Both safe to run twice, and neither overwrites wording you have edited.
 
-2. Replace these 4 files, commit, push:
-   - `lib/types.ts`
-   - `components/shared/app-provider.tsx`
-   - `components/leads/leads-table.tsx`
-   - `components/leads/lead-drawer.tsx`
+2. Replace / add these files, commit, push:
+   - `lib/roadmap/library.ts`
+   - `components/roadmap/roadmap-builder.tsx`
+   - `components/leads/lead-drawer.tsx` (2 lines vs original)
 
-## How it was verified
-- **Database test**: granting an offer to a Hot lead leaves the stage as `hot`
-  (so the WhatsApp campaign keeps them), the filter finds exactly the offered
-  leads, invalid values (`half_price`, `EUR`) are rejected by the database
-  itself rather than only the UI, and withdrawing clears the record cleanly.
-- **Formatting test**: 7 cases — FREE, £500, £1,500 (separator), ₹25,000,
-  £499.50 (decimals), and a discount with no amount recorded (shows "OFFER"
-  rather than a bare "£").
-- Migration applied twice, `tsc --noEmit` clean, `next build` green.
+## Still yours to own
+The criteria wording is a **starting point**. I have written the standard shape
+of each route so nothing is empty on day one, and flagged the research grant
+thresholds as needing verification before you advise on them. Open **Manage
+library** and make every line Migrizo's own.
 
-## Worth doing next (not included — say the word)
-Add the offer to the CSV exports, so you can measure conversion of discounted
-vs full-price leads in a spreadsheet.
+## Verified
+Every route reports a non-zero criteria count and a mode. Both migrations run
+twice with no duplication. `tsc` clean, `next build` green.
