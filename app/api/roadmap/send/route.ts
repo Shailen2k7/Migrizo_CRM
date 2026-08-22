@@ -8,7 +8,7 @@
 // ============================================================================
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { renderRoadmapEmail, renderRoadmapText } from '@/lib/roadmap/template';
+import { renderRoadmapEmail, renderRoadmapText, roadmapVisaName } from '@/lib/roadmap/template';
 import type { RoadmapData } from '@/lib/roadmap/types';
 
 export async function POST(req: Request) {
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
   const replyTo = process.env.REPLY_TO || 'info@migrizo.com';
 
   const data = rm.data as RoadmapData;
-  const subject = `Your Global Talent Visa Roadmap — ${data.client_name} | Migrizo`;
+  const subject = `Your ${roadmapVisaName(data)} Roadmap — ${data.client_name} | Migrizo`;
   const html = renderRoadmapEmail(data);
   const text = renderRoadmapText(data);
 

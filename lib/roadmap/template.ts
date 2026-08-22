@@ -10,15 +10,25 @@ import { renderSignatureHtml, renderSignatureText, type EmailSignature } from '@
 // ── Roadmap emails are always signed by the Operations Head, regardless of
 // which team member clicks Send. This is a client-facing deliverable owned by
 // operations, so the sign-off must be consistent for every client.
-export const ROADMAP_SIGNATURE: EmailSignature = {
-  closing: 'Warm Regards,',
-  name: 'Mansi Behl',
-  title: 'Operations Head \u2013 Global Talent Visa',
-  company: 'Migrizo Ventures Pvt Ltd',
-  phone: '+91 9217428262',
-  website: 'https://www.migrizo.com',
-  email: 'info@migrizo.com',
-};
+// The visa in the title follows the plan itself \u2014 an Innovator Founder client
+// must never receive a "Global Talent Visa" signature.
+export function roadmapVisaName(data: Pick<RoadmapData, 'route'>): string {
+  return /innovator|founder/i.test(data.route || '')
+    ? 'Innovator Founder Visa'
+    : 'Global Talent Visa';
+}
+
+export function roadmapSignature(data: Pick<RoadmapData, 'route'>): EmailSignature {
+  return {
+    closing: 'Warm Regards,',
+    name: 'Mansi Behl',
+    title: `Operations Head \u2013 ${roadmapVisaName(data)}`,
+    company: 'Migrizo Ventures Pvt Ltd',
+    phone: '+91 9217428262',
+    website: 'https://www.migrizo.com',
+    email: 'info@migrizo.com',
+  };
+}
 import { shell } from '@/lib/email/branded';
 
 const NAVY = '#16294E';
@@ -124,17 +134,19 @@ export function renderRoadmapEmail(data: RoadmapData): string {
     ${flags}
 
     ${h2('How the endorsement works')}
-    <p style="margin:0 0 12px;font-size:13px;line-height:1.7;color:${INK};">The Global Talent route is decided at <b>Stage 1 — endorsement</b>: an expert body reviews your evidence and confirms you as a leader or emerging leader in your field. The visa itself follows almost administratively. Every activity in this roadmap strengthens one specific piece of that evidence file — nothing here is busywork.</p>
+    ${roadmapVisaName(data) === 'Innovator Founder Visa'
+      ? `<p style="margin:0 0 12px;font-size:13px;line-height:1.7;color:${INK};">The Innovator Founder Visa is decided at <b>endorsement</b>: an endorsing body assesses your business against three tests — <b>innovative</b>, <b>viable</b> and <b>scalable</b> — and satisfies itself that you are genuinely the founder who will run it day to day. The visa itself follows almost administratively. Every activity in this roadmap strengthens one specific piece of that case — nothing here is busywork.</p>`
+      : `<p style="margin:0 0 12px;font-size:13px;line-height:1.7;color:${INK};">The Global Talent route is decided at <b>Stage 1 — endorsement</b>: an expert body reviews your evidence and confirms you as a leader or emerging leader in your field. The visa itself follows almost administratively. Every activity in this roadmap strengthens one specific piece of that evidence file — nothing here is busywork.</p>`}
 
     <p style="margin:14px 0 0;font-size:13.5px;line-height:1.7;color:${INK};">Work through the weeks in order — each one feeds the next. Your Migrizo case officer will review progress with you at every milestone and adjust the plan as your evidence lands. When you're ready, simply reply to this email and we'll take the next step together.</p>
 
-    ${renderSignatureHtml(ROADMAP_SIGNATURE)}
+    ${renderSignatureHtml(roadmapSignature(data))}
 
     <p style="margin:18px 0 0;font-size:10.5px;line-height:1.6;color:#9AA3B2;border-top:1px solid ${LINE};padding-top:12px;">This roadmap is strategic guidance based on the documents you shared; it is not legal advice. Guidance is verified against live GOV.UK and endorsing-body rules at every review.</p>
   `;
 
   return shell(
-    `Your Global Talent Visa Roadmap — ${data.client_name}`,
+    `Your ${roadmapVisaName(data)} Roadmap — ${data.client_name}`,
     body,
     `${data.grade} · ${data.evidence_score} · ${data.timeline}`,
   );
@@ -143,7 +155,7 @@ export function renderRoadmapEmail(data: RoadmapData): string {
 /** Plain-text fallback for the email. */
 export function renderRoadmapText(data: RoadmapData): string {
   const L: string[] = [];
-  L.push(`YOUR GLOBAL TALENT ROADMAP — ${data.client_name}`);
+  L.push(`YOUR ${roadmapVisaName(data).toUpperCase()} ROADMAP — ${data.client_name}`);
   L.push(`${data.route} · ${data.grade} · Evidence: ${data.evidence_score} · ${data.timeline}`, '');
   L.push('OUR ASSESSMENT', data.assessment, '');
   if (data.strengths.length) L.push('STRENGTHS', ...data.strengths.map((s) => `• ${s}`), '');
@@ -153,6 +165,6 @@ export function renderRoadmapText(data: RoadmapData): string {
   if (data.publications.length) L.push('RECOMMENDED PUBLICATIONS', ...data.publications.map((s) => `• ${s}`), '');
   if (data.speaking.length) L.push('RECOMMENDED SPEAKING', ...data.speaking.map((s) => `• ${s}`), '');
   if (data.red_flags.length) L.push('WATCH-OUTS', ...data.red_flags.map((s) => `! ${s}`), '');
-  L.push('', renderSignatureText(ROADMAP_SIGNATURE));
+  L.push('', renderSignatureText(roadmapSignature(data)));
   return L.join('\n');
 }

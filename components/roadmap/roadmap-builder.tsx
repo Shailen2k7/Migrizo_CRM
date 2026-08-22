@@ -24,6 +24,7 @@ import {
   Check, Library, X, Sparkles, ArrowLeft, CalendarRange, ListChecks, Target,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { Select } from '@/components/shared/select';
 import { useApp } from '@/components/shared/app-provider';
 import type { RoadmapData } from '@/lib/roadmap/types';
 import { renderRoadmapEmail } from '@/lib/roadmap/template';
@@ -73,17 +74,27 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/**
+ * Priority as a pill. When editable it CYCLES on click rather than opening a
+ * dropdown: three values, one tap each, and no native select styling leaking
+ * into a design that has none anywhere else.
+ */
 function PriorityPill({ value, onChange }: { value: Priority; onChange?: (p: Priority) => void }) {
   const m = PRIORITY_META[value];
+  const base = 'rounded-full px-2 py-[3px] text-[9.5px] font-bold uppercase tracking-wide whitespace-nowrap flex-shrink-0';
   if (!onChange) {
-    return <span className="rounded-full px-2 py-[3px] text-[9.5px] font-bold uppercase tracking-wide" style={{ background: m.bg, color: m.fg }}>{m.label}</span>;
+    return <span className={base} style={{ background: m.bg, color: m.fg }}>{m.label}</span>;
   }
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value as Priority)}
-      className="cursor-pointer rounded-full border-0 px-2 py-[3px] text-[9.5px] font-bold uppercase tracking-wide outline-none"
+    <button type="button" title="Click to change priority"
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(PRIORITIES[(PRIORITIES.indexOf(value) + 1) % PRIORITIES.length]);
+      }}
+      className={`${base} cursor-pointer border-0 transition hover:brightness-95`}
       style={{ background: m.bg, color: m.fg }}>
-      {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}
-    </select>
+      {m.label}
+    </button>
   );
 }
 
@@ -209,6 +220,29 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
 
   const isPicked = useCallback((a: RmActivity) => b.items.some((i) => i.activity_id === a.id), [b.items]);
 
+  /**
+   * Where a NEWLY ticked activity lands: the emptiest week band, not Week 1–2.
+   *
+   * Before this, every item defaulted to Week 1–2 and the plan only spread out
+   * if someone remembered to press "Auto-schedule" — so real plans went to
+   * clients with eighteen activities all in the first fortnight. Placing each
+   * new item into the least-loaded band keeps the plan spread as it is built,
+   * while never touching weeks the consultant has already set by hand.
+   */
+  const nextBand = (items: BuilderItem[], weeks: number): { week_from: number; week_to: number } => {
+    const bandSize = weeks >= 6 ? 2 : 1;
+    const bandCount = Math.max(1, Math.ceil(weeks / bandSize));
+    const load = new Array<number>(bandCount).fill(0);
+    for (const it of items) {
+      const band = Math.min(bandCount - 1, Math.max(0, Math.floor((it.week_from - 1) / bandSize)));
+      load[band] += 1;
+    }
+    let best = 0;
+    for (let i = 1; i < bandCount; i++) if (load[i] < load[best]) best = i;
+    const from = best * bandSize + 1;
+    return { week_from: from, week_to: Math.min(weeks, from + bandSize - 1) };
+  };
+
   const toggleActivity = (a: RmActivity) => {
     if (isPicked(a)) { patch({ items: b.items.filter((i) => i.activity_id !== a.id) }); return; }
     patch({
@@ -216,7 +250,7 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
         activity_id: a.id,
         criterion_code: a.criterion_id ? (codeById.get(a.criterion_id) ?? '') : '',
         title: a.title, detail: a.detail ?? '', priority: a.priority,
-        week_from: 1, week_to: Math.min(b.duration_weeks, 2),
+        ...nextBand(b.items, b.duration_weeks),
       }],
     });
   };
@@ -300,7 +334,11 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
   };
 
   const doPdf = () => {
-    const printCss = `<style>@media print{@page{margin:0}html,body{margin:0!important;padding:0!important;background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>`;
+    // tr { break-inside: avoid } is what stops the navy footer (and any week
+    // row) from being sliced in half at a page boundary — a row that does not
+    // fit moves whole to the next page. Rows taller than a page (the main body
+    // card) are exempt by spec, so long roadmaps still paginate normally.
+    const printCss = `<style>@media print{@page{margin:0}html,body{margin:0!important;padding:0!important;background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}tr{page-break-inside:avoid;break-inside:avoid}h1,h2{page-break-after:avoid;break-after:avoid}}</style>`;
     const html = renderRoadmapEmail(compose()).replace('</head>', `${printCss}</head>`);
     const w = window.open('', '_blank');
     if (!w) { toast.error('Popup blocked — allow popups to download the PDF'); return; }
@@ -362,7 +400,7 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
               {sortItems(b.items).map((it) => {
                 const idx = b.items.indexOf(it);
                 return (
-                  <div key={idx} className="flex items-start gap-2.5 rounded-xl border border-border bg-white p-2.5 transition hover:border-[#CBD1DD]">
+                  <div key={idx} className="flex min-w-0 items-start gap-2.5 rounded-xl border border-border bg-white p-2.5 transition hover:border-[#CBD1DD]">
                     <span className="mt-[2px] flex-shrink-0 rounded-lg px-2 py-[4px] text-[10.5px] font-bold" style={{ background: theme.soft, color: theme.ink }}>{weekLabel(it)}</span>
                     <div className="min-w-0 flex-1">
                       <input value={it.title} onChange={(e) => updateItem(idx, { title: e.target.value })}
@@ -448,7 +486,7 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
                       // items chosen under the old one are cleared.
                       patch({ route_id: r.id, route_name: r.name, criterion_ids: [], items: [] });
                     }}
-                    className="rounded-xl border px-3 py-2.5 text-left transition"
+                    className="min-w-0 rounded-xl border px-3 py-2.5 text-left transition"
                     style={on
                       ? { borderColor: t.accent, background: t.soft, boxShadow: `0 0 0 3px ${t.accent}1f` }
                       : { borderColor: '#E8EAF0', background: '#fff' }}>
@@ -478,15 +516,14 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
           <div className={`mt-3 grid gap-2.5 sm:grid-cols-2 ${theme.grades.length ? 'lg:grid-cols-3' : ''}`}>
             {theme.grades.length > 0 && (
               <Field label="Grade">
-                <select className={INPUT} value={b.grade} onChange={(e) => patch({ grade: e.target.value })}>
-                  {theme.grades.map((g) => <option key={g} value={g}>{g}</option>)}
-                </select>
+                <Select<string> value={b.grade} onChange={(v) => patch({ grade: v })}
+                  options={theme.grades.map((g) => ({ value: g, label: g }))} size="sm" />
               </Field>
             )}
             <Field label="Duration">
-              <select className={INPUT} value={b.duration_weeks} onChange={(e) => patch({ duration_weeks: Number(e.target.value) })}>
-                {DURATIONS.map((d) => <option key={d} value={d}>{d} weeks</option>)}
-              </select>
+              <Select<string> value={String(b.duration_weeks)}
+                onChange={(v) => patch({ duration_weeks: Number(v) })}
+                options={DURATIONS.map((d) => ({ value: String(d), label: `${d} weeks` }))} size="sm" />
             </Field>
             <Field label="Profile / field">
               <input className={INPUT} value={b.profile} onChange={(e) => patch({ profile: e.target.value })}
@@ -532,7 +569,7 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
                     : { criterion_ids: on ? b.criterion_ids.filter((x) => x !== c.id) : [...b.criterion_ids, c.id],
                         items: on ? b.items.filter((i) => i.criterion_code !== c.code) : b.items }
                 )}
-                className="group flex items-start gap-2.5 rounded-xl border p-3 text-left transition"
+                className="group flex min-w-0 items-start gap-2.5 rounded-xl border p-3 text-left transition"
                 style={on
                   ? { borderColor: theme.accent, background: theme.soft, boxShadow: `0 0 0 3px ${theme.accent}1a` }
                   : { borderColor: '#E8EAF0', background: '#fff' }}>
@@ -575,8 +612,11 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
               const on = isPicked(a);
               const code = a.criterion_id ? codeById.get(a.criterion_id) : '';
               return (
+                // min-w-0 below is load-bearing: a grid child defaults to
+                // min-width:auto, so a long activity title refuses to shrink and
+                // shoves the priority pill outside the card — the overflow bug.
                 <button key={a.id} type="button" onClick={() => toggleActivity(a)}
-                  className="flex items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition hover:-translate-y-[1px]"
+                  className="flex min-w-0 items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition hover:-translate-y-[1px]"
                   style={on
                     ? { borderColor: theme.accent, background: theme.soft }
                     : { borderColor: '#E8EAF0', background: '#fff' }}>
@@ -588,7 +628,7 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
                     <span className="block truncate text-[12.5px] font-semibold text-ink">{a.title}</span>
                     {a.detail && <span className="block truncate text-[11px] text-muted">{a.detail}</span>}
                   </span>
-                  {code && <span className="flex-shrink-0 rounded-md bg-[#F4F5F8] px-1.5 py-[2px] text-[10px] font-bold text-ink-2">{code}</span>}
+                  {code && <span className="flex-shrink-0 whitespace-nowrap rounded-md bg-[#F4F5F8] px-1.5 py-[2px] text-[10px] font-bold text-ink-2">{code}</span>}
                   <PriorityPill value={a.priority} />
                 </button>
               );
@@ -600,7 +640,7 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
           onClick={() => patch({
             items: [...b.items, {
               activity_id: null, criterion_code: '', title: '', detail: '',
-              priority: 'IMPORTANT', week_from: 1, week_to: Math.min(b.duration_weeks, 2),
+              priority: 'IMPORTANT', ...nextBand(b.items, b.duration_weeks),
             }],
           })}
           className="mt-2 flex items-center gap-1.5 rounded-xl border border-dashed border-border px-3 py-2 text-[12px] font-semibold text-ink-2 transition hover:text-ink"
@@ -633,7 +673,7 @@ export function RoadmapBuilder({ leadId, clientEmail, onSent }: {
             {sortItems(b.items).map((it) => {
               const idx = b.items.indexOf(it);
               return (
-                <div key={idx} className="flex items-center gap-2.5 rounded-xl border border-border bg-white px-2.5 py-2 transition hover:border-[#CBD1DD]">
+                <div key={idx} className="flex min-w-0 items-center gap-2.5 rounded-xl border border-border bg-white px-2.5 py-2 transition hover:border-[#CBD1DD]">
                   <CalendarRange className="h-3.5 w-3.5 flex-shrink-0" style={{ color: theme.accent }} />
                   <div className="flex flex-shrink-0 items-center gap-1">
                     <input type="number" min={1} max={b.duration_weeks} value={it.week_from}
@@ -784,16 +824,17 @@ function LibraryManager({ workspaceId, visa, routeId, criteria, activities, acce
               onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
             <input className={INPUT} placeholder="Detail (optional)" value={draft.detail}
               onChange={(e) => setDraft({ ...draft, detail: e.target.value })} />
-            <select className={INPUT} value={draft.criterion_id}
-              onChange={(e) => setDraft({ ...draft, criterion_id: e.target.value })}>
-              <option value="">General (no criterion)</option>
-              {criteria.filter((c) => !routeId || c.route_id === routeId)
-                .map((c) => <option key={c.id} value={c.id}>{c.code} · {c.title}</option>)}
-            </select>
-            <select className={INPUT} value={draft.priority}
-              onChange={(e) => setDraft({ ...draft, priority: e.target.value as Priority })}>
-              {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}
-            </select>
+            <Select<string> value={draft.criterion_id}
+              onChange={(v) => setDraft({ ...draft, criterion_id: v })}
+              options={[
+                { value: '', label: 'General (no criterion)' },
+                ...criteria.filter((c) => !routeId || c.route_id === routeId)
+                  .map((c) => ({ value: c.id, label: `${c.code} · ${c.title}` })),
+              ]} size="sm" />
+            <Select<Priority> value={draft.priority}
+              onChange={(v) => setDraft({ ...draft, priority: v })}
+              options={PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label, color: PRIORITY_META[p].dot }))}
+              size="sm" />
           </div>
           <button onClick={add} disabled={saving}
             className="btn btn-sm mt-2.5 text-white transition hover:opacity-90" style={{ background: accent }}>
