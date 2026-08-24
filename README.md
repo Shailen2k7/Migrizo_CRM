@@ -1,53 +1,64 @@
-# Roadmap module — FINAL v2 (complete, one upload)
+# Invoices — UK bank details + PDF download
 
-Replaces every earlier roadmap zip (v5, ui-fix, final). Safe to upload over
-what you already deployed — migrations are idempotent.
+Two changes in one bundle. Upload all 5 files.
 
-## Fixed in v2 (your 4 points)
+## 1. UK bank account on UNPAID invoices
 
-1. **Signature** — now follows the plan's visa. An IFV roadmap signs
-   "Operations Head – Innovator Founder Visa"; GTV stays as before.
-   Email subject and title switch too.
-2. **PDF page overlap** — page-break rules added: the navy footer and each
-   week row can no longer be sliced in half at a page boundary; they move
-   whole to the next page.
-3. **Everything in Week 1–2** — each activity you tick now lands in the
-   emptiest week band automatically, so the plan spreads itself as you build
-   it. Weeks you set by hand are never touched. The Auto-schedule button
-   still re-lays the whole plan Essential-first if you want it.
-4. **Closing paragraph** — "How the endorsement works" is now visa-aware.
-   IFV clients read about the innovative / viable / scalable tests and the
-   founder day-to-day requirement — no Global Talent wording anywhere in an
-   IFV email (verified by automated check).
+Unpaid invoices now show two bank boxes side by side, with the UPI strip below:
 
-## What's inside
+- **UK (GBP)** — M4 Investment Ltd · Revolut Bank · A/C 94649332 · Sort Code 04-29-09
+- **India (INR)** — Grownmind Educational Services Pvt Ltd · ICICI (unchanged)
+- **UPI** — grownmind@icici (unchanged)
+
+Whichever account matches the client's invoice currency is shown **first**, so a
+GBP client sees the UK account on the left.
+
+**Paid invoices are untouched.** The whole payment block only renders when the
+payment is not paid — a receipt shows the green "Payment received" line and no
+account numbers anywhere, in the HTML or the plain-text version.
+
+## 2. Download as PDF from the lead drawer
+
+Every payment row now has a green **download** button next to the send button
+(Lead drawer → Payments). It opens the invoice in a new tab and brings up the
+print dialog — choose **Save as PDF**.
+
+What you get:
+
+- **The same document the client is emailed.** No second template, so the PDF
+  can never drift away from the email.
+- **The same invoice number** as the email for that payment (MGZ-YYYYMM-XXXXXX).
+- **One clean A4 page.** If a document runs slightly over, it is scaled to fit
+  exactly one page (never below 76% — a genuinely long invoice paginates
+  properly instead of becoming unreadable).
+- **Nothing sliced in half.** The payment-details box and the navy footer move
+  whole to the next page rather than being cut across a page break.
+- **A sensible filename** — "Migrizo Invoice MGZ-202608-3F2A91 - Aarav Sharma".
+- Paid payments download as a **Receipt** with no bank details, same as the email.
+
+Access: the download is available to anyone who can already see the payment.
+It is not gated on the "send client emails" permission, because saving a copy of
+a document on your own screen is not the same as emailing the client. The route
+still requires a signed-in CRM user and is scoped by RLS to your workspace.
+
+## Files to upload
 
 ```
-supabase/migrations/067..071                       Roadmap library (unchanged from v5)
-lib/roadmap/library.ts                             Types, themes, visa logic
-lib/roadmap/template.ts                            Visa-aware email (signature, subject, closing)  ← NEW
-components/roadmap/roadmap-builder.tsx             Builder UI (auto-spread weeks, PDF page breaks)
-components/leads/lead-drawer.tsx                   Drawer with builder + Special offer field
-app/api/roadmap/send/route.ts                      Visa-aware email subject                        ← NEW
+lib/email/branded.ts                 UK bank details + shared invoiceNumber()
+lib/email/print.ts                   NEW — print/PDF rules
+app/api/invoice/pdf/route.ts         NEW — the PDF endpoint
+app/api/email/send/route.ts          now imports the shared invoiceNumber()
+components/payments/payment-row.tsx  the download button
 ```
 
-## Deploy — 2 steps
+No SQL. No env vars. Nothing else in the CRM is affected.
 
-### 1. Supabase (only if you have NOT already run them)
-Run in order: 067 → 068 → 069 → 070 → 071. Already ran them? Skip this step —
-nothing in v2 needs new SQL.
+## Verify after deploy
 
-### 2. Git — upload these 5 files at the same paths
-- `lib/roadmap/library.ts`
-- `lib/roadmap/template.ts`
-- `components/roadmap/roadmap-builder.tsx`
-- `components/leads/lead-drawer.tsx`
-- `app/api/roadmap/send/route.ts`
+1. Lead drawer → Payments → hover a row → click the green download icon.
+2. Print preview should show **1 page** with both bank boxes.
+3. Mark the payment paid, download again → "Receipt", green banner, no bank
+   details, still 1 page.
 
-Do NOT delete `components/roadmap/roadmap-tab.tsx` — old sent roadmaps still
-render through it.
-
-## Quick check after deploy
-Open an IFV lead → Roadmap → tick 6+ activities → they land across different
-weeks. Review & send → signature and closing paragraph say Innovator Founder.
-Download PDF → footer sits whole on its page.
+If the browser blocks the new tab, allow popups for the CRM — you'll get a
+toast telling you so.

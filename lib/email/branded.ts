@@ -688,6 +688,48 @@ function renderProcessIFV(lead: Pick<Lead, 'full_name'>): { subject: string; htm
 //    Company: Grownmind Educational Services Pvt Ltd · GSTIN 09AAECG9536E1ZF
 //    Tax-inclusive, CGST/SGST 0% (matches the existing Zoho invoice treatment).
 // ---------------------------------------------------------------------------
+
+// Bank accounts shown on UNPAID invoices only (a paid invoice is a receipt).
+// Kept as constants so the numbers live in exactly one place — an account
+// detail duplicated across a template is an account detail that eventually
+// disagrees with itself.
+const BANK_ROW = (k: string, v: string, strong = false) =>
+  `<tr><td style="color:${MUTED};padding-right:12px;white-space:nowrap;">${k}</td><td style="color:${INK};">${strong ? `<b>${v}</b>` : v}</td></tr>`;
+
+const INDIA_BANK_BLOCK = `
+  <div style="font-size:10px;font-weight:800;color:${MUTED};letter-spacing:0.5px;margin-bottom:6px;">BANK TRANSFER · INDIA (INR)</div>
+  <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:11.5px;line-height:1.8;">
+    ${BANK_ROW('Account Name', 'Grownmind Educational Services Pvt Ltd', true)}
+    ${BANK_ROW('Bank', 'ICICI Bank, Noida — Sector 63')}
+    ${BANK_ROW('Account No', '081605010665', true)}
+    ${BANK_ROW('IFSC', 'ICIC0000816', true)}
+    ${BANK_ROW('Branch Code', '000816')}
+    ${BANK_ROW('SWIFT', 'ICICINBBNRI')}
+  </table>`;
+
+const UK_BANK_BLOCK = `
+  <div style="font-size:10px;font-weight:800;color:${MUTED};letter-spacing:0.5px;margin-bottom:6px;">BANK TRANSFER · UK (GBP)</div>
+  <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:11.5px;line-height:1.8;">
+    ${BANK_ROW('Account Name', 'M4 Investment Ltd', true)}
+    ${BANK_ROW('Bank', 'Revolut Bank')}
+    ${BANK_ROW('Account No', '94649332', true)}
+    ${BANK_ROW('Sort Code', '04-29-09', true)}
+  </table>
+  <div style="font-size:10px;color:${MUTED};margin-top:6px;line-height:1.5;">Paying from outside the UK? Email us for the IBAN.</div>`;
+
+/**
+ * Deterministic invoice number from the payment row: MGZ-YYYYMM-XXXXXX.
+ *
+ * Lives here, next to renderInvoice, because the emailed invoice and the
+ * downloaded PDF MUST carry the same number for the same payment. Two copies
+ * of this function is two invoice numbering schemes waiting to disagree.
+ */
+export function invoiceNumber(payment: { id: string; created_at: string | null }): string {
+  const d = new Date(payment.created_at || Date.now());
+  const ym = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return `MGZ-${ym}-${payment.id.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
+}
+
 export function renderInvoice(
   lead: Pick<Lead, 'full_name' | 'email' | 'phone' | 'visa_type' | 'currency'>,
   payment: Pick<Payment, 'id' | 'milestone' | 'amount' | 'status' | 'paid_at' | 'created_at'>,
@@ -790,29 +832,36 @@ export function renderInvoice(
     </table>
 
     ${!isPaid ? `
-    <!-- Bank details (only on unpaid invoices) -->
+    <!-- Payment details — UNPAID invoices only. A paid invoice is a receipt and
+         must never carry "how to pay" instructions, so this whole block is
+         omitted once payment lands. Two accounts are offered: India (INR) and
+         the UK (GBP); the one matching the client's invoice currency is shown
+         first so they do not have to hunt for the right one. -->
     <div style="border:1.5px solid ${GOLD};background:#FFFDF2;border-radius:12px;padding:14px 18px;margin-bottom:14px;">
-      <div style="font-size:11px;font-weight:800;color:${NAVY};letter-spacing:0.6px;margin-bottom:8px;">PAYMENT DETAILS</div>
+      <div style="font-size:11px;font-weight:800;color:${NAVY};letter-spacing:0.6px;margin-bottom:10px;">PAYMENT DETAILS</div>
       <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
         <tr>
-          <td valign="top" width="60%" style="padding-right:14px;border-right:1px solid #EFE6BE;">
-            <div style="font-size:10px;font-weight:800;color:${MUTED};letter-spacing:0.5px;margin-bottom:5px;">BANK TRANSFER</div>
-            <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:12px;color:${INK};line-height:1.85;">
-              <tr><td style="color:${MUTED};padding-right:14px;">Account Name</td><td><b>Grownmind Educational Services Pvt Ltd</b></td></tr>
-              <tr><td style="color:${MUTED};padding-right:14px;">Bank</td><td>ICICI Bank, Noida — Sector 63</td></tr>
-              <tr><td style="color:${MUTED};padding-right:14px;">Account No</td><td><b>081605010665</b></td></tr>
-              <tr><td style="color:${MUTED};padding-right:14px;">IFSC</td><td><b>ICIC0000816</b></td></tr>
-              <tr><td style="color:${MUTED};padding-right:14px;">Branch Code</td><td>000816</td></tr>
-              <tr><td style="color:${MUTED};padding-right:14px;">SWIFT</td><td>ICICINBBNRI</td></tr>
-            </table>
+          <td valign="top" width="49%" style="background:#ffffff;border:1px solid #EFE6BE;border-radius:10px;padding:12px 14px;">
+            ${currency === 'GBP' ? UK_BANK_BLOCK : INDIA_BANK_BLOCK}
           </td>
-          <td valign="top" width="40%" style="padding-left:16px;">
-            <div style="font-size:10px;font-weight:800;color:${MUTED};letter-spacing:0.5px;margin-bottom:5px;">UPI (INDIA)</div>
-            <div style="background:#ffffff;border:1.5px solid ${NAVY};border-radius:10px;padding:10px 12px;text-align:center;">
-              <div style="font-size:9.5px;font-weight:700;color:${MUTED};letter-spacing:0.8px;">SCAN OR PAY TO UPI ID</div>
-              <div style="font-size:16px;font-weight:800;color:${NAVY};margin-top:4px;letter-spacing:0.3px;">grownmind@icici</div>
-              <div style="font-size:10px;color:${MUTED};margin-top:4px;">GPay · PhonePe · Paytm · any UPI app</div>
-            </div>
+          <td width="2%"></td>
+          <td valign="top" width="49%" style="background:#ffffff;border:1px solid #EFE6BE;border-radius:10px;padding:12px 14px;">
+            ${currency === 'GBP' ? INDIA_BANK_BLOCK : UK_BANK_BLOCK}
+          </td>
+        </tr>
+      </table>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-top:10px;">
+        <tr>
+          <td valign="middle" style="background:#ffffff;border:1.5px solid ${NAVY};border-radius:10px;padding:10px 14px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+              <tr>
+                <td valign="middle">
+                  <div style="font-size:9.5px;font-weight:800;color:${MUTED};letter-spacing:0.8px;">UPI (INDIA) — PAY TO UPI ID</div>
+                  <div style="font-size:16px;font-weight:800;color:${NAVY};margin-top:3px;letter-spacing:0.3px;">grownmind@icici</div>
+                </td>
+                <td valign="middle" align="right" style="font-size:10.5px;color:${MUTED};">GPay · PhonePe · Paytm<br/>any UPI app</td>
+              </tr>
+            </table>
           </td>
         </tr>
       </table>
@@ -834,6 +883,6 @@ export function renderInvoice(
   return {
     subject: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} — ${milestone} · Migrizo`,
     html: shell(`Invoice ${invoiceNo}`, body, `${milestone} — ${money(amount, currency)} · ${isPaid ? 'Paid' : 'Due on receipt'}`),
-    text: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} from Migrizo (Grownmind Educational Services Pvt Ltd). ${milestone} Fee — ${visa}: ${money(amount, currency)}. ${isPaid ? 'Payment received, thank you.' : 'Pay via bank transfer (ICICI A/C 081605010665, IFSC ICIC0000816) or UPI: grownmind@icici.'}`,
+    text: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} from Migrizo (Grownmind Educational Services Pvt Ltd). ${milestone} Fee — ${visa}: ${money(amount, currency)}. ${isPaid ? 'Payment received, thank you.' : 'Pay by bank transfer — UK: M4 Investment Ltd, Revolut Bank, A/C 94649332, Sort Code 04-29-09. India: Grownmind Educational Services Pvt Ltd, ICICI A/C 081605010665, IFSC ICIC0000816. UPI: grownmind@icici.'}`,
   };
 }

@@ -11,20 +11,13 @@
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { renderOnboarding, renderSLA, renderInvoice, renderProcess } from '@/lib/email/branded';
+import { renderOnboarding, renderSLA, renderInvoice, renderProcess, invoiceNumber } from '@/lib/email/branded';
 import type { Lead, Payment } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
 type EmailType = 'onboarding' | 'sla' | 'invoice' | 'process';
 const VALID: EmailType[] = ['onboarding', 'sla', 'invoice', 'process'];
-
-// Deterministic invoice number from the payment row: MGZ-YYYYMM-XXXXXX
-function invoiceNumber(payment: { id: string; created_at: string | null }): string {
-  const d = new Date(payment.created_at || Date.now());
-  const ym = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
-  return `MGZ-${ym}-${payment.id.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
-}
 
 export async function POST(req: Request) {
   const supabase = await createClient();

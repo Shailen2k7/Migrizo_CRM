@@ -8,7 +8,7 @@ import { useApp } from '@/components/shared/app-provider';
 import type { Payment, Milestone } from '@/lib/types';
 import { MILESTONE_META } from '@/lib/types';
 import { formatMoney, moneySymbol, cn } from '@/lib/utils';
-import { FileText, Pencil, Trash2, Send } from 'lucide-react';
+import { FileText, Pencil, Trash2, Send, Download } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Props {
@@ -55,6 +55,19 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
     } finally {
       setSendingInvoice(false);
     }
+  };
+
+  /**
+   * Download the invoice as a PDF — the same document the client is emailed.
+   *
+   * Opened SYNCHRONOUSLY in a new tab (no await before window.open) so popup
+   * blockers treat it as a user gesture. The route renders the invoice with
+   * print CSS and opens the print dialog; the user picks "Save as PDF".
+   */
+  const downloadPdf = () => {
+    const w = window.open(`/api/invoice/pdf?paymentId=${encodeURIComponent(payment.id)}`, '_blank');
+    if (!w) { toast.error('Popup blocked — allow popups for the CRM to download the PDF'); return; }
+    toast.info('Choose “Save as PDF” in the print dialog');
   };
 
   const openEditor = () => {
@@ -112,6 +125,16 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
                   : <Send className="w-3.5 h-3.5 transition-transform group-hover/send:translate-x-[1px] group-hover/send:-translate-y-[1px]" />}
               </button>
               )}
+              {/* Download is NOT gated on canSendEmails: saving a copy of a
+                  document you can already see on screen is not the same
+                  privilege as emailing the client. */}
+              <button
+                onClick={downloadPdf}
+                className="group/dl relative w-7 h-7 rounded-full flex items-center justify-center text-[#047857] bg-[#E6F7EE] hover:bg-[#047857] hover:text-white hover:shadow-sm transition-all"
+                title={`Download ${docWord.toLowerCase()} as PDF`}
+              >
+                <Download className="w-3.5 h-3.5 transition-transform group-hover/dl:translate-y-[1px]" />
+              </button>
               <button onClick={openEditor} className="p-1.5 rounded hover:bg-surface-2 text-muted hover:text-ink" title="Edit payment">
                 <Pencil className="w-3.5 h-3.5" />
               </button>
