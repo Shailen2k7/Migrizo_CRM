@@ -224,17 +224,21 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
           gives every month room; Needs attention gets its own row below. */}
       <div className="panel mb-4 min-w-0 p-5">
         <div className="grid gap-6 lg:grid-cols-2 lg:divide-x lg:divide-border">
-          <div className="min-w-0">
+          {/* flex column so the strip can stretch to the height the right
+              column sets — the chart always fills its card. */}
+          <div className="flex min-w-0 flex-col">
             <PanelTitle sub={period.grain === 'month'
               ? 'Each bar shows what happened to that month\u2019s bookings \u00b7 click one to compare'
               : 'Select a month above to compare month-to-month'}>
               {now.getFullYear()} by month — calls booked
             </PanelTitle>
-            <MonthStrip items={monthItems} currentKey={period.grain === 'month' ? period.key : null}
-              compareKey={compare && compare.grain === 'month' ? compare.key : null}
-              enabled={period.grain === 'month'}
-              onPick={(k) => setCmpKey(k)}
-              legend={STRIP_LEGEND} />
+            <div className="min-h-0 flex-1">
+              <MonthStrip items={monthItems} currentKey={period.grain === 'month' ? period.key : null}
+                compareKey={compare && compare.grain === 'month' ? compare.key : null}
+                enabled={period.grain === 'month'}
+                onPick={(k) => setCmpKey(k)}
+                legend={STRIP_LEGEND} />
+            </div>
           </div>
           <div className="min-w-0 lg:pl-6">
             <PanelTitle sub="Percentages are shares of the calls resolved this period.">

@@ -180,17 +180,21 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
           a hairline. Stacked again only when the screen is too narrow. */}
       <div className="panel p-5">
         <div className="grid gap-5 lg:grid-cols-2 lg:divide-x lg:divide-border">
-          <div className="min-w-0">
+          {/* flex column so the strip can stretch to the height the right
+              column sets — the chart always fills its card. */}
+          <div className="flex min-w-0 flex-col">
             <PanelTitle sub={period.grain === 'month'
               ? 'Click any month to compare against it'
               : 'Select a month above to compare month-to-month'}>
               {now.getFullYear()} by month — leads created
             </PanelTitle>
-            <MonthStrip items={monthItems} currentKey={period.grain === 'month' ? period.key : null}
-              compareKey={compare && compare.grain === 'month' ? compare.key : null}
-              enabled={period.grain === 'month'}
-              onPick={(k) => setCmpKey(k)}
-              legend={STRIP_LEGEND} />
+            <div className="min-h-0 flex-1">
+              <MonthStrip items={monthItems} currentKey={period.grain === 'month' ? period.key : null}
+                compareKey={compare && compare.grain === 'month' ? compare.key : null}
+                enabled={period.grain === 'month'}
+                onPick={(k) => setCmpKey(k)}
+                legend={STRIP_LEGEND} />
+            </div>
           </div>
           <div className="min-w-0 lg:pl-5">
             <PanelTitle sub="Each % is the share of this period's leads that reached the stage.">

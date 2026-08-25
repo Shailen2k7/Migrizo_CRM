@@ -77,42 +77,50 @@ export function MonthStrip({ items, currentKey, compareKey, enabled, onPick, leg
 }) {
   const max = Math.max(...items.map((i) => i.value), 1);
   return (
-    <div>
-      <div className={cn('flex items-end gap-2 overflow-x-auto pb-1', !enabled && 'opacity-55')}>
+    // h-full + flex-1 on the bar row: the strip STRETCHES to whatever height
+    // the panel's other column sets, so the bars are always as tall as the
+    // card — never a 64px chart marooned in 300px of white space.
+    <div className="flex h-full min-h-[170px] flex-col">
+      <div className={cn('flex flex-1 items-stretch gap-2 overflow-x-auto pb-1', !enabled && 'opacity-55')}>
         {items.map((it) => {
           const isCur = it.key === currentKey;
           const isCmp = it.key === compareKey;
           const total = Math.max(1, it.value);
+          const barPct = it.value === 0 ? 0 : Math.max(6, Math.round((it.value / max) * 100));
           const barTitle = it.segments?.length
-            ? `${it.label}: ${it.segments.filter((s) => s.value > 0).map((s) => `${s.value} ${s.label.toLowerCase()}`).join(' · ') || 'nothing yet'}`
-            : `${it.label} — ${it.value}`;
+            ? `${it.label}: ${it.segments.filter((s) => s.value > 0).map((s) => `${s.value} ${s.label.toLowerCase()}`).join(' \u00b7 ') || 'nothing yet'}`
+            : `${it.label} \u2014 ${it.value}`;
           return (
             <button
               key={it.key}
               onClick={() => { if (enabled && !isCur) onPick(it.key); }}
-              title={enabled ? (isCur ? `${barTitle} (current period)` : `${barTitle} — click to compare`) : 'Select a month above to compare month-to-month'}
+              title={enabled ? (isCur ? `${barTitle} (current period)` : `${barTitle} \u2014 click to compare`) : 'Select a month above to compare month-to-month'}
               className={cn(
                 'flex min-w-[44px] flex-1 flex-col items-center gap-1 rounded-xl px-1 pb-1.5 pt-1.5 transition',
                 isCur ? 'bg-[hsl(var(--indigo-soft))]' : isCmp ? 'bg-[#FEF6E7]' : enabled ? 'hover:bg-surface-2' : '',
                 (!enabled || isCur) && 'cursor-default',
+                it.value === 0 && 'opacity-60',
               )}
             >
               <span className={cn('num text-[11.5px] font-bold', isCur ? 'text-indigo' : isCmp ? 'text-[#B45309]' : 'text-muted')}>{it.value}</span>
-              <span className="flex h-[64px] w-full items-end">
-                {it.segments?.length ? (
+              <span className="flex w-full flex-1 items-end">
+                {it.value === 0 ? (
+                  // An honest zero: a hairline, not a stub bar pretending to be data.
+                  <span className="block h-[3px] w-full rounded-full bg-border-strong" />
+                ) : it.segments?.length ? (
                   <span
-                    className="flex w-full flex-col-reverse overflow-hidden rounded-t-[5px] transition-all"
-                    style={{ height: `${Math.max(8, Math.round((it.value / max) * 100))}%`, outline: isCmp ? '1.5px solid #C2740A' : undefined }}
+                    className="flex w-full flex-col-reverse overflow-hidden rounded-t-md transition-all"
+                    style={{ height: `${barPct}%`, outline: isCmp ? '1.5px solid #C2740A' : undefined }}
                   >
-                    {it.segments.map((s) => (
-                      <span key={s.label} style={{ height: `${(s.value / total) * 100}%`, background: s.color }} />
+                    {it.segments.map((sg) => (
+                      <span key={sg.label} style={{ height: `${(sg.value / total) * 100}%`, background: sg.color }} />
                     ))}
                   </span>
                 ) : (
                   <span
-                    className="block w-full rounded-t-[5px] transition-all"
+                    className="block w-full rounded-t-md transition-all"
                     style={{
-                      height: `${Math.max(8, Math.round((it.value / max) * 100))}%`,
+                      height: `${barPct}%`,
                       background: isCur ? '#4F46E5' : isCmp ? '#C2740A' : '#D6D9E3',
                     }}
                   />
@@ -125,9 +133,9 @@ export function MonthStrip({ items, currentKey, compareKey, enabled, onPick, leg
       </div>
       {legend && (
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3.5 gap-y-1">
-          {legend.map((s) => (
-            <span key={s.label} className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-muted">
-              <span className="h-2 w-2 rounded-[3px]" style={{ background: s.color }} /> {s.label}
+          {legend.map((sg) => (
+            <span key={sg.label} className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-muted">
+              <span className="h-2 w-2 rounded-[3px]" style={{ background: sg.color }} /> {sg.label}
             </span>
           ))}
         </div>
