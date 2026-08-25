@@ -31,7 +31,7 @@ interface Props {
 }
 
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
-  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, setLeadOffer, addNote, getNotes, createFollowUp, role, memberNameById, canViewPayments, canSendEmails, workspace, user: appUser } = useApp();
+  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, setLeadOffer, setLeadQualification, addNote, getNotes, createFollowUp, role, memberNameById, canViewPayments, canSendEmails, workspace, user: appUser } = useApp();
   const pl = usePipelines(workspace.id);
   const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups' | 'emails' | 'roadmap' | 'route'>('overview');
   const [emailLog, setEmailLog] = useState<EmailLogEntry[] | null>(null);
@@ -442,6 +442,53 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                         </span>
                       </Row>
                     )}
+                    {/* Qualification (migration 074). One click each, set during
+                        the call the consultant is already on. These are the
+                        denominators of the Leads dashboard, so like the offer
+                        they save IMMEDIATELY with a who/when stamp rather than
+                        joining the pending patch. */}
+                    <Row label="Profile received">
+                      <div style={{ maxWidth: 220 }}>
+                        <Select<string>
+                          value={effectiveLead.profile_received ?? 'none'}
+                          onChange={(v) => {
+                            if (v === (effectiveLead.profile_received ?? 'none')) return;
+                            setLeadQualification(effectiveLead.id, { profile: v === 'none' ? null : v as 'cv' | 'linkedin' | 'both' });
+                          }}
+                          options={[
+                            { value: 'none',     label: 'Not received yet', color: '#D1D5DB' },
+                            { value: 'cv',       label: 'CV / Resume',      color: '#4F46E5' },
+                            { value: 'linkedin', label: 'LinkedIn',         color: '#0284C7' },
+                            { value: 'both',     label: 'CV + LinkedIn',    color: '#047857' },
+                          ]}
+                          size="sm"
+                        />
+                      </div>
+                    </Row>
+                    <Row label="Eligibility">
+                      <div style={{ maxWidth: 220 }}>
+                        <Select<string>
+                          value={effectiveLead.eligibility ?? 'none'}
+                          onChange={(v) => {
+                            if (v === (effectiveLead.eligibility ?? 'none')) return;
+                            setLeadQualification(effectiveLead.id, { eligibility: v === 'none' ? null : v as 'eligible' | 'not_eligible' });
+                          }}
+                          options={[
+                            { value: 'none',         label: 'Not reviewed',  color: '#D1D5DB' },
+                            { value: 'eligible',     label: 'Eligible',      color: '#047857' },
+                            { value: 'not_eligible', label: 'Not eligible',  color: '#B91C1C' },
+                          ]}
+                          size="sm"
+                        />
+                        {effectiveLead.eligibility && effectiveLead.eligibility_at && (
+                          <div className="mt-1 text-[11px] text-muted">
+                            {effectiveLead.eligibility_source === 'derived'
+                              ? 'Derived from stage history — one click above confirms it'
+                              : `${new Date(effectiveLead.eligibility_at).toLocaleDateString('en-IN')}${effectiveLead.eligibility_by ? ` · ${memberNameById(effectiveLead.eligibility_by)}` : ''}`}
+                          </div>
+                        )}
+                      </div>
+                    </Row>
                     <Row label="Lead score">
                       <div className="flex items-center gap-2">
                         <input type="range" min={0} max={100} value={effectiveLead.score} onChange={(e) => setLeadPending({ score: Number(e.target.value) })} className="w-40" style={{ accentColor: scoreColor(effectiveLead.score) }} />
@@ -629,19 +676,33 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     </div>
                     <div className="space-y-3">
                       {notes.length === 0 ? <div className="text-center py-10 text-[12.5px] text-muted">No notes yet</div> :
-                        notes.map((n) => (
-                          <div key={n.id} className="rounded-xl border border-border p-3.5">
+                        notes.map((n) => {
+                          // A note carried over from the Meetings module. It is
+                          // labelled rather than blended in, so nobody wonders
+                          // why a note they never typed is on the lead — and so
+                          // they know to edit it on the meeting, not here.
+                          const fromMeeting = Boolean(n.meeting_id);
+                          const met = n.meeting?.starts_at;
+                          return (
+                          <div key={n.id} className={cn('rounded-xl border p-3.5', fromMeeting ? 'border-[#C7D2FE] bg-[#F8FAFF]' : 'border-border')}>
                             <div className="flex items-center gap-2 mb-1.5">
-                              <div className="av" style={{ background: avatarColor(n.author_id || 'unknown'), width: 22, height: 22, fontSize: 9 }}>
-                                {initials(memberNameById(n.author_id))}
+                              <div className="av" style={{ background: fromMeeting ? '#4F46E5' : avatarColor(n.author_id || 'unknown'), width: 22, height: 22, fontSize: 9 }}>
+                                {fromMeeting && !n.author_id ? <CalendarClock className="w-3 h-3" /> : initials(memberNameById(n.author_id))}
                               </div>
-                              <span className="text-[12px] font-semibold text-ink">{memberNameById(n.author_id)}</span>
+                              <span className="text-[12px] font-semibold text-ink">{fromMeeting && !n.author_id ? 'Meeting' : memberNameById(n.author_id)}</span>
                               <span className="text-[11px] text-muted">· {timeAgo(n.created_at)}</span>
-                              <span className="text-[10.5px] text-faint ml-auto">{new Date(n.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span>
+                              {fromMeeting && (
+                                <span className="chip whitespace-nowrap" style={{ background: '#EEF2FF', color: '#3730A3', border: 'none', fontSize: 10 }}>
+                                  <CalendarClock className="w-2.5 h-2.5" />
+                                  {met ? `Meeting · ${new Date(met).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : 'Meeting note'}
+                                </span>
+                              )}
+                              <span className="text-[10.5px] text-faint ml-auto whitespace-nowrap">{new Date(n.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span>
                             </div>
                             <div className="text-[12.5px] text-ink-2 leading-relaxed whitespace-pre-wrap pl-7">{n.body}</div>
                           </div>
-                        ))}
+                          );
+                        })}
                     </div>
                   </>
                 )}

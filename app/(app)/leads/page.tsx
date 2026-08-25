@@ -6,6 +6,7 @@ import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
 import { Topbar } from '@/components/topbar';
 import { LeadsTable } from '@/components/leads/leads-table';
+import { LeadsDashboard, type DashFilter } from '@/components/leads/leads-dashboard';
 import { industryLabel } from '@/lib/types';
 import { toast } from 'sonner';
 
@@ -14,6 +15,7 @@ function LeadsPageInner() {
   const seg = (params.get('segment') as 'all' | 'spotlight' | 'not_responding' | 'hot' | 'cold' | 'mr_coming_soon' | 'invoice_sent' | 'won' | 'junk') || 'all';
   const { leads, payments } = useApp();
   const ui = useUI();
+  const [dashFilter, setDashFilter] = useState<DashFilter | null>(null);
 
   const summary = useMemo(() => {
     const won = leads.filter((l) => l.stage === 'won').length;
@@ -53,7 +55,9 @@ function LeadsPageInner() {
           <Topbar leads={leads} payments={payments} onAddLead={ui.openAddLead} onImport={ui.openImport} onOpenLead={ui.openLeadDrawer} />
         </div>
       </div>
-      <LeadsTable initialSegment={seg} onRowClick={ui.openLeadDrawer} />
+      <LeadsDashboard onFilter={setDashFilter} activeFilter={dashFilter} />
+      <LeadsTable initialSegment={seg} onRowClick={ui.openLeadDrawer}
+        dashFilter={dashFilter} onClearDashFilter={() => setDashFilter(null)} />
     </div>
   );
 }

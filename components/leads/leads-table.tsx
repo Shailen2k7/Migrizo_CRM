@@ -61,9 +61,17 @@ function isNotResponding(l: Lead): boolean {
 interface Props {
   initialSegment?: Segment;
   onRowClick: (id: string) => void;
+  /**
+   * Restriction set by a dashboard card: only these lead ids are shown, on top
+   * of whatever segment chip is active. Ids, not a predicate, so the table
+   * needs no knowledge of periods or funnel definitions — the dashboard owns
+   * those. Cleared by its own banner or by the card that set it.
+   */
+  dashFilter?: { label: string; ids: Set<string> } | null;
+  onClearDashFilter?: () => void;
 }
 
-export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
+export function LeadsTable({ initialSegment = 'all', onRowClick, dashFilter = null, onClearDashFilter }: Props) {
   const { leads, updateLead, toggleSpotlight } = useApp();
   const [segment, setSegment] = useState<Segment>(initialSegment);
   const [sorting, setSorting] = useState<SortingState>([{ id: 'updated_at', desc: true }]);
@@ -72,12 +80,14 @@ export function LeadsTable({ initialSegment = 'all', onRowClick }: Props) {
   useEffect(() => setSegment(initialSegment), [initialSegment]);
 
   const segmented = useMemo(() => {
-    if (segment === 'all') return leads;
-    if (segment === 'spotlight') return leads.filter((l) => l.is_spotlight);
-    if (segment === 'offer') return leads.filter(hasOffer);
-    if (segment === 'not_responding') return leads.filter(isNotResponding);
-    return leads.filter((l) => l.stage === segment);
-  }, [leads, segment]);
+    let base = leads;
+    if (dashFilter) base = base.filter((l) => dashFilter.ids.has(l.id));
+    if (segment === 'all') return base;
+    if (segment === 'spotlight') return base.filter((l) => l.is_spotlight);
+    if (segment === 'offer') return base.filter(hasOffer);
+    if (segment === 'not_responding') return base.filter(isNotResponding);
+    return base.filter((l) => l.stage === segment);
+  }, [leads, segment, dashFilter]);
 
   const counts = useMemo(() => {
     const c: Record<Segment, number> = {
@@ -238,6 +248,21 @@ const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter(
 
   return (
     <>
+      {/* Dashboard drill-in banner: says exactly what restricted the list and
+          how to get out of it. A filter you cannot see is a bug report. */}
+      {dashFilter && (
+        <div className="mb-3 flex items-center gap-2.5 rounded-xl border border-[hsl(var(--indigo-soft-2))] bg-[hsl(var(--indigo-soft))] px-3.5 py-2">
+          <span className="text-[12.5px] font-semibold text-[#3730A3]">
+            Showing <b>{dashFilter.label}</b> from the dashboard · {dashFilter.ids.size} lead{dashFilter.ids.size === 1 ? '' : 's'}
+          </span>
+          <button
+            onClick={onClearDashFilter}
+            className="ml-auto rounded-lg border border-[hsl(var(--indigo-soft-2))] bg-surface px-2.5 py-1 text-[11.5px] font-semibold text-ink-2 transition hover:text-ink"
+          >
+            Show all leads
+          </button>
+        </div>
+      )}
       <div className="mb-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:flex-wrap">
         {/* chips — horizontal scroll on mobile, wrap on desktop */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 sm:pb-0 sm:flex-wrap sm:contents">

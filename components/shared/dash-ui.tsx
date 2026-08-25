@@ -1,0 +1,169 @@
+'use client';
+
+// ============================================================================
+// DASH UI — the visual primitives of the Leads and Meetings dashboards, in the
+// approved design: white stat cards with a coloured baseline and a ▲▼ chip,
+// a clickable months strip, and the funnel with per-step drop-off plus the
+// "biggest leak" callout. One implementation so the two dashboards can never
+// drift apart visually.
+// ============================================================================
+
+import { TrendingUp, TrendingDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { deltaOf } from '@/lib/dashboard';
+
+type DeltaShape = ReturnType<typeof deltaOf>;
+
+export function DeltaChip({ d }: { d: DeltaShape }) {
+  if (d.dir === 'flat') {
+    return <span className="inline-flex items-center rounded-md bg-surface-2 px-1.5 py-0.5 text-[10.5px] font-bold text-faint">—</span>;
+  }
+  const Icon = d.dir === 'up' ? TrendingUp : TrendingDown;
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold"
+      style={d.good ? { background: '#E6F7EE', color: '#047857' } : { background: '#FDECEC', color: '#B91C1C' }}
+    >
+      <Icon className="h-3 w-3" /> {d.text}
+    </span>
+  );
+}
+
+export function StatCard({ label, value, foot, delta, accent, active, onClick }: {
+  label: string; value: string; foot: string; delta: DeltaShape;
+  accent: string; active?: boolean; onClick?: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'relative min-w-0 overflow-hidden rounded-2xl border bg-surface p-4 pb-3.5 text-left transition',
+        'hover:-translate-y-0.5 hover:shadow-[0_8px_22px_-12px_rgba(16,24,40,0.22)]',
+        active ? 'border-indigo shadow-[0_0_0_3px_hsl(var(--indigo-soft))]' : 'border-border',
+      )}
+    >
+      <div className="flex min-h-[26px] items-start justify-between gap-2">
+        <span className="text-[10px] font-extrabold uppercase leading-[1.3] tracking-[0.07em] text-muted">{label}</span>
+        <DeltaChip d={delta} />
+      </div>
+      <div className={cn('num mt-1.5 text-[26px] font-extrabold leading-none tracking-tight', value === '—' && 'text-faint')}>
+        {value}
+      </div>
+      <div className="mt-1.5 truncate text-[11px] text-muted">{foot}</div>
+      {/* the coloured baseline that keys each card to its funnel stage */}
+      <span className="absolute inset-x-0 bottom-0 h-[3px] bg-surface-2">
+        <span className="block h-full max-w-full" style={{ width: '100%', background: accent }} />
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Months-of-the-year strip. Every bar is a control: clicking one compares the
+ * current period against that month. Inert (dimmed) while the selected period
+ * is a week — a week is never compared against a month.
+ */
+export function MonthStrip({ items, currentKey, compareKey, enabled, onPick }: {
+  items: { key: string; label: string; value: number }[];
+  currentKey: string | null; compareKey: string | null; enabled: boolean;
+  onPick: (key: string) => void;
+}) {
+  const max = Math.max(...items.map((i) => i.value), 1);
+  return (
+    <div className={cn('flex items-end gap-2 overflow-x-auto pb-1', !enabled && 'opacity-55')}>
+      {items.map((it) => {
+        const isCur = it.key === currentKey;
+        const isCmp = it.key === compareKey;
+        return (
+          <button
+            key={it.key}
+            onClick={() => { if (enabled && !isCur) onPick(it.key); }}
+            title={enabled ? (isCur ? `${it.label} — current period` : `Compare with ${it.label}`) : 'Select a month above to compare month-to-month'}
+            className={cn(
+              'flex min-w-[44px] flex-1 flex-col items-center gap-1 rounded-xl px-1 pb-1.5 pt-1.5 transition',
+              isCur ? 'bg-[hsl(var(--indigo-soft))]' : isCmp ? 'bg-[#FEF6E7]' : enabled ? 'hover:bg-surface-2' : '',
+              (!enabled || isCur) && 'cursor-default',
+            )}
+          >
+            <span className={cn('num text-[11.5px] font-bold', isCur ? 'text-indigo' : isCmp ? 'text-[#B45309]' : 'text-muted')}>{it.value}</span>
+            <span className="flex h-[52px] w-full items-end">
+              <span
+                className="block w-full rounded-t-[5px] transition-all"
+                style={{
+                  height: `${Math.max(8, Math.round((it.value / max) * 100))}%`,
+                  background: isCur ? '#4F46E5' : isCmp ? '#C2740A' : '#D6D9E3',
+                }}
+              />
+            </span>
+            <span className={cn('text-[10.5px] font-bold', isCur ? 'text-indigo' : isCmp ? 'text-[#B45309]' : 'text-faint')}>{it.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export interface FunnelStep { label: string; value: number }
+
+/**
+ * The funnel: bar heights relative to the first step, per-step conversion and
+ * loss underneath, the single biggest drop badged in the gutter where it
+ * happens, and the leak sentence spelled out below.
+ */
+export function Funnel({ steps, leakNoun }: { steps: FunnelStep[]; leakNoun: string }) {
+  if (!steps.length || steps[0].value === 0) {
+    return <div className="py-8 text-center text-[12.5px] text-muted">Nothing in this period yet.</div>;
+  }
+  let biggest = { i: 0, lost: 0, from: '', to: '' };
+  steps.forEach((s, i) => {
+    if (i > 0) {
+      const lost = steps[i - 1].value - s.value;
+      if (lost > biggest.lost) biggest = { i, lost, from: steps[i - 1].label, to: s.label };
+    }
+  });
+  return (
+    <>
+      <div className="flex items-end gap-2.5 overflow-x-auto pb-1 pt-4">
+        {steps.map((s, i) => {
+          const h = Math.max(7, Math.round((s.value / steps[0].value) * 100));
+          const conv = i === 0 ? null : Math.round((s.value / Math.max(1, steps[i - 1].value)) * 1000) / 10;
+          const lost = i === 0 ? 0 : steps[i - 1].value - s.value;
+          return (
+            <div key={s.label} className="relative min-w-[96px] flex-1">
+              {i === biggest.i && biggest.lost > 0 && (
+                <span className="absolute -top-3.5 left-0 z-[2] -translate-x-1/2 whitespace-nowrap rounded-md border border-[#F7CFCF] bg-[#FDECEC] px-1.5 py-0.5 text-[10px] font-extrabold text-[#B91C1C]">
+                  −{biggest.lost}
+                </span>
+              )}
+              <div className="flex h-[84px] items-end">
+                <span className="block w-full rounded-t-lg bg-indigo opacity-85 transition group-hover:opacity-100" style={{ height: `${h}%`, background: '#4F46E5' }} />
+              </div>
+              <div className="border-t-2 border-border-strong pt-2">
+                <div className="num text-[18px] font-extrabold leading-none tracking-tight">{s.value}</div>
+                <div className="mt-0.5 text-[11px] text-muted">{s.label}</div>
+                {conv !== null
+                  ? <div className="mt-0.5 text-[10.5px] font-bold text-indigo">{conv}% <span className="font-semibold text-faint">· lost {lost}</span></div>
+                  : <div className="mt-0.5 text-[10.5px] font-bold text-faint">start</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {biggest.lost > 0 && (
+        <div className="mt-3.5 rounded-xl border border-[#F3E0B8] bg-[#FFF7E6] px-3.5 py-2.5 text-[12.5px] text-[#7A5406]">
+          <b className="text-[#5C3F04]">Biggest leak:</b> {biggest.lost} {leakNoun} drop out between{' '}
+          <b className="text-[#5C3F04]">{biggest.from}</b> and <b className="text-[#5C3F04]">{biggest.to}</b>.
+        </div>
+      )}
+    </>
+  );
+}
+
+export function PanelTitle({ children, sub }: { children: React.ReactNode; sub?: string }) {
+  return (
+    <div className="mb-3.5">
+      <h2 className="text-[11px] font-extrabold uppercase tracking-[0.07em] text-muted">{children}</h2>
+      {sub && <div className="mt-0.5 text-[11.5px] text-faint">{sub}</div>}
+    </div>
+  );
+}

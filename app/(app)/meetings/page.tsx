@@ -7,6 +7,7 @@
 // =============================================================================
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useApp } from '@/components/shared/app-provider';
+import { MeetingsDashboard, type MeetFilter } from '@/components/meetings/meetings-dashboard';
 import { createClient } from '@/lib/supabase/client';
 import { CalendarDays, List as ListIcon, Settings2, Copy, X, Clock, CheckCircle2, Ban, UserX, Loader2, Link as LinkIcon, BellRing, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -38,25 +39,39 @@ export default function MeetingsPage() {
   const supabase = useMemo(() => createClient(), []);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [resched, setResched] = useState<{ meeting_id: string; created_at: string }[]>([]);
   const [view, setView] = useState<'list' | 'day' | 'week' | 'month'>('list');
   const [anchor, setAnchor] = useState(() => new Date());
   const [selected, setSelected] = useState<Meeting | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // ── history list controls (the old page hard-capped Past at 40 rows) ──────
+  const [dashFilter, setDashFilter] = useState<MeetFilter | null>(null);
+  const [q, setQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'upcoming' | 'completed' | 'no_show' | 'cancelled'>('all');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 25;
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const [msRes, memRes] = await Promise.all([
-        supabase.from('meetings').select('*').eq('workspace_id', workspace.id).order('starts_at', { ascending: true }).limit(500),
+      // 2000, not 500: the dashboard aggregates the whole year, and the old
+      // cap silently hid everything before mid-August at ~500 rows. If the
+      // business ever books beyond 2000 meetings a year the aggregation moves
+      // to a SQL view; until then one fetch of narrow rows is cheaper than
+      // being wrong.
+      const [msRes, memRes, reRes] = await Promise.all([
+        supabase.from('meetings').select('*').eq('workspace_id', workspace.id).order('starts_at', { ascending: true }).limit(2000),
         supabase.from('scheduler_members').select('*').eq('workspace_id', workspace.id),
+        supabase.from('meeting_activity').select('meeting_id, created_at').eq('workspace_id', workspace.id).eq('event', 'rescheduled').limit(2000),
       ]);
       if (msRes.error) throw msRes.error;
       if (memRes.error) throw memRes.error;
       setMeetings((msRes.data as Meeting[]) || []);
       setMembers((memRes.data as Member[]) || []);
+      setResched(((reRes.data as { meeting_id: string; created_at: string }[]) || []));
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not load meetings. Please try again.');
       setMeetings([]);
@@ -98,7 +113,30 @@ export default function MeetingsPage() {
 
   const meetingsOn = (d: Date) => meetings.filter((m) => sameDay(new Date(m.starts_at), d));
   const upcoming = meetings.filter((m) => m.status === 'upcoming' && new Date(m.starts_at) >= new Date(Date.now() - 30 * 60000));
-  const past = meetings.filter((m) => !(m.status === 'upcoming' && new Date(m.starts_at) >= new Date(Date.now() - 30 * 60000))).slice().reverse();
+
+  // Full history — searchable, filterable, paginated. Every meeting ever
+  // booked is reachable from here; nothing is silently truncated any more.
+  const history = useMemo(() => {
+    const upcomingIds = new Set(upcoming.map((m) => m.id));
+    // A dashboard drill-in ("Booked in period") may legitimately include calls
+    // that are still upcoming — when it is active the list covers everything,
+    // otherwise upcoming rows stay in their own section above.
+    let list = (dashFilter ? meetings : meetings.filter((m) => !upcomingIds.has(m.id))).slice().reverse();
+    if (dashFilter) list = list.filter((m) => dashFilter.ids.has(m.id));
+    if (statusFilter !== 'all') list = list.filter((m) => m.status === statusFilter);
+    const needle = q.trim().toLowerCase();
+    if (needle) {
+      list = list.filter((m) =>
+        m.client_name.toLowerCase().includes(needle) ||
+        (m.client_email || '').toLowerCase().includes(needle) ||
+        (m.client_phone || '').toLowerCase().includes(needle));
+    }
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetings, dashFilter, statusFilter, q]);
+  const pageCount = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageRows = history.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
   const shift = (dir: 1 | -1) => {
     const d = new Date(anchor);
@@ -125,6 +163,17 @@ export default function MeetingsPage() {
           <button onClick={() => setSettingsOpen(true)} className="btn btn-outline"><Settings2 className="w-4 h-4" /> Booking settings</button>
         </div>
       </div>
+
+      {/* Dashboard — clicking a card filters the History list below and
+          switches to List view so the filtered rows are actually visible. */}
+      {!loading && !loadError && (
+        <MeetingsDashboard
+          meetings={meetings}
+          resched={resched}
+          activeFilter={dashFilter}
+          onFilter={(f) => { setDashFilter(f); setPage(0); setStatusFilter('all'); if (f) setView('list'); }}
+        />
+      )}
 
       {/* View toggle */}
       <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
@@ -165,10 +214,52 @@ export default function MeetingsPage() {
           <div className="space-y-2.5 mb-8">
             {upcoming.map((m) => <MeetingRow key={m.id} m={m} member={memberById.get(m.member_id)} onOpen={() => setSelected(m)} fmtDay={fmtDay} fmtTime={fmtTime} />)}
           </div>
-          {past.length > 0 && <>
-            <h2 className="text-[13px] font-bold text-muted uppercase tracking-wide mb-2">Past & other ({past.length})</h2>
-            <div className="space-y-2.5">{past.slice(0, 40).map((m) => <MeetingRow key={m.id} m={m} member={memberById.get(m.member_id)} onOpen={() => setSelected(m)} fmtDay={fmtDay} fmtTime={fmtTime} />)}</div>
-          </>}
+
+          {/* ── Full history: search + status filter + pagination ── */}
+          <div className="mb-2 flex flex-wrap items-center gap-2.5">
+            <h2 className="text-[13px] font-bold text-muted uppercase tracking-wide">History ({history.length})</h2>
+            {dashFilter && (
+              <span className="inline-flex items-center gap-2 rounded-lg bg-[hsl(var(--indigo-soft))] px-2.5 py-1 text-[11.5px] font-semibold text-[#3730A3]">
+                {dashFilter.label}
+                <button onClick={() => { setDashFilter(null); setPage(0); }} className="font-bold hover:opacity-70">✕</button>
+              </span>
+            )}
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-1 rounded-lg bg-surface-2 p-1">
+                {([['all', 'All'], ['upcoming', 'Upcoming'], ['completed', 'Completed'], ['no_show', 'No show'], ['cancelled', 'Cancelled']] as const).map(([k, label]) => (
+                  <button key={k} onClick={() => { setStatusFilter(k); setPage(0); }}
+                    className={cn('rounded-md px-2.5 py-1 text-[11.5px] font-semibold transition', statusFilter === k ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink')}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <input
+                value={q}
+                onChange={(e) => { setQ(e.target.value); setPage(0); }}
+                placeholder="Search name, email, phone…"
+                className="input w-[200px] px-3 py-1.5 text-[12.5px]"
+              />
+            </div>
+          </div>
+          {history.length === 0 ? (
+            <div className="panel panel-pad py-10 text-center text-[12.5px] text-muted">No meetings match.</div>
+          ) : (
+            <>
+              <div className="space-y-2.5">
+                {pageRows.map((m) => <MeetingRow key={m.id} m={m} member={memberById.get(m.member_id)} onOpen={() => setSelected(m)} fmtDay={fmtDay} fmtTime={fmtTime} />)}
+              </div>
+              {pageCount > 1 && (
+                <div className="mt-4 flex items-center justify-between text-[12.5px] text-muted">
+                  <span>Showing <b className="text-ink">{safePage * PAGE_SIZE + 1}–{Math.min(history.length, (safePage + 1) * PAGE_SIZE)}</b> of <b className="text-ink">{history.length}</b></span>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setPage(Math.max(0, safePage - 1))} disabled={safePage === 0} className="btn btn-outline btn-sm disabled:opacity-40">‹ Newer</button>
+                    <span className="num font-semibold text-ink">{safePage + 1} / {pageCount}</span>
+                    <button onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))} disabled={safePage >= pageCount - 1} className="btn btn-outline btn-sm disabled:opacity-40">Older ›</button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </>
       ) : (
         <div className={cn('grid gap-2', view === 'day' ? 'grid-cols-1' : view === 'week' ? 'grid-cols-2 sm:grid-cols-7' : 'grid-cols-7')}>
@@ -199,7 +290,7 @@ export default function MeetingsPage() {
         </div>
       )}
 
-      {selected && <MeetingDrawer m={selected} member={memberById.get(selected.member_id)} onClose={() => setSelected(null)} onStatus={(s) => void setStatus(selected, s)} workspaceId={workspace.id}
+      {selected && <MeetingDrawer m={selected} member={memberById.get(selected.member_id)} onClose={() => setSelected(null)} onStatus={(s) => void setStatus(selected, s)} workspaceId={workspace.id} userId={user.id}
         onNotes={(notes) => { setMeetings((prev) => prev.map((x) => x.id === selected.id ? { ...x, notes } : x)); }}
         onUpdated={(patch) => { setMeetings((prev) => prev.map((x) => x.id === selected.id ? { ...x, ...patch } : x)); setSelected((cur) => cur ? { ...cur, ...patch } : cur); }}
         onDeleted={() => { setMeetings((prev) => prev.filter((x) => x.id !== selected.id)); setSelected(null); }} />}
@@ -228,8 +319,8 @@ function MeetingRow({ m, member, onOpen, fmtDay, fmtTime }: { m: Meeting; member
   );
 }
 
-function MeetingDrawer({ m, member, onClose, onStatus, workspaceId, onNotes, onUpdated, onDeleted }: {
-  m: Meeting; member?: Member; onClose: () => void; onStatus: (s: string) => void; workspaceId: string; onNotes: (n: string) => void; onUpdated: (patch: Partial<Meeting>) => void; onDeleted: () => void;
+function MeetingDrawer({ m, member, onClose, onStatus, workspaceId, userId, onNotes, onUpdated, onDeleted }: {
+  m: Meeting; member?: Member; onClose: () => void; onStatus: (s: string) => void; workspaceId: string; userId: string; onNotes: (n: string) => void; onUpdated: (patch: Partial<Meeting>) => void; onDeleted: () => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -311,13 +402,70 @@ function MeetingDrawer({ m, member, onClose, onStatus, workspaceId, onNotes, onU
     void supabase.from('meeting_activity').select('*').eq('meeting_id', m.id).order('created_at', { ascending: false }).limit(30).then(({ data }) => setActivity((data as Activity[]) || []));
   }, [m.id, supabase]);
 
+  /**
+   * Mirror this meeting's note onto the lead (migration 072).
+   *
+   * A call note is the most valuable thing anyone writes about a lead, and it
+   * used to live only on the meeting. Writing it into `notes` — and refreshing
+   * leads.last_note — is what makes it appear in the lead drawer, the Last note
+   * column, the daily tracker and its CSV export, search, and the AI context.
+   *
+   * ONE note per meeting: edit the meeting note and the same row is updated,
+   * so the lead never collects near-duplicates. Clearing the meeting note
+   * removes the mirror.
+   */
+  async function mirrorNoteToLead(body: string) {
+    if (!m.lead_id) return;               // walk-in / unmatched booking: nothing to attach to
+    const leadId = m.lead_id;
+
+    const { data: existing } = await supabase
+      .from('notes').select('id').eq('meeting_id', m.id).maybeSingle();
+
+    if (!body) {
+      if (existing?.id) await supabase.from('notes').delete().eq('id', existing.id);
+    } else if (existing?.id) {
+      // created_at is deliberately NOT touched: the note belongs to the moment
+      // of the meeting, so a later edit should not jump it to the top of the
+      // lead's timeline.
+      const { data, error } = await supabase
+        .from('notes').update({ body }).eq('id', existing.id).select('id');
+      if (error || !data?.length) throw new Error('The note could not be saved to the lead');
+    } else {
+      const { error } = await supabase.from('notes').insert({
+        lead_id: leadId, workspace_id: workspaceId, body,
+        author_id: userId, meeting_id: m.id,
+      });
+      if (error) throw new Error(error.message);
+    }
+
+    // Recompute the lead's "last note" from the notes table rather than
+    // assuming this one is newest — it may be an edit to an older meeting.
+    const { data: latest } = await supabase
+      .from('notes').select('body, created_at, author_id')
+      .eq('lead_id', leadId).order('created_at', { ascending: false }).limit(1);
+    const top = latest?.[0] as { body: string; created_at: string; author_id: string | null } | undefined;
+    await supabase.from('leads').update({
+      last_note: top?.body ?? null,
+      last_note_at: top?.created_at ?? null,
+      last_note_author_id: top?.author_id ?? null,
+    }).eq('id', leadId);
+  }
+
   async function saveNotes() {
     setSavingNotes(true);
-    await supabase.from('meetings').update({ notes }).eq('id', m.id);
-    await supabase.from('meeting_activity').insert({ meeting_id: m.id, workspace_id: workspaceId, event: 'note_added', meta: {} });
-    onNotes(notes);
-    setSavingNotes(false);
-    toast.success('Notes saved');
+    const body = notes.trim();
+    try {
+      const { error } = await supabase.from('meetings').update({ notes }).eq('id', m.id).select('id');
+      if (error) throw new Error(error.message);
+      await mirrorNoteToLead(body);
+      await supabase.from('meeting_activity').insert({ meeting_id: m.id, workspace_id: workspaceId, event: 'note_added', meta: {} });
+      onNotes(notes);
+      toast.success(m.lead_id ? 'Notes saved — also added to the lead' : 'Notes saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save notes');
+    } finally {
+      setSavingNotes(false);
+    }
   }
 
   const fmt = (s: string) => new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(s));
@@ -397,7 +545,16 @@ function MeetingDrawer({ m, member, onClose, onStatus, workspaceId, onNotes, onU
         <div className="text-[11px] font-bold uppercase tracking-wide text-muted mb-1.5">Meeting notes</div>
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} placeholder="Discussion points, outcomes, next steps…"
           className="w-full px-3 py-2.5 border border-border rounded-lg text-[13px] focus:border-indigo outline-none resize-y mb-2" />
-        <button onClick={saveNotes} disabled={savingNotes} className="btn btn-outline btn-sm mb-5">{savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Save notes</button>
+        <div className="flex items-center gap-2 mb-5">
+          <button onClick={saveNotes} disabled={savingNotes} className="btn btn-outline btn-sm">{savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Save notes</button>
+          {/* Say where the note is going. Silent side effects on client records
+              are how people end up writing things they would not have written. */}
+          <span className="text-[11px] text-muted">
+            {m.lead_id
+              ? 'Also saved to this lead — visible in the lead drawer, leads list and exports.'
+              : 'This meeting is not linked to a lead, so the note stays here only.'}
+          </span>
+        </div>
 
         {/* Reminder history / delivery status */}
         <div className="text-[11px] font-bold uppercase tracking-wide text-muted mb-1.5 flex items-center gap-1.5"><BellRing className="w-3.5 h-3.5" /> Reminders & email delivery</div>

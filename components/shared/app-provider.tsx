@@ -41,6 +41,7 @@ interface AppData {
   deleteLead: (id: string) => Promise<void>;
   toggleSpotlight: (id: string) => Promise<void>;
   setLeadOffer: (id: string, offer: { type: OfferType | null; amount?: number | null; currency?: 'GBP' | 'INR' | 'USD' | null; note?: string | null }) => Promise<void>;
+  setLeadQualification: (id: string, q: { profile?: 'cv' | 'linkedin' | 'both' | null; eligibility?: 'eligible' | 'not_eligible' | null }) => Promise<void>;
   addNote: (leadId: string, body: string) => Promise<void>;
   getNotes: (leadId: string) => Promise<Note[]>;
   recordPayment: (input: Partial<Payment> & { lead_id: string; milestone: Payment['milestone']; amount: number }) => Promise<void>;
@@ -379,6 +380,49 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     );
   }, [supabase, leads, user.id]);
 
+  /**
+   * The two qualification facts a consultant records during the call:
+   * profile received (CV / LinkedIn / both) and eligibility. Saved immediately
+   * with a who/when stamp, same contract as setLeadOffer — these feed the
+   * dashboard denominators, so a silent RLS-filtered non-save here would
+   * quietly corrupt every percentage. The .select('id') row-count check is
+   * what turns that failure mode into a visible error instead.
+   */
+  const setLeadQualification = useCallback(async (
+    id: string,
+    q: { profile?: 'cv' | 'linkedin' | 'both' | null; eligibility?: 'eligible' | 'not_eligible' | null },
+  ) => {
+    const before = leads.find((l) => l.id === id);
+    if (!before) return;
+
+    const patch: Partial<Lead> = {};
+    if ('profile' in q) {
+      patch.profile_received = q.profile ?? null;
+      patch.profile_received_at = q.profile ? new Date().toISOString() : null;
+    }
+    if ('eligibility' in q) {
+      patch.eligibility = q.eligibility ?? null;
+      patch.eligibility_at = q.eligibility ? new Date().toISOString() : null;
+      patch.eligibility_by = q.eligibility ? user.id : null;
+      // A human clicked this — it outranks anything the backfill derived.
+      patch.eligibility_source = q.eligibility ? 'manual' : null;
+    }
+
+    setLeads((prev) => prev.map((l) => l.id === id ? { ...l, ...patch } : l));
+    const { data, error } = await supabase.from('leads').update(patch).eq('id', id).select('id');
+    if (error || !data?.length) {
+      setLeads((prev) => prev.map((l) => l.id === id ? before : l));
+      toast.error(error ? `Couldn't save: ${error.message}` : "Couldn't save — you may not have permission");
+      return;
+    }
+    if ('eligibility' in q) {
+      toast.success(q.eligibility === 'eligible' ? 'Marked eligible'
+        : q.eligibility === 'not_eligible' ? 'Marked not eligible' : 'Eligibility cleared');
+    } else {
+      toast.success(q.profile ? 'Profile recorded' : 'Profile cleared');
+    }
+  }, [supabase, leads, user.id]);
+
   const setMemberPaymentAccess = useCallback(async (userId: string, canView: boolean) => {
     if (role !== 'admin') { toast.error('Only the admin can change this'); return; }
     // Optimistic update of the members list
@@ -414,6 +458,18 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
   }, [supabase, workspace.id, user.id, logActivity]);
 
   const getNotes = useCallback(async (leadId: string): Promise<Note[]> => {
+    // Meeting notes are mirrored onto the lead (migration 072); joining the
+    // meeting lets the drawer label them and show when the call happened.
+    // Falls back to a plain select if the join is unavailable — that is the
+    // case on a deployment where 072 has not been applied yet, and losing a
+    // chip is far better than the Notes tab failing to load at all.
+    const withMeeting = await supabase
+      .from('notes')
+      .select('*, meeting:meetings(starts_at, client_name)')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: false });
+    if (!withMeeting.error) return (withMeeting.data || []) as Note[];
+
     const { data, error } = await supabase.from('notes').select('*').eq('lead_id', leadId).order('created_at', { ascending: false });
     if (error) { toast.error(error.message); return []; }
     return (data || []) as Note[];
@@ -831,7 +887,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     user, workspace, role, leads, payments, activity, cases, followUps, members, loading,
     canViewPayments, canSendEmails, setMemberPaymentAccess,
     refresh, refreshMembers, refreshCases, refreshFollowUps, memberNameById,
-    createLead, updateLead, deleteLead, toggleSpotlight, setLeadOffer, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
+    createLead, updateLead, deleteLead, toggleSpotlight, setLeadOffer, setLeadQualification, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
     createCase, updateCase, updateCaseJourney, sendClientUpdate, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
     createFollowUp, updateFollowUp, deleteFollowUp, completeFollowUp, reopenFollowUp, cancelFollowUp,
   };

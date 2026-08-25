@@ -83,6 +83,17 @@ export interface Lead {
   offer_at?: string | null;
   offer_by?: string | null;
   is_spotlight: boolean;
+  // Lead intelligence (migration 074) — the three facts the dashboards read.
+  // first_response_at is stamped by DB triggers on inbound WhatsApp/email and
+  // is never hand-edited. eligibility NULL means "not reviewed", which is a
+  // real state and deliberately distinct from not_eligible.
+  first_response_at?: string | null;
+  profile_received?: 'cv' | 'linkedin' | 'both' | null;
+  profile_received_at?: string | null;
+  eligibility?: 'eligible' | 'not_eligible' | null;
+  eligibility_at?: string | null;
+  eligibility_by?: string | null;
+  eligibility_source?: 'manual' | 'derived' | null;
   created_at: string;
   created_by: string | null;
   updated_at: string;
@@ -99,6 +110,13 @@ export interface Note {
   body: string;
   author_id: string | null;
   created_at: string;
+  /**
+   * Set when this note is the mirror of a meeting's notes (migration 072).
+   * NULL for a note typed directly on the lead.
+   */
+  meeting_id?: string | null;
+  /** Embedded meeting row, when getNotes could join it — used for the chip. */
+  meeting?: { starts_at: string; client_name: string | null } | null;
 }
 
 export type Currency = 'INR' | 'GBP' | 'USD';
