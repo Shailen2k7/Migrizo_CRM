@@ -78,14 +78,60 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
   const v = rates(cur, eligNow);
   const p = cmp ? rates(cmp, eligCmp) : null;
 
+  // Each month bar is STACKED by what happened to the calls booked that month
+  // — completed, no-show, cancelled, still upcoming. Same footprint as a flat
+  // bar, but you can see at a glance whether no-shows are creeping up.
+  const STRIP_LEGEND = [
+    { label: 'Completed', color: '#3E9C6B', value: 0 },
+    { label: 'No-show',   color: '#EF4444', value: 0 },
+    { label: 'Cancelled', color: '#B7BAC3', value: 0 },
+    { label: 'Upcoming',  color: '#A5B4FC', value: 0 },
+  ];
   const monthItems = useMemo(() => {
-    const out: { key: string; label: string; value: number }[] = [];
+    const out: { key: string; label: string; value: number; segments: { value: number; color: string; label: string }[] }[] = [];
     for (let m = 0; m <= now.getMonth(); m++) {
       const mp = periods.get(`m${m}`)!;
-      out.push({ key: mp.key, label: mp.short, value: meetings.filter((x) => inPeriod(x.created_at, mp)).length });
+      const booked = meetings.filter((x) => inPeriod(x.created_at, mp));
+      out.push({
+        key: mp.key, label: mp.short, value: booked.length,
+        segments: [
+          { label: 'Completed', color: '#3E9C6B', value: booked.filter((x) => x.status === 'completed').length },
+          { label: 'No-show',   color: '#EF4444', value: booked.filter((x) => x.status === 'no_show').length },
+          { label: 'Cancelled', color: '#B7BAC3', value: booked.filter((x) => x.status === 'cancelled').length },
+          { label: 'Upcoming',  color: '#A5B4FC', value: booked.filter((x) => x.status === 'upcoming').length },
+        ],
+      });
     }
     return out;
   }, [periods, meetings, now]);
+
+  // ── Where calls get lost: no-show rate by weekday + 2-hour slot ──────────
+  // Last 90 days of RESOLVED calls, and a slot only qualifies with 4+ calls —
+  // one ghosted Friday is an anecdote, six is a pattern worth closing the
+  // slot over. This is the panel's only judgment call, and it is directly
+  // actionable in Booking settings.
+  const lostSlots = useMemo(() => {
+    const cutoff = Date.now() - 90 * 86_400_000;
+    const buckets = new Map<string, { label: string; ns: number; total: number }>();
+    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const hour12 = (h: number) => `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'AM' : 'PM'}`;
+    meetings.forEach((m) => {
+      if (m.status !== 'completed' && m.status !== 'no_show' && m.status !== 'cancelled') return;
+      const d = new Date(m.starts_at);
+      if (d.getTime() < cutoff) return;
+      const band = Math.floor(d.getHours() / 2) * 2;
+      const key = `${d.getDay()}-${band}`;
+      const b = buckets.get(key) ?? { label: `${DAYS[d.getDay()]} · ${hour12(band)}–${hour12(band + 2)}`, ns: 0, total: 0 };
+      b.total += 1;
+      if (m.status === 'no_show') b.ns += 1;
+      buckets.set(key, b);
+    });
+    return [...buckets.values()]
+      .filter((b) => b.total >= 4 && b.ns > 0)
+      .map((b) => ({ ...b, rate: (b.ns / b.total) * 100 }))
+      .sort((a, b) => b.rate - a.rate)
+      .slice(0, 3);
+  }, [meetings]);
 
   const pick = (label: string, list: DashMeeting[]) => {
     const f: MeetFilter = { label, ids: new Set(list.map((m) => m.id)) };
@@ -172,101 +218,130 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
           onClick={() => pick('Dropped, not rebooked', [...cur.ns, ...cur.can])} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-        {/* Call flow: year strip and this period's outcomes, half each —
-            the same split as the Lead flow panel so the two dashboards read
-            as one product. */}
-        <div className="panel min-w-0 p-5">
-          <div className="grid gap-5 lg:grid-cols-2 lg:divide-x lg:divide-border">
-            <div className="min-w-0">
-              <PanelTitle sub={period.grain === 'month'
-                ? 'Click any month to compare against it'
-                : 'Select a month above to compare month-to-month'}>
-                {now.getFullYear()} by month — calls booked
-              </PanelTitle>
-              <MonthStrip items={monthItems} currentKey={period.grain === 'month' ? period.key : null}
-                compareKey={compare && compare.grain === 'month' ? compare.key : null}
-                enabled={period.grain === 'month'}
-                onPick={(k) => setCmpKey(k)} />
-            </div>
-            <div className="min-w-0 lg:pl-5">
-              <PanelTitle sub="Percentages are shares of the calls resolved this period.">
-                Outcomes — {period.short}
-              </PanelTitle>
-              {cur.due.length === 0 ? (
-                <div className="py-6 text-center text-[12.5px] text-muted">No calls due in this period.</div>
+      {/* Call flow is FULL width: it used to sit beside Needs attention in a
+          grid, and equal-height grid columns stretched it with dead air while
+          squeezing the months until August scrolled out of view. Full width
+          gives every month room; Needs attention gets its own row below. */}
+      <div className="panel mb-4 min-w-0 p-5">
+        <div className="grid gap-6 lg:grid-cols-2 lg:divide-x lg:divide-border">
+          <div className="min-w-0">
+            <PanelTitle sub={period.grain === 'month'
+              ? 'Each bar shows what happened to that month\u2019s bookings \u00b7 click one to compare'
+              : 'Select a month above to compare month-to-month'}>
+              {now.getFullYear()} by month — calls booked
+            </PanelTitle>
+            <MonthStrip items={monthItems} currentKey={period.grain === 'month' ? period.key : null}
+              compareKey={compare && compare.grain === 'month' ? compare.key : null}
+              enabled={period.grain === 'month'}
+              onPick={(k) => setCmpKey(k)}
+              legend={STRIP_LEGEND} />
+          </div>
+          <div className="min-w-0 lg:pl-6">
+            <PanelTitle sub="Percentages are shares of the calls resolved this period.">
+              Outcomes — {period.short}
+            </PanelTitle>
+            {cur.due.length === 0 ? (
+              <div className="py-6 text-center text-[12.5px] text-muted">No calls due in this period.</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                {[
+                  { label: 'Completed', n: cur.done.length,  fg: '#047857', bg: '#E6F7EE' },
+                  { label: 'No-show',   n: cur.ns.length,    fg: '#B91C1C', bg: '#FDECEC' },
+                  { label: 'Cancelled', n: cur.can.length,   fg: '#6B7280', bg: '#F3F4F6' },
+                  { label: 'Rebooked',  n: cur.rebooked,     fg: '#6D28D9', bg: '#F1ECFE' },
+                ].map((o) => (
+                  <div key={o.label} className="rounded-xl border border-border p-3">
+                    <div className="num text-[20px] font-extrabold leading-none" style={{ color: o.fg }}>{o.n}</div>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-muted">{o.label}</span>
+                      <span className="rounded-md px-1.5 py-0.5 text-[10px] font-extrabold" style={{ background: o.bg, color: o.fg }}>
+                        {o.label === 'Rebooked'
+                          ? fmtPct(pctOf(o.n, cur.ns.length + cur.can.length))
+                          : fmtPct(pctOf(o.n, cur.resolved))}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Where calls get lost — the actionable half of the outcomes.
+                A slot with a bad no-show rate is something you can close in
+                Booking settings this afternoon. */}
+            <div className="mt-4">
+              <div className="mb-1.5 text-[10px] font-extrabold uppercase tracking-[0.07em] text-muted">
+                Where calls get lost <span className="font-bold text-faint normal-case tracking-normal">\u00b7 last 90 days, slots with 4+ calls</span>
+              </div>
+              {lostSlots.length === 0 ? (
+                <div className="rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-[12px] text-muted">
+                  No slot stands out yet — no time of the week is getting ghosted more than the rest.
+                </div>
               ) : (
-                <div className="grid grid-cols-2 gap-2.5">
-                  {[
-                    { label: 'Completed', n: cur.done.length,  fg: '#047857', bg: '#E6F7EE' },
-                    { label: 'No-show',   n: cur.ns.length,    fg: '#B91C1C', bg: '#FDECEC' },
-                    { label: 'Cancelled', n: cur.can.length,   fg: '#6B7280', bg: '#F3F4F6' },
-                    { label: 'Rebooked',  n: cur.rebooked,     fg: '#6D28D9', bg: '#F1ECFE' },
-                  ].map((o) => (
-                    <div key={o.label} className="rounded-xl border border-border p-3">
-                      <div className="num text-[20px] font-extrabold leading-none" style={{ color: o.fg }}>{o.n}</div>
-                      <div className="mt-1 flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-muted">{o.label}</span>
-                        <span className="rounded-md px-1.5 py-0.5 text-[10px] font-extrabold" style={{ background: o.bg, color: o.fg }}>
-                          {o.label === 'Rebooked'
-                            ? fmtPct(pctOf(o.n, cur.ns.length + cur.can.length))
-                            : fmtPct(pctOf(o.n, cur.resolved))}
-                        </span>
-                      </div>
+                <div className="space-y-1.5">
+                  {lostSlots.map((sl) => (
+                    <div key={sl.label} className="flex items-center gap-3 rounded-xl border border-border px-3 py-2">
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">{sl.label}</span>
+                      <span className="num text-[11px] text-muted">{sl.ns} of {sl.total}</span>
+                      <span className="num rounded-md bg-[#FDECEC] px-2 py-0.5 text-[11px] font-extrabold text-[#B91C1C]">
+                        {sl.rate.toFixed(0)}% no-show
+                      </span>
                     </div>
                   ))}
+                  <div className="pt-0.5 text-[10.5px] text-faint">Consider closing or moving these slots in Booking settings.</div>
                 </div>
               )}
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Needs attention: with one caller, the action list beats a
-            leaderboard of one. Every row is work someone should do today. */}
-        <div className="panel min-w-0 p-5">
-          <PanelTitle sub="Every row here is an action for today, not a statistic.">
-            <span className="inline-flex items-center gap-1.5">
-              <AlertTriangle className="h-3.5 w-3.5 text-[#B45309]" /> Needs attention
-            </span>
-          </PanelTitle>
-          {attention.dropped.length === 0 && attention.noCall.length === 0 ? (
-            <div className="py-6 text-center text-[12.5px] text-muted">Nothing waiting — every dropped call is handled and every eligible lead has a call booked.</div>
-          ) : (
-            <div className="space-y-1">
-              {attention.dropped.slice(0, 4).map((m) => (
-                <div key={m.id} className="flex items-center gap-2.5 rounded-xl border border-border px-3 py-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[12.5px] font-semibold">{m.client_name}</div>
-                    <div className="text-[11px] text-muted">
-                      {new Date(m.starts_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · not rebooked yet
-                    </div>
-                  </div>
-                  <span className="chip whitespace-nowrap"
-                    style={m.status === 'no_show'
-                      ? { background: '#FDECEC', color: '#B91C1C', border: 'none' }
-                      : { background: '#F3F4F6', color: '#6B7280', border: 'none' }}>
-                    {m.status === 'no_show' ? 'No show' : 'Cancelled'}
-                  </span>
+      {/* Needs attention — full-width row, cards flowing across instead of a
+          tall skinny column. Every card is an action for today. */}
+      <div className="panel min-w-0 p-5">
+        <PanelTitle sub="Every card here is an action for today, not a statistic.">
+          <span className="inline-flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5 text-[#B45309]" /> Needs attention
+          </span>
+        </PanelTitle>
+        {attention.dropped.length === 0 && attention.noCall.length === 0 ? (
+          <div className="py-4 text-center text-[12.5px] text-muted">Nothing waiting — every dropped call is handled and every eligible lead has a call booked.</div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {attention.noCall.length > 0 && (
+              <div className="rounded-xl border border-[#F3D9A4] bg-[#FEF6E7] px-3.5 py-2.5">
+                <div className="text-[13px] font-bold text-[#854F0B]">
+                  {attention.noCall.length} eligible lead{attention.noCall.length === 1 ? '' : 's'} \u00b7 no call booked
                 </div>
-              ))}
-              {attention.dropped.length > 4 && (
-                <div className="px-1 pt-0.5 text-[11px] text-muted">+ {attention.dropped.length - 4} more dropped calls in the last 30 days</div>
-              )}
-              {attention.noCall.length > 0 && (
-                <div className="mt-2.5 rounded-xl border border-[#F3D9A4] bg-[#FEF6E7] px-3 py-2.5">
-                  <div className="text-[12.5px] font-bold text-[#854F0B]">
-                    {attention.noCall.length} eligible lead{attention.noCall.length === 1 ? '' : 's'} with no call booked
-                  </div>
-                  <div className="mt-0.5 truncate text-[11px] text-[#A16207]">
-                    {attention.noCall.slice(0, 3).map((l) => l.full_name).join(' · ')}
-                    {attention.noCall.length > 3 ? ' …' : ''}
-                  </div>
-                  <div className="mt-1 text-[10.5px] text-[#A16207]/80">The most expensive list in the CRM — they said yes and nobody booked the call.</div>
+                <div className="mt-0.5 truncate text-[11px] text-[#A16207]">
+                  {attention.noCall.slice(0, 3).map((l) => l.full_name).join(' \u00b7 ')}
+                  {attention.noCall.length > 3 ? ' \u2026' : ''}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+                <div className="mt-1 text-[10.5px] text-[#A16207]/80">They said yes and nobody booked the call.</div>
+              </div>
+            )}
+            {attention.dropped.slice(0, 7).map((m) => (
+              <div key={m.id} className="flex items-center gap-2.5 rounded-xl border border-border px-3.5 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[12.5px] font-semibold">{m.client_name}</div>
+                  <div className="text-[11px] text-muted">
+                    {new Date(m.starts_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} \u00b7 not rebooked yet
+                  </div>
+                </div>
+                <span className="chip whitespace-nowrap"
+                  style={m.status === 'no_show'
+                    ? { background: '#FDECEC', color: '#B91C1C', border: 'none' }
+                    : { background: '#F3F4F6', color: '#6B7280', border: 'none' }}>
+                  {m.status === 'no_show' ? 'No show' : 'Cancelled'}
+                </span>
+              </div>
+            ))}
+            {attention.dropped.length > 7 && (
+              <div className="flex items-center justify-center rounded-xl border border-dashed border-border px-3.5 py-2.5 text-[12px] font-semibold text-muted">
+                + {attention.dropped.length - 7} more in the last 30 days
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

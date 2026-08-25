@@ -69,11 +69,26 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
   const v = rate(cur);
   const p = cmp ? rate(cmp) : null;
 
+  // Each month bar stacks responded (indigo) over silent (grey) — the strip
+  // answers "is our response rate improving month over month?" at a glance,
+  // in the same footprint a flat bar wasted.
+  const STRIP_LEGEND = [
+    { label: 'Responded', color: '#4F46E5', value: 0 },
+    { label: 'No reply yet', color: '#D6D9E3', value: 0 },
+  ];
   const monthItems = useMemo(() => {
-    const out: { key: string; label: string; value: number }[] = [];
+    const out: { key: string; label: string; value: number; segments: { value: number; color: string; label: string }[] }[] = [];
     for (let m = 0; m <= now.getMonth(); m++) {
       const mp = periods.get(`m${m}`)!;
-      out.push({ key: mp.key, label: mp.short, value: real.filter((l) => inPeriod(l.created_at, mp)).length });
+      const created = real.filter((l) => inPeriod(l.created_at, mp));
+      const responded = created.filter((l) => !!l.first_response_at).length;
+      out.push({
+        key: mp.key, label: mp.short, value: created.length,
+        segments: [
+          { label: 'Responded', color: '#4F46E5', value: responded },
+          { label: 'No reply yet', color: '#D6D9E3', value: created.length - responded },
+        ],
+      });
     }
     return out;
   }, [periods, real, now]);
@@ -174,7 +189,8 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
             <MonthStrip items={monthItems} currentKey={period.grain === 'month' ? period.key : null}
               compareKey={compare && compare.grain === 'month' ? compare.key : null}
               enabled={period.grain === 'month'}
-              onPick={(k) => setCmpKey(k)} />
+              onPick={(k) => setCmpKey(k)}
+              legend={STRIP_LEGEND} />
           </div>
           <div className="min-w-0 lg:pl-5">
             <PanelTitle sub="Each % is the share of this period's leads that reached the stage.">

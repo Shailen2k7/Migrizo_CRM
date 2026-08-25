@@ -58,47 +58,80 @@ export function StatCard({ label, value, foot, delta, accent, active, onClick }:
   );
 }
 
+export interface StripSegment { value: number; color: string; label: string }
+
 /**
  * Months-of-the-year strip. Every bar is a control: clicking one compares the
  * current period against that month. Inert (dimmed) while the selected period
  * is a week — a week is never compared against a month.
+ *
+ * A bar can be STACKED: pass `segments` and each month shows its composition
+ * (responded vs not, completed vs no-show vs cancelled…) instead of one flat
+ * block — same footprint, twice the story. The value label stays the total.
  */
-export function MonthStrip({ items, currentKey, compareKey, enabled, onPick }: {
-  items: { key: string; label: string; value: number }[];
+export function MonthStrip({ items, currentKey, compareKey, enabled, onPick, legend }: {
+  items: { key: string; label: string; value: number; segments?: StripSegment[] }[];
   currentKey: string | null; compareKey: string | null; enabled: boolean;
   onPick: (key: string) => void;
+  legend?: StripSegment[];
 }) {
   const max = Math.max(...items.map((i) => i.value), 1);
   return (
-    <div className={cn('flex items-end gap-2 overflow-x-auto pb-1', !enabled && 'opacity-55')}>
-      {items.map((it) => {
-        const isCur = it.key === currentKey;
-        const isCmp = it.key === compareKey;
-        return (
-          <button
-            key={it.key}
-            onClick={() => { if (enabled && !isCur) onPick(it.key); }}
-            title={enabled ? (isCur ? `${it.label} — current period` : `Compare with ${it.label}`) : 'Select a month above to compare month-to-month'}
-            className={cn(
-              'flex min-w-[44px] flex-1 flex-col items-center gap-1 rounded-xl px-1 pb-1.5 pt-1.5 transition',
-              isCur ? 'bg-[hsl(var(--indigo-soft))]' : isCmp ? 'bg-[#FEF6E7]' : enabled ? 'hover:bg-surface-2' : '',
-              (!enabled || isCur) && 'cursor-default',
-            )}
-          >
-            <span className={cn('num text-[11.5px] font-bold', isCur ? 'text-indigo' : isCmp ? 'text-[#B45309]' : 'text-muted')}>{it.value}</span>
-            <span className="flex h-[52px] w-full items-end">
-              <span
-                className="block w-full rounded-t-[5px] transition-all"
-                style={{
-                  height: `${Math.max(8, Math.round((it.value / max) * 100))}%`,
-                  background: isCur ? '#4F46E5' : isCmp ? '#C2740A' : '#D6D9E3',
-                }}
-              />
+    <div>
+      <div className={cn('flex items-end gap-2 overflow-x-auto pb-1', !enabled && 'opacity-55')}>
+        {items.map((it) => {
+          const isCur = it.key === currentKey;
+          const isCmp = it.key === compareKey;
+          const total = Math.max(1, it.value);
+          const barTitle = it.segments?.length
+            ? `${it.label}: ${it.segments.filter((s) => s.value > 0).map((s) => `${s.value} ${s.label.toLowerCase()}`).join(' · ') || 'nothing yet'}`
+            : `${it.label} — ${it.value}`;
+          return (
+            <button
+              key={it.key}
+              onClick={() => { if (enabled && !isCur) onPick(it.key); }}
+              title={enabled ? (isCur ? `${barTitle} (current period)` : `${barTitle} — click to compare`) : 'Select a month above to compare month-to-month'}
+              className={cn(
+                'flex min-w-[44px] flex-1 flex-col items-center gap-1 rounded-xl px-1 pb-1.5 pt-1.5 transition',
+                isCur ? 'bg-[hsl(var(--indigo-soft))]' : isCmp ? 'bg-[#FEF6E7]' : enabled ? 'hover:bg-surface-2' : '',
+                (!enabled || isCur) && 'cursor-default',
+              )}
+            >
+              <span className={cn('num text-[11.5px] font-bold', isCur ? 'text-indigo' : isCmp ? 'text-[#B45309]' : 'text-muted')}>{it.value}</span>
+              <span className="flex h-[64px] w-full items-end">
+                {it.segments?.length ? (
+                  <span
+                    className="flex w-full flex-col-reverse overflow-hidden rounded-t-[5px] transition-all"
+                    style={{ height: `${Math.max(8, Math.round((it.value / max) * 100))}%`, outline: isCmp ? '1.5px solid #C2740A' : undefined }}
+                  >
+                    {it.segments.map((s) => (
+                      <span key={s.label} style={{ height: `${(s.value / total) * 100}%`, background: s.color }} />
+                    ))}
+                  </span>
+                ) : (
+                  <span
+                    className="block w-full rounded-t-[5px] transition-all"
+                    style={{
+                      height: `${Math.max(8, Math.round((it.value / max) * 100))}%`,
+                      background: isCur ? '#4F46E5' : isCmp ? '#C2740A' : '#D6D9E3',
+                    }}
+                  />
+                )}
+              </span>
+              <span className={cn('text-[10.5px] font-bold', isCur ? 'text-indigo' : isCmp ? 'text-[#B45309]' : 'text-faint')}>{it.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      {legend && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3.5 gap-y-1">
+          {legend.map((s) => (
+            <span key={s.label} className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-muted">
+              <span className="h-2 w-2 rounded-[3px]" style={{ background: s.color }} /> {s.label}
             </span>
-            <span className={cn('text-[10.5px] font-bold', isCur ? 'text-indigo' : isCmp ? 'text-[#B45309]' : 'text-faint')}>{it.label}</span>
-          </button>
-        );
-      })}
+          ))}
+        </div>
+      )}
     </div>
   );
 }
