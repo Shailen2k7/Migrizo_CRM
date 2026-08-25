@@ -173,42 +173,52 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-        {/* Call flow: year strip + outcome bars in one panel */}
+        {/* Call flow: year strip and this period's outcomes, half each —
+            the same split as the Lead flow panel so the two dashboards read
+            as one product. */}
         <div className="panel min-w-0 p-5">
-          <PanelTitle sub={period.grain === 'month'
-            ? 'Click any month to compare against it'
-            : 'Select a month above to compare month-to-month'}>
-            Call flow — {now.getFullYear()} by month, then outcomes for {period.short}
-          </PanelTitle>
-          <MonthStrip items={monthItems} currentKey={period.grain === 'month' ? period.key : null}
-            compareKey={compare && compare.grain === 'month' ? compare.key : null}
-            enabled={period.grain === 'month'}
-            onPick={(k) => setCmpKey(k)} />
-          <div className="my-4 border-t border-border" />
-          {cur.due.length === 0 ? (
-            <div className="py-6 text-center text-[12.5px] text-muted">No calls due in this period.</div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-              {[
-                { label: 'Completed', n: cur.done.length,  fg: '#047857', bg: '#E6F7EE' },
-                { label: 'No-show',   n: cur.ns.length,    fg: '#B91C1C', bg: '#FDECEC' },
-                { label: 'Cancelled', n: cur.can.length,   fg: '#6B7280', bg: '#F3F4F6' },
-                { label: 'Rebooked',  n: cur.rebooked,     fg: '#6D28D9', bg: '#F1ECFE' },
-              ].map((o) => (
-                <div key={o.label} className="rounded-xl border border-border p-3">
-                  <div className="num text-[20px] font-extrabold leading-none" style={{ color: o.fg }}>{o.n}</div>
-                  <div className="mt-1 flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-muted">{o.label}</span>
-                    <span className="rounded-md px-1.5 py-0.5 text-[10px] font-extrabold" style={{ background: o.bg, color: o.fg }}>
-                      {o.label === 'Rebooked'
-                        ? fmtPct(pctOf(o.n, cur.ns.length + cur.can.length))
-                        : fmtPct(pctOf(o.n, cur.resolved))}
-                    </span>
-                  </div>
-                </div>
-              ))}
+          <div className="grid gap-5 lg:grid-cols-2 lg:divide-x lg:divide-border">
+            <div className="min-w-0">
+              <PanelTitle sub={period.grain === 'month'
+                ? 'Click any month to compare against it'
+                : 'Select a month above to compare month-to-month'}>
+                {now.getFullYear()} by month — calls booked
+              </PanelTitle>
+              <MonthStrip items={monthItems} currentKey={period.grain === 'month' ? period.key : null}
+                compareKey={compare && compare.grain === 'month' ? compare.key : null}
+                enabled={period.grain === 'month'}
+                onPick={(k) => setCmpKey(k)} />
             </div>
-          )}
+            <div className="min-w-0 lg:pl-5">
+              <PanelTitle sub="Percentages are shares of the calls resolved this period.">
+                Outcomes — {period.short}
+              </PanelTitle>
+              {cur.due.length === 0 ? (
+                <div className="py-6 text-center text-[12.5px] text-muted">No calls due in this period.</div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2.5">
+                  {[
+                    { label: 'Completed', n: cur.done.length,  fg: '#047857', bg: '#E6F7EE' },
+                    { label: 'No-show',   n: cur.ns.length,    fg: '#B91C1C', bg: '#FDECEC' },
+                    { label: 'Cancelled', n: cur.can.length,   fg: '#6B7280', bg: '#F3F4F6' },
+                    { label: 'Rebooked',  n: cur.rebooked,     fg: '#6D28D9', bg: '#F1ECFE' },
+                  ].map((o) => (
+                    <div key={o.label} className="rounded-xl border border-border p-3">
+                      <div className="num text-[20px] font-extrabold leading-none" style={{ color: o.fg }}>{o.n}</div>
+                      <div className="mt-1 flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-muted">{o.label}</span>
+                        <span className="rounded-md px-1.5 py-0.5 text-[10px] font-extrabold" style={{ background: o.bg, color: o.fg }}>
+                          {o.label === 'Rebooked'
+                            ? fmtPct(pctOf(o.n, cur.ns.length + cur.can.length))
+                            : fmtPct(pctOf(o.n, cur.resolved))}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Needs attention: with one caller, the action list beats a

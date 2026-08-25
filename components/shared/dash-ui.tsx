@@ -125,24 +125,29 @@ export function Funnel({ steps, leakNoun }: { steps: FunnelStep[]; leakNoun: str
     <>
       <div className="flex items-end gap-2.5 overflow-x-auto pb-1 pt-4">
         {steps.map((s, i) => {
-          const h = Math.max(7, Math.round((s.value / steps[0].value) * 100));
-          const conv = i === 0 ? null : Math.round((s.value / Math.max(1, steps[i - 1].value)) * 1000) / 10;
+          // Share of the STARTING cohort, never step-vs-previous-step. Real
+          // data taught us why: derived eligibility means "Reviewed" can be
+          // larger than "Responded" (phone-call replies are not tracked yet),
+          // and step-over-step then prints garbage like "20900% · lost −209".
+          // Share-of-start is always 0–100% and always means the same thing.
+          const h = Math.min(100, Math.max(7, Math.round((s.value / steps[0].value) * 100)));
+          const share = i === 0 ? null : Math.round((s.value / steps[0].value) * 1000) / 10;
           const lost = i === 0 ? 0 : steps[i - 1].value - s.value;
           return (
-            <div key={s.label} className="relative min-w-[96px] flex-1">
+            <div key={s.label} className="relative min-w-[84px] flex-1">
               {i === biggest.i && biggest.lost > 0 && (
                 <span className="absolute -top-3.5 left-0 z-[2] -translate-x-1/2 whitespace-nowrap rounded-md border border-[#F7CFCF] bg-[#FDECEC] px-1.5 py-0.5 text-[10px] font-extrabold text-[#B91C1C]">
                   −{biggest.lost}
                 </span>
               )}
               <div className="flex h-[84px] items-end">
-                <span className="block w-full rounded-t-lg bg-indigo opacity-85 transition group-hover:opacity-100" style={{ height: `${h}%`, background: '#4F46E5' }} />
+                <span className="block w-full rounded-t-lg opacity-85 transition" style={{ height: `${h}%`, background: '#4F46E5' }} />
               </div>
               <div className="border-t-2 border-border-strong pt-2">
                 <div className="num text-[18px] font-extrabold leading-none tracking-tight">{s.value}</div>
                 <div className="mt-0.5 text-[11px] text-muted">{s.label}</div>
-                {conv !== null
-                  ? <div className="mt-0.5 text-[10.5px] font-bold text-indigo">{conv}% <span className="font-semibold text-faint">· lost {lost}</span></div>
+                {share !== null
+                  ? <div className="mt-0.5 text-[10.5px] font-bold text-indigo">{share}%{lost > 0 && <span className="font-semibold text-faint"> · lost {lost}</span>}</div>
                   : <div className="mt-0.5 text-[10.5px] font-bold text-faint">start</div>}
               </div>
             </div>

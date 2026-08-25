@@ -160,25 +160,34 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
           onClick={() => pick('Not eligible', nel)} />
       </div>
 
-      {/* Lead flow: the year strip and the funnel share one panel — they are
-          the same story at two zoom levels, so they live together. */}
+      {/* Lead flow: the year strip and the funnel are one story at two zoom
+          levels, so they share one panel — side by side, half each, divided by
+          a hairline. Stacked again only when the screen is too narrow. */}
       <div className="panel p-5">
-        <PanelTitle sub={period.grain === 'month'
-          ? 'Click any month to compare against it · hover a funnel bar for the exact drop'
-          : 'Select a month above to compare month-to-month'}>
-          Lead flow — {now.getFullYear()} by month, then the funnel for {period.short}
-        </PanelTitle>
-        <MonthStrip items={monthItems} currentKey={period.grain === 'month' ? period.key : null}
-          compareKey={compare && compare.grain === 'month' ? compare.key : null}
-          enabled={period.grain === 'month'}
-          onPick={(k) => setCmpKey(k)} />
-        <div className="my-4 border-t border-border" />
-        <Funnel steps={funnelSteps} leakNoun="leads" />
-        {!recording && (
-          <div className="mt-3 text-[11.5px] text-muted">
-            Profile and eligibility are not being recorded yet — set them in the lead drawer (under Stage) and this funnel gains its Profile, Reviewed and Eligible stages automatically.
+        <div className="grid gap-5 lg:grid-cols-2 lg:divide-x lg:divide-border">
+          <div className="min-w-0">
+            <PanelTitle sub={period.grain === 'month'
+              ? 'Click any month to compare against it'
+              : 'Select a month above to compare month-to-month'}>
+              {now.getFullYear()} by month — leads created
+            </PanelTitle>
+            <MonthStrip items={monthItems} currentKey={period.grain === 'month' ? period.key : null}
+              compareKey={compare && compare.grain === 'month' ? compare.key : null}
+              enabled={period.grain === 'month'}
+              onPick={(k) => setCmpKey(k)} />
           </div>
-        )}
+          <div className="min-w-0 lg:pl-5">
+            <PanelTitle sub="Each % is the share of this period's leads that reached the stage.">
+              Lead funnel — {period.short}
+            </PanelTitle>
+            <Funnel steps={funnelSteps} leakNoun="leads" />
+            {!recording && (
+              <div className="mt-3 text-[11.5px] text-muted">
+                Profile and eligibility are not being recorded yet — set them in the lead drawer and this funnel gains its Profile, Reviewed and Eligible stages automatically.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
