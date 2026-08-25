@@ -685,7 +685,8 @@ function renderProcessIFV(lead: Pick<Lead, 'full_name'>): { subject: string; htm
 
 // ---------------------------------------------------------------------------
 // 3) INVOICE — world-class milestone invoice.
-//    Company: Grownmind Educational Services Pvt Ltd · GSTIN 09AAECG9536E1ZF
+//    Company: Migrizo Ventures Pvt Ltd (formerly Grownmind Educational
+//    Services Pvt Ltd) · GSTIN 09AAECG9536E1ZF — unchanged by the rename.
 //    Tax-inclusive, CGST/SGST 0% (matches the existing Zoho invoice treatment).
 // ---------------------------------------------------------------------------
 
@@ -699,6 +700,9 @@ const BANK_ROW = (k: string, v: string, strong = false) =>
 const INDIA_BANK_BLOCK = `
   <div style="font-size:10px;font-weight:800;color:${MUTED};letter-spacing:0.5px;margin-bottom:6px;">BANK TRANSFER · INDIA (INR)</div>
   <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:11.5px;line-height:1.8;">
+    ${/* DELIBERATELY the old name: this must match what ICICI holds on the
+          account, or the client's transfer is rejected on a name check. Change
+          it only once the bank's own records have been updated. */ ''}
     ${BANK_ROW('Account Name', 'Grownmind Educational Services Pvt Ltd', true)}
     ${BANK_ROW('Bank', 'ICICI Bank, Noida — Sector 63')}
     ${BANK_ROW('Account No', '081605010665', true)}
@@ -780,7 +784,9 @@ export function renderInvoice(
       <tr>
         <td width="48%" valign="top" style="background:${BG};border-radius:10px;padding:16px 18px;">
           <div style="font-size:11px;font-weight:800;color:${MUTED};letter-spacing:0.8px;">FROM</div>
-          <div style="font-size:15px;font-weight:800;color:${NAVY};margin-top:6px;line-height:1.35;">Grownmind Educational Services Pvt Ltd</div>
+          <div style="font-size:15px;font-weight:800;color:${NAVY};margin-top:6px;line-height:1.35;">Migrizo Ventures Pvt Ltd</div>
+          <!-- GSTIN is unchanged by the rename — a company name change does not
+               issue a new one. -->
           <div style="font-size:13px;color:#4A5162;margin-top:6px;line-height:1.6;">GSTIN: 09AAECG9536E1ZF · India</div>
           <div style="font-size:13px;color:#4A5162;line-height:1.6;">Brand: Migrizo · www.migrizo.com</div>
         </td>
@@ -875,7 +881,7 @@ export function renderInvoice(
       <tr><td>
         <img src="${SIGNATURE_URL}" alt="Authorized signature" width="150" style="display:block;height:auto;margin-bottom:2px;"/>
         <div style="border-top:1px solid #D9DEE9;padding-top:5px;font-size:11.5px;color:${MUTED};line-height:1.6;width:230px;">
-          Authorized Signatory: <b style="color:${INK};">Shailendra Pathak</b><br/>Grownmind Educational Services Pvt Ltd (Migrizo)
+          Authorized Signatory: <b style="color:${INK};">Shailendra Pathak</b><br/>Migrizo Ventures Pvt Ltd
         </div>
       </td></tr>
     </table>
@@ -883,6 +889,6 @@ export function renderInvoice(
   return {
     subject: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} — ${milestone} · Migrizo`,
     html: shell(`Invoice ${invoiceNo}`, body, `${milestone} — ${money(amount, currency)} · ${isPaid ? 'Paid' : 'Due on receipt'}`),
-    text: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} from Migrizo (Grownmind Educational Services Pvt Ltd). ${milestone} Fee — ${visa}: ${money(amount, currency)}. ${isPaid ? 'Payment received, thank you.' : 'Pay by bank transfer — UK: M4 Investment Ltd, Revolut Bank, A/C 94649332, Sort Code 04-29-09. India: Grownmind Educational Services Pvt Ltd, ICICI A/C 081605010665, IFSC ICIC0000816. UPI: grownmind@icici.'}`,
+    text: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} from Migrizo Ventures Pvt Ltd. ${milestone} Fee — ${visa}: ${money(amount, currency)}. ${isPaid ? 'Payment received, thank you.' : 'Pay by bank transfer — UK: M4 Investment Ltd, Revolut Bank, A/C 94649332, Sort Code 04-29-09. India: Grownmind Educational Services Pvt Ltd, ICICI A/C 081605010665, IFSC ICIC0000816. UPI: grownmind@icici.'}`,
   };
 }
