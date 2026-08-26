@@ -160,6 +160,15 @@ export async function POST(req: NextRequest) {
     await heartbeat(out);
     return NextResponse.json({ ok: true, ...out });
   }
+  // Master switch (076): one toggle for the whole cold+hot engine. The intake
+  // autopilot has its own drain and deliberately ignores this.
+  const { data: masterRow } = await admin.from('whatsapp_settings')
+    .select('campaigns_paused').eq('workspace_id', wsId).maybeSingle();
+  if (masterRow?.campaigns_paused === true) {
+    const out = { sent: 0, skipped: 'campaigns_paused' };
+    await heartbeat(out);
+    return NextResponse.json({ ok: true, ...out });
+  }
   if (!dryRun && !g.connected) {
     const out = { sent: 0, skipped: 'not_connected' };
     await heartbeat(out);

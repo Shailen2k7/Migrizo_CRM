@@ -54,6 +54,9 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   // Review-and-edit before sending. Which document the editor holds, plus the
   // discount captured at open time so the preview and the send agree.
   const [docEditor, setDocEditor] = useState<null | { type: 'sla' | 'process'; discount?: number }>(null);
+  // The formatted CV text (076) — the durable copy of a file that was read
+  // once and deleted. Opens in a full modal, not squeezed into a Row.
+  const [showProfile, setShowProfile] = useState(false);
 
   const fetchDocPreview = async (): Promise<{ subject: string; html: string } | null> => {
     if (!lead || !docEditor) return null;
@@ -463,6 +466,13 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                           ]}
                           size="sm"
                         />
+                        {effectiveLead.profile_text && (
+                          <button
+                            onClick={() => setShowProfile(true)}
+                            className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[12px] font-medium text-ink transition hover:bg-surface-2">
+                            <FileText className="h-3.5 w-3.5" /> View profile
+                          </button>
+                        )}
                       </div>
                     </Row>
                     <Row label="Eligibility">
@@ -484,6 +494,8 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                           <div className="mt-1 text-[11px] text-muted">
                             {effectiveLead.eligibility_source === 'derived'
                               ? 'Derived from stage history — one click above confirms it'
+                              : effectiveLead.eligibility_source === 'ai'
+                              ? 'AI verdict from the CV they sent — one click above confirms or overrides it'
                               : `${new Date(effectiveLead.eligibility_at).toLocaleDateString('en-IN')}${effectiveLead.eligibility_by ? ` · ${memberNameById(effectiveLead.eligibility_by)}` : ''}`}
                           </div>
                         )}
@@ -966,6 +978,10 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
         <ComposeDialog open={composeOpen} leadId={lead.id} toEmail={effectiveLead?.email || ''} toName={effectiveLead?.full_name || ''}
           workspaceId={workspace.id} userId={appUser.id} onClose={() => setComposeOpen(false)} onSent={refreshEmails} />
       )}
+      {showProfile && effectiveLead?.profile_text && (
+        <ProfileModal lead={effectiveLead} onClose={() => setShowProfile(false)} />
+      )}
+
       <DocEditorModal
         open={docEditor !== null}
         onClose={() => setDocEditor(null)}
@@ -1009,6 +1025,79 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="grid grid-cols-[120px_1fr] items-center py-2 border-b border-border">
       <span className="text-[12px] text-muted">{label}</span>
       <div>{children}</div>
+    </div>
+  );
+}
+
+// ── PROFILE MODAL (076) ──────────────────────────────────────────────────────
+// The CV the lead sent was read once, judged, and DELETED — this text is what
+// survives. Rendered from the stored markdown with a tiny renderer on purpose:
+// no dependency, no surprises, works in both themes.
+function ProfileModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
+  const ai = (lead.profile_ai ?? null) as
+    | { eligible?: boolean; route?: string; reason?: string; at?: string }
+    | null;
+
+  const inline = (s: string) =>
+    s.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+      part.startsWith('**') && part.endsWith('**')
+        ? <b key={i} className="font-semibold text-ink">{part.slice(2, -2)}</b>
+        : <span key={i}>{part}</span>);
+
+  const blocks = (lead.profile_text || '').split('\n').map((line, i) => {
+    const t = line.trim();
+    if (!t) return <div key={i} className="h-2" />;
+    if (/^#{1,3}\s/.test(t)) {
+      return <h3 key={i} className="mt-4 mb-1.5 text-[13px] font-semibold uppercase tracking-[.04em] text-ink">
+        {t.replace(/^#{1,3}\s*/, '')}
+      </h3>;
+    }
+    if (/^[-*]\s/.test(t)) {
+      return <div key={i} className="flex gap-2 pl-1 text-[13px] leading-[1.65] text-ink-2">
+        <span className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-muted" />
+        <span>{inline(t.replace(/^[-*]\s*/, ''))}</span>
+      </div>;
+    }
+    return <p key={i} className="text-[13px] leading-[1.65] text-ink-2">{inline(t)}</p>;
+  });
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+      onClick={onClose}>
+      <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" />
+      <motion.div
+        initial={{ opacity: 0, y: 14, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: .18, ease: 'easeOut' }}
+        onClick={(e) => e.stopPropagation()}
+        className="relative flex max-h-[84vh] w-full max-w-[640px] flex-col overflow-hidden rounded-[18px] border border-border bg-surface shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+          <div>
+            <h2 className="text-[15px] font-semibold text-ink">{lead.full_name} — profile</h2>
+            <p className="mt-0.5 text-[12px] text-muted">
+              Extracted from the CV they sent on WhatsApp · the file itself was deleted after reading
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-muted transition hover:bg-surface-2 hover:text-ink" aria-label="Close">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {ai && (
+          <div className={cn('mx-5 mt-4 rounded-xl border px-3.5 py-2.5 text-[12.5px] leading-[1.55]',
+            ai.eligible
+              ? 'border-emerald-300/40 bg-emerald-500/[.07] text-emerald-700 dark:text-emerald-300'
+              : 'border-amber-300/40 bg-amber-500/[.07] text-amber-700 dark:text-amber-300')}>
+            <b className="font-semibold">
+              {ai.eligible ? `Looks eligible — ${ai.route || 'Global Talent'}` : 'Not eligible for Global Talent as it stands'}
+            </b>
+            {ai.reason ? <span className="opacity-90"> · {ai.reason}</span> : null}
+          </div>
+        )}
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {blocks}
+        </div>
+      </motion.div>
     </div>
   );
 }

@@ -35,7 +35,11 @@ interface DrainResult {
 }
 
 // Settings rows carry these two even though the base type predates 047.
-type WindowSettings = WaSettings & { send_window_start?: string; send_window_end?: string };
+type WindowSettings = WaSettings & {
+  send_window_start?: string; send_window_end?: string;
+  // Autopilot links (076): what T5 and T6 substitute into their placeholders.
+  booking_url?: string | null; video_url?: string | null; pdf_url?: string | null;
+};
 
 export default function SettingsTab({ workspaceId, settings, stats, onSettingsChanged }: Props) {
   const supabase = useMemo(() => createClient(), []);
@@ -44,6 +48,9 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
   const [cap, setCap] = useState<string>(s ? String(s.daily_cap) : '100');
   const [winStart, setWinStart] = useState<string>(s?.send_window_start?.slice(0, 5) ?? '10:00');
   const [winEnd, setWinEnd] = useState<string>(s?.send_window_end?.slice(0, 5) ?? '19:00');
+  const [bookingUrl, setBookingUrl] = useState<string>(s?.booking_url ?? '');
+  const [videoUrl, setVideoUrl] = useState<string>(s?.video_url ?? '');
+  const [pdfUrl, setPdfUrl] = useState<string>(s?.pdf_url ?? '');
   const [savingSend, setSavingSend] = useState(false);
   const [testing, setTesting] = useState(false);
   const [draining, setDraining] = useState(false);
@@ -60,10 +67,19 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
         throw new Error('Window times must look like 10:00');
       }
       if (winStart >= winEnd) throw new Error('The window must open before it closes');
+      const clean = (v: string) => {
+        const t = v.trim();
+        if (!t) return null;
+        if (!/^https?:\/\//i.test(t)) throw new Error(`"${t.slice(0, 40)}" is not a link — it must start with https://`);
+        return t;
+      };
       const { error } = await supabase.from('whatsapp_settings').update({
         daily_cap: capN,
         send_window_start: winStart,
         send_window_end: winEnd,
+        booking_url: clean(bookingUrl),
+        video_url: clean(videoUrl),
+        pdf_url: clean(pdfUrl),
         updated_at: new Date().toISOString(),
       }).eq('workspace_id', workspaceId);
       if (error) throw new Error(error.message);
@@ -214,6 +230,26 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
           <p className="m-0 mt-[6px] text-[11.4px] leading-[1.55] text-faint">
             The engine claims nothing outside this window; anything scheduled past the close rolls to the next opening. Manual inbox replies are not window-limited.
           </p>
+
+          {/* Autopilot links (076): T5 attaches the PDF and quotes the video,
+              T6 sends the booking link. Empty = that message refuses to send
+              (with a clear error) rather than sending a lead "{{2}}". */}
+          <Row label="Booking link">
+            <input type="url" value={bookingUrl} onChange={(e) => setBookingUrl(e.target.value)}
+              placeholder="https://calendly.com/…" className={`${FIELD} w-full max-w-[340px]`} />
+          </Row>
+          <Row label="Video link">
+            <input type="url" value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)}
+              placeholder="https://youtu.be/…" className={`${FIELD} w-full max-w-[340px]`} />
+          </Row>
+          <Row label="Process PDF link">
+            <input type="url" value={pdfUrl} onChange={(e) => setPdfUrl(e.target.value)}
+              placeholder="https://… (public link to the process document)" className={`${FIELD} w-full max-w-[340px]`} />
+          </Row>
+          <p className="m-0 mt-[6px] text-[11.4px] leading-[1.55] text-faint">
+            The autopilot fills these into T5 and T6. A missing link stops that message with a visible error — a lead never sees a broken placeholder.
+          </p>
+
           <div className="mt-[12px]">
             <button onClick={saveSending} disabled={savingSend}
               className="inline-flex items-center gap-[7px] rounded-[9px] bg-[#25A25A] px-[16px] py-[8px] text-[13px] font-semibold text-white transition hover:bg-[#1B7A44] disabled:opacity-50">

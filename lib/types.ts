@@ -93,7 +93,11 @@ export interface Lead {
   eligibility?: 'eligible' | 'not_eligible' | null;
   eligibility_at?: string | null;
   eligibility_by?: string | null;
-  eligibility_source?: 'manual' | 'derived' | null;
+  eligibility_source?: 'manual' | 'derived' | 'ai' | null;
+  // WhatsApp intake autopilot (076): the CV, read once then deleted — this
+  // text is the durable copy behind the drawer's "View profile" button.
+  profile_text?: string | null;
+  profile_ai?: Record<string, unknown> | null;
   created_at: string;
   created_by: string | null;
   updated_at: string;

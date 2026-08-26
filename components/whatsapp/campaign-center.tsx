@@ -24,7 +24,7 @@ import { toast } from 'sonner';
 import {
   Flame, Snowflake, Play, Loader2, RefreshCw, Check, X, ChevronDown,
   Minus, Plus, MessageSquare, AlertTriangle, Zap, Send, CornerDownRight,
-  Trash2, GripVertical, HeartPulse, Clock, Smartphone, PauseCircle,
+  Trash2, GripVertical, HeartPulse, Clock, Smartphone, PauseCircle, Power,
 } from 'lucide-react';
 import type { WaTemplate } from '@/lib/whatsapp/types';
 
@@ -83,6 +83,11 @@ export default function CampaignCenter({ workspaceId, templates }: {
   const [draft, setDraft] = useState<DraftStep[] | null>(null);    // step edits
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  // Master switch (076): ONE toggle that stops the whole cold+hot engine.
+  const [masterPaused, setMasterPaused] = useState<boolean | null>(null);
+  const [masterBusy, setMasterBusy] = useState(false);
+  // Intake autopilot counters — the new-lead T1–T4 chase, visible not guessed.
+  const [intake, setIntake] = useState<{ waiting: number; replied: number; done: number; failed: number; due_now: number } | null>(null);
   const [testPhone, setTestPhone] = useState('');
   const [testBusy, setTestBusy] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
@@ -98,6 +103,14 @@ export default function CampaignCenter({ workspaceId, templates }: {
     }
     setHome(data as Home);
     loaded.current = true;
+
+    // Best-effort extras — the screen must render fine before 076 is applied.
+    const [{ data: srow }, { data: istats }] = await Promise.all([
+      supabase.from('whatsapp_settings').select('campaigns_paused').eq('workspace_id', workspaceId).maybeSingle(),
+      supabase.rpc('wa_intake_stats', { p_workspace_id: workspaceId }),
+    ]);
+    if (srow && typeof srow.campaigns_paused === 'boolean') setMasterPaused(srow.campaigns_paused);
+    if (istats && typeof istats === 'object') setIntake(istats as typeof intake);
   }, [supabase, workspaceId]);
 
   useEffect(() => {
@@ -123,6 +136,24 @@ export default function CampaignCenter({ workspaceId, templates }: {
     toast.success(next === 'running'
       ? `${c.name} is ON — everyone in the stage is in, sends resume inside your hours`
       : `${c.name} is paused — nothing sends until you switch it back on`);
+    load();
+  };
+
+  const toggleMaster = async () => {
+    if (masterPaused === null || masterBusy) return;
+    setMasterBusy(true);
+    const next = !masterPaused;
+    // .select() guard, same reason as toggleCampaign: an RLS-filtered update
+    // must be a visible failure, not a switch that snaps back on refresh.
+    const { data, error } = await supabase.from('whatsapp_settings')
+      .update({ campaigns_paused: next }).eq('workspace_id', workspaceId).select('workspace_id');
+    setMasterBusy(false);
+    if (error) { toast.error(error.message); return; }
+    if (!data?.length) { toast.error('Not saved — only a campaign admin can flip the master switch.'); return; }
+    setMasterPaused(next);
+    toast.success(next
+      ? 'Master switch OFF — cold and hot campaigns are both stopped. New-lead autopilot still runs.'
+      : 'Master switch ON — cold and hot campaigns resume exactly where they left off.');
     load();
   };
 
@@ -189,6 +220,10 @@ export default function CampaignCenter({ workspaceId, templates }: {
   // Plain-English problems, worst first. An empty list = the strip is green.
   const problems: Array<{ text: string; fix: string }> = [];
   if (s.paused) problems.push({ text: 'Sending is paused for everything.', fix: 'Settings tab → turn "Pause all sending" off.' });
+  if (masterPaused) problems.push({
+    text: 'Cold + hot campaigns are OFF by the master switch. The new-lead autopilot still runs.',
+    fix: 'Flip the "Campaigns" switch back on (top right) once your Meta templates are approved.',
+  });
   if (!s.connected && !s.dry_run) problems.push({ text: 'WhatsApp is not connected.', fix: 'Settings tab → Test connection.' });
   if (s.dry_run) problems.push({ text: 'Dry-run is ON — messages are logged but never actually sent.', fix: 'Settings tab → switch dry-run off when you are ready to go live.' });
   if (home.cron.length < 2) problems.push({ text: 'The scheduler jobs are missing — nothing runs by itself.', fix: 'Run migration 062 again in Supabase.' });
@@ -238,6 +273,23 @@ export default function CampaignCenter({ workspaceId, templates }: {
                 value={home.in_window ? 'open now' : `opens ${s.window_start.slice(0, 5)}`} />
               <Vital label="WhatsApp" ok={s.connected && !s.dry_run}
                 value={s.dry_run ? 'dry-run' : s.connected ? 'connected' : 'offline'} />
+              {intake && (
+                <Vital label="Autopilot" ok={intake.failed === 0}
+                  value={`${intake.waiting} chasing${intake.failed > 0 ? ` · ${intake.failed} failed` : ''}`} />
+              )}
+              {masterPaused !== null && (
+                <button onClick={toggleMaster} disabled={masterBusy}
+                  aria-label={masterPaused ? 'Resume cold and hot campaigns' : 'Pause cold and hot campaigns'}
+                  className={cn(
+                    'flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12.5px] font-semibold transition disabled:opacity-60',
+                    masterPaused
+                      ? 'bg-[#F59E0B]/20 text-[#FBBF24] hover:bg-[#F59E0B]/30'
+                      : 'bg-[#22C55E]/20 text-[#4ADE80] hover:bg-[#22C55E]/30'
+                  )}>
+                  {masterBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Power className="h-3.5 w-3.5" />}
+                  Campaigns {masterPaused ? 'OFF' : 'ON'}
+                </button>
+              )}
               <button onClick={runEngine} disabled={running}
                 className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-[12.5px] font-semibold text-[#0C1424] transition hover:bg-[#E9FBEF] disabled:opacity-60">
                 {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}

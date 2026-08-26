@@ -186,6 +186,24 @@ export async function POST(req: Request) {
     } catch { /* never block lead creation on email failure */ }
   }
 
+  // ---------------------------------------------------------------------------
+  // WHATSAPP INTAKE (076): put the new lead on the T1–T4 chase. Ten-minute
+  // grace on purpose — most Meta leads open WhatsApp and send the prefilled
+  // hello within minutes, which opens the 24h window and lets the webhook fire
+  // T1 as free-form text instantly. Only a lead who never messages falls
+  // through to the slower approved-template branch. Never blocks lead creation.
+  // ---------------------------------------------------------------------------
+  if (phone) {
+    try {
+      await admin.rpc('wa_intake_enqueue', {
+        p_workspace_id: ws.id, p_lead_id: lead.id, p_phone: phone,
+        p_track: 'chase', p_first_step: 1, p_delay_minutes: 10,
+      });
+    } catch (e) {
+      console.error('[ingest] wa_intake_enqueue failed (lead still created)', e);
+    }
+  }
+
   // industry and readiness come back in the response on purpose: Make's
   // execution history then shows how each answer was read, so a form option
   // nobody mapped shows up as null there instead of being discovered weeks

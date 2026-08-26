@@ -25,9 +25,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { mediaTypeFromInterakt } from '@/lib/whatsapp/interakt';
+import { handleInboundForIntake } from '@/lib/whatsapp/intake';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// The intake pipeline (CV extraction + verdict) runs inside this request.
+// Interakt only needs a 2xx eventually; duplicates are deduped by provider id.
+export const maxDuration = 60;
 
 type Json = Record<string, unknown>;
 const obj = (v: unknown): Json => (v && typeof v === 'object' ? (v as Json) : {});
@@ -322,12 +326,36 @@ export async function POST(req: NextRequest) {
 
       // RULE 1: we flagged it, we did NOT stop the sequence. RULE 2: if this was
       // an opt-out keyword, whatsapp_record_inbound already junked the lead.
+
+      // ── INTAKE AUTOPILOT (076) ─────────────────────────────────────────────
+      // T1 inline, CV → verdict → T5/T6 or T7, LinkedIn capture. Strictly
+      // best-effort: any failure is logged and flagged, never breaks the 200.
+      // Duplicates (Interakt retries) and opt-outs never reach the autopilot.
+      let intake: Record<string, unknown> | null = null;
+      if (r.conversation_id && r.duplicate !== true && r.optout !== true) {
+        try {
+          intake = await handleInboundForIntake(admin, wsId, {
+            conversationId: String(r.conversation_id),
+            phone,
+            text,
+            providerMsgId: log.provider_id,
+            media,
+          });
+          if (intake && Object.keys(intake).length) {
+            log.detail = `${log.detail} · intake ${JSON.stringify(intake).slice(0, 200)}`;
+          }
+        } catch (e) {
+          console.error('[whatsapp][webhook] intake autopilot threw', e);
+        }
+      }
+
       return NextResponse.json({
         ok: true,
         event: type,
         duplicate: r.duplicate === true,
         optout: r.optout === true,
         conversationId: r.conversation_id ?? null,
+        intake,
       });
     }
 
