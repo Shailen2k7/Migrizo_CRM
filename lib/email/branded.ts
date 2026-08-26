@@ -29,7 +29,34 @@ const CURRENCY_SYMBOL: Record<string, string> = { INR: '₹', GBP: '£', USD: '$
 const CURRENCY_LOCALE: Record<string, string> = { INR: 'en-IN', GBP: 'en-GB', USD: 'en-US' };
 function money(n: number, currency: string): string {
   const code = CURRENCY_SYMBOL[currency] ? currency : 'INR';
-  return CURRENCY_SYMBOL[code] + (n ?? 0).toLocaleString(CURRENCY_LOCALE[code]);
+  const v = n ?? 0;
+  // Tax splits are rarely whole units (18% of 3,000 halves to 270.00), so show
+  // 2dp whenever the value is fractional and stay clean when it is not.
+  const frac = Math.abs(v % 1) > 0.004;
+  return CURRENCY_SYMBOL[code] + v.toLocaleString(CURRENCY_LOCALE[code], {
+    minimumFractionDigits: frac ? 2 : 0,
+    maximumFractionDigits: frac ? 2 : 0,
+  });
+}
+
+/**
+ * Split an invoice amount into taxable value, GST and total.
+ *
+ * 'add'       — amount is the fee; GST is billed on top.
+ * 'inclusive' — amount is what the client pays; the GST inside it is extracted
+ *               (total x rate / (100 + rate)), which is how a tax-inclusive
+ *               invoice must report it.
+ * Rate 0 short-circuits to the pre-GST behaviour, so nothing already sent moves.
+ */
+export function gstBreakdown(amount: number, rate: number, mode: 'add' | 'inclusive') {
+  const r = Number.isFinite(rate) ? Math.min(Math.max(rate, 0), 100) : 0;
+  if (r <= 0) return { taxable: amount, gst: 0, total: amount, half: 0, rate: 0, mode };
+  if (mode === 'inclusive') {
+    const gst = (amount * r) / (100 + r);
+    return { taxable: amount - gst, gst, total: amount, half: gst / 2, rate: r, mode };
+  }
+  const gst = (amount * r) / 100;
+  return { taxable: amount, gst, total: amount + gst, half: gst / 2, rate: r, mode };
 }
 function esc(s: string | null | undefined): string {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -736,7 +763,8 @@ export function invoiceNumber(payment: { id: string; created_at: string | null }
 
 export function renderInvoice(
   lead: Pick<Lead, 'full_name' | 'email' | 'phone' | 'visa_type' | 'currency'>,
-  payment: Pick<Payment, 'id' | 'milestone' | 'amount' | 'status' | 'paid_at' | 'created_at'>,
+  payment: Pick<Payment, 'id' | 'milestone' | 'amount' | 'status' | 'paid_at' | 'created_at'>
+    & { gst_rate?: number | null; gst_mode?: 'add' | 'inclusive' | null },
   invoiceNo: string,
 ): { subject: string; html: string; text: string } {
   const currency = lead.currency || 'INR';
@@ -755,6 +783,12 @@ export function renderInvoice(
     : gtvLabel;
   const kind = visaKindOf(lead.visa_type);
   const visa = kind === 'ifv' ? 'Innovator Founder Visa' : 'Global Talent Visa';
+  // GST comes from the payment row (migration 075) so the emailed invoice and
+  // the downloaded PDF always report the same tax.
+  const gst = gstBreakdown(amount, Number(payment.gst_rate ?? 0), (payment.gst_mode ?? 'add') as 'add' | 'inclusive');
+  // CGST and SGST each carry half the rate: 18% GST prints as 9% + 9%.
+  const halfLabel = gst.rate > 0 ? `${(gst.rate / 2).toFixed(gst.rate % 2 === 0 ? 0 : 2)}%` : '0%';
+
   const isPaid = payment.status === 'paid';
   const dateStr = new Date(payment.paid_at || payment.created_at || Date.now())
     .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -813,7 +847,7 @@ export function renderInvoice(
           <span style="font-size:11.5px;color:${MUTED};">Migrizo professional services · milestone payment</span>
         </td>
         <td style="padding:14px;font-size:12.5px;color:${MUTED};" align="center">998599</td>
-        <td style="padding:14px;font-size:13.5px;font-weight:800;color:${NAVY};white-space:nowrap;" align="right">${money(amount, currency)}</td>
+        <td style="padding:14px;font-size:13.5px;font-weight:800;color:${NAVY};white-space:nowrap;" align="right">${money(gst.taxable, currency)}</td>
       </tr>
     </table>
 
@@ -826,12 +860,14 @@ export function renderInvoice(
         </td>
         <td width="48%" valign="top" style="background:${BG};border-radius:10px;padding:12px 16px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-            ${trow('Sub Total <span style="font-size:10.5px;">(Tax Inclusive)</span>', money(amount, currency))}
-            ${trow('CGST (0%)', money(0, currency))}
-            ${trow('SGST (0%)', money(0, currency))}
+            ${trow(gst.rate > 0 && gst.mode === 'inclusive'
+              ? 'Taxable value <span style="font-size:10.5px;">(tax inclusive)</span>'
+              : 'Taxable value', money(gst.taxable, currency))}
+            ${trow(`CGST (${halfLabel})`, money(gst.half, currency))}
+            ${trow(`SGST (${halfLabel})`, money(gst.half, currency))}
             <tr><td colspan="2" style="border-top:2px solid ${NAVY};padding-top:2px;"></td></tr>
-            ${trow('Total', money(amount, currency), true)}
-            ${isPaid ? trow('Balance Due', money(0, currency)) : trow('Balance Due', money(amount, currency), true)}
+            ${trow('Total', money(gst.total, currency), true)}
+            ${isPaid ? trow('Balance Due', money(0, currency)) : trow('Balance Due', money(gst.total, currency), true)}
           </table>
         </td>
       </tr>
@@ -889,6 +925,6 @@ export function renderInvoice(
   return {
     subject: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} — ${milestone} · Migrizo`,
     html: shell(`Invoice ${invoiceNo}`, body, `${milestone} — ${money(amount, currency)} · ${isPaid ? 'Paid' : 'Due on receipt'}`),
-    text: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} from Migrizo Ventures Pvt Ltd. ${milestone} Fee — ${visa}: ${money(amount, currency)}. ${isPaid ? 'Payment received, thank you.' : 'Pay by bank transfer — UK: M4 Investment Ltd, Revolut Bank, A/C 94649332, Sort Code 04-29-09. India: Grownmind Educational Services Pvt Ltd, ICICI A/C 081605010665, IFSC ICIC0000816. UPI: grownmind@icici.'}`,
+    text: `${isPaid ? 'Receipt' : 'Invoice'} ${invoiceNo} from Migrizo Ventures Pvt Ltd. ${milestone} Fee — ${visa}: ${money(gst.taxable, currency)}${gst.rate > 0 ? ` + GST ${gst.rate}% (${money(gst.gst, currency)}) = ${money(gst.total, currency)}` : ''}. ${isPaid ? 'Payment received, thank you.' : 'Pay by bank transfer — UK: M4 Investment Ltd, Revolut Bank, A/C 94649332, Sort Code 04-29-09. India: Grownmind Educational Services Pvt Ltd, ICICI A/C 081605010665, IFSC ICIC0000816. UPI: grownmind@icici.'}`,
   };
 }

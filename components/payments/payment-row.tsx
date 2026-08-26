@@ -8,7 +8,7 @@ import { useApp } from '@/components/shared/app-provider';
 import type { Payment, Milestone } from '@/lib/types';
 import { MILESTONE_META } from '@/lib/types';
 import { formatMoney, moneySymbol, cn } from '@/lib/utils';
-import { FileText, Pencil, Trash2, Send, Download } from 'lucide-react';
+import { FileText, Pencil, Trash2, Send, Download, X, Percent } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Props {
@@ -27,10 +27,40 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
   const [note, setNote] = useState(payment.note || '');
   const [busy, setBusy] = useState(false);
   const [sendingInvoice, setSendingInvoice] = useState(false);
+  // GST bar — mirrors the SLA discount flow: click Send, set the rate, send.
+  const [gstOpen, setGstOpen] = useState(false);
+  const [gstRate, setGstRate] = useState<string>(String(payment.gst_rate ?? 0));
+  const [gstMode, setGstMode] = useState<'add' | 'inclusive'>((payment.gst_mode ?? 'add') as 'add' | 'inclusive');
+  const [savingGst, setSavingGst] = useState(false);
 
   // One-click branded invoice email for this specific milestone payment.
   const isPaid = payment.status === 'paid';
   const docWord = isPaid ? 'Receipt' : 'Invoice';
+
+  const rateNum = Math.min(Math.max(Number(gstRate) || 0, 0), 100);
+  const preview = (() => {
+    const a = payment.amount || 0;
+    if (rateNum <= 0) return { taxable: a, gst: 0, total: a };
+    if (gstMode === 'inclusive') {
+      const g = (a * rateNum) / (100 + rateNum);
+      return { taxable: a - g, gst: g, total: a };
+    }
+    const g = (a * rateNum) / 100;
+    return { taxable: a, gst: g, total: a + g };
+  })();
+
+  /**
+   * Persist the GST on the payment BEFORE emailing or printing. Both the email
+   * route and the PDF route read the rate from the row, so saving first is what
+   * guarantees the document the client receives matches the one you preview.
+   */
+  const saveGst = async (): Promise<boolean> => {
+    if (rateNum === Number(payment.gst_rate ?? 0) && gstMode === (payment.gst_mode ?? 'add')) return true;
+    setSavingGst(true);
+    await updatePayment(payment.id, { gst_rate: rateNum, gst_mode: gstMode });
+    setSavingGst(false);
+    return true;
+  };
 
   const sendInvoice = async (force = false) => {
     setSendingInvoice(true);
@@ -65,6 +95,8 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
    * print CSS and opens the print dialog; the user picks "Save as PDF".
    */
   const downloadPdf = () => {
+    // The PDF route reads GST from the payment row, so what downloads always
+    // matches what was emailed.
     const w = window.open(`/api/invoice/pdf?paymentId=${encodeURIComponent(payment.id)}`, '_blank');
     if (!w) { toast.error('Popup blocked — allow popups for the CRM to download the PDF'); return; }
     toast.info('Choose “Save as PDF” in the print dialog');
@@ -115,10 +147,10 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
               {canSendEmails && (
               <button
-                onClick={() => sendInvoice(false)}
+                onClick={() => setGstOpen((v) => !v)}
                 disabled={sendingInvoice}
                 className="group/send relative w-7 h-7 rounded-full flex items-center justify-center text-[#506BD8] bg-[#EEF2FF] hover:bg-[#506BD8] hover:text-white hover:shadow-sm transition-all disabled:opacity-50"
-                title={`Email branded ${docWord.toLowerCase()} to client`}
+                title={`Email branded ${docWord.toLowerCase()} to client — set GST first if applicable`}
               >
                 {sendingInvoice
                   ? <span className="w-3 h-3 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
@@ -144,6 +176,76 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
             </div>
           </div>
         </div>
+        {/* GST bar — same shape as the SLA discount flow: set the rate, see
+            the total the client will owe, then send or download. */}
+        {gstOpen && (
+          <div className="mt-2.5 pt-2.5 border-t border-border animate-pageIn">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-2">
+                <Percent className="w-3.5 h-3.5 text-muted" /> GST
+              </span>
+              <input
+                autoFocus type="number" min="0" max="100" step="0.5" value={gstRate}
+                onChange={(e) => setGstRate(e.target.value)}
+                placeholder="0"
+                className="w-[70px] px-2 py-1 rounded-md border border-border bg-surface text-[12.5px] outline-none focus:border-[#4F46E5]"
+              />
+              <span className="text-[12px] text-muted">%</span>
+              <div className="inline-flex items-center gap-1 rounded-lg bg-surface-2 p-0.5">
+                {(['add', 'inclusive'] as const).map((m) => (
+                  <button key={m} onClick={() => setGstMode(m)}
+                    className={cn('px-2.5 py-1 rounded-md text-[11.5px] font-semibold transition',
+                      gstMode === m ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink')}>
+                    {m === 'add' ? 'Add on top' : 'Already included'}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => { setGstOpen(false); setGstRate(String(payment.gst_rate ?? 0)); setGstMode((payment.gst_mode ?? 'add') as 'add' | 'inclusive'); }}
+                className="p-1 rounded hover:bg-surface-2 text-muted hover:text-ink" title="Cancel">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted">
+              <span>Taxable <b className="text-ink-2 num">{formatMoney(Math.round(preview.taxable), currency)}</b></span>
+              {rateNum > 0 && <span>GST <b className="text-ink-2 num">{formatMoney(Math.round(preview.gst), currency)}</b></span>}
+              <span>Client pays <b className="text-ink num">{formatMoney(Math.round(preview.total), currency)}</b></span>
+              {rateNum > 0 && (
+                <span className="text-faint">CGST {(rateNum / 2)}% + SGST {(rateNum / 2)}%</span>
+              )}
+            </div>
+
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <button
+                onClick={async () => { await saveGst(); downloadPdf(); }}
+                disabled={savingGst || sendingInvoice}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-ink-2 bg-surface border border-border hover:bg-surface-2 transition-all disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" /> Save GST &amp; download PDF
+              </button>
+              <button
+                onClick={async () => { await saveGst(); setGstOpen(false); void sendInvoice(false); }}
+                disabled={savingGst || sendingInvoice}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
+              >
+                <Send className="w-3.5 h-3.5" />
+                {savingGst ? 'Saving…' : sendingInvoice ? 'Sending…' : rateNum > 0 ? `Send with ${rateNum}% GST` : 'Send without GST'}
+              </button>
+            </div>
+          </div>
+        )}
+        {/* GST is part of the money on this row, so it stays visible without
+            opening anything. */}
+        {!gstOpen && Number(payment.gst_rate ?? 0) > 0 && (
+          <div className="mt-2 pt-2 border-t border-border flex items-center gap-1.5 text-[11.5px] text-muted">
+            <Percent className="w-3 h-3 flex-shrink-0" />
+            GST {Number(payment.gst_rate)}% {payment.gst_mode === 'inclusive' ? 'included' : 'added'} ·
+            client pays <b className="text-ink-2 num">{formatMoney(Math.round(
+              payment.gst_mode === 'inclusive'
+                ? payment.amount
+                : payment.amount * (1 + Number(payment.gst_rate) / 100)), currency)}</b>
+          </div>
+        )}
         {payment.note && (
           <div className="mt-2 pt-2 border-t border-border flex items-start gap-1.5">
             <FileText className="w-3 h-3 text-muted flex-shrink-0 mt-0.5" />

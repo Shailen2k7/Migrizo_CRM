@@ -132,6 +132,13 @@ export interface Payment {
   due_date: string | null;
   paid_at: string | null;
   note: string | null;
+  /**
+   * GST on this invoice (migration 075). 0 = no GST, which is every existing
+   * payment. Split CGST/SGST half each on the document.
+   * gst_mode 'add' = billed on top of amount; 'inclusive' = extracted from it.
+   */
+  gst_rate?: number;
+  gst_mode?: 'add' | 'inclusive';
   created_at: string;
   created_by: string | null;
 }
