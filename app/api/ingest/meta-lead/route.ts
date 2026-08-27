@@ -193,14 +193,22 @@ export async function POST(req: Request) {
   // T1 as free-form text instantly. Only a lead who never messages falls
   // through to the slower approved-template branch. Never blocks lead creation.
   // ---------------------------------------------------------------------------
+  let t1: string | null = null;
   if (phone) {
     try {
       await admin.rpc('wa_intake_enqueue', {
         p_workspace_id: ws.id, p_lead_id: lead.id, p_phone: phone,
         p_track: 'chase', p_first_step: 1, p_delay_minutes: 10,
       });
+      // THE RACE FIX: if this person's WhatsApp hello arrived BEFORE this
+      // POST (common — the form's click-to-WhatsApp fires immediately), the
+      // window is already open and T1 must not wait for the cron. Fire it
+      // right now; if they haven't messaged yet, the webhook fires it the
+      // second they do, and the queued row above is the final safety net.
+      const { fireT1IfWindowOpen } = await import('@/lib/whatsapp/intake');
+      t1 = await fireT1IfWindowOpen(admin, ws.id, lead.id, phone, fullName);
     } catch (e) {
-      console.error('[ingest] wa_intake_enqueue failed (lead still created)', e);
+      console.error('[ingest] wa intake hook failed (lead still created)', e);
     }
   }
 
@@ -209,7 +217,7 @@ export async function POST(req: Request) {
   // nobody mapped shows up as null there instead of being discovered weeks
   // later as a gap in a report.
   return NextResponse.json({
-    ok: true, id: lead.id, welcomed,
+    ok: true, id: lead.id, welcomed, whatsapp_t1: t1,
     industry, investment_readiness: readiness,
     // Where each answer was found — visible in Make's execution history, so a
     // remapped form shows up there instead of weeks later in a report.

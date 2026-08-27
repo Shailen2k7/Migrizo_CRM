@@ -349,6 +349,35 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // ── PUSH TO PHONES (077): a lead writing in is the one event this
+      // business cannot afford to see late. Fire-and-forget; the chime in
+      // open tabs comes from realtime, this reaches closed laptops and
+      // pockets. Duplicates never notify twice.
+      if (r.duplicate !== true && r.optout !== true) {
+        try {
+          const { pushToWorkspace } = await import('@/lib/push-server');
+          const { data: convRow } = r.conversation_id
+            ? await admin.from('whatsapp_conversations')
+                .select('lead_id, lead:leads(full_name)')
+                .eq('id', r.conversation_id).maybeSingle()
+            : { data: null };
+          const leadRel = (convRow as { lead?: unknown } | null)?.lead;
+          const leadOne = (Array.isArray(leadRel) ? leadRel[0] : leadRel) as { full_name?: string } | null | undefined;
+          const leadName = leadOne?.full_name || phone;
+          const preview = text
+            ? text.slice(0, 110)
+            : (media.type ? `📎 sent a ${media.type}${media.name ? ` — ${media.name}` : ''}` : 'sent a message');
+          await pushToWorkspace(admin, wsId, {
+            title: `WhatsApp · ${leadName}`,
+            body: preview,
+            url: '/whatsapp',
+            tag: `wa-${r.conversation_id ?? phone}`,
+          });
+        } catch (e) {
+          console.error('[whatsapp][webhook] push failed', e);
+        }
+      }
+
       return NextResponse.json({
         ok: true,
         event: type,

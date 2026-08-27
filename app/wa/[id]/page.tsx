@@ -121,6 +121,16 @@ export default function PopoutChat({ params }: { params: Promise<{ id: string }>
         (payload) => {
           const row = payload.new as WaMessage | undefined;
           if (!row) return;
+          // Delete-for-me from the main inbox (077): drop the row here too,
+          // and never let a later delivery receipt resurrect it.
+          if (row.hidden) {
+            setMsgs((prev) => {
+              const next = prev.filter((m) => m.id !== row.id);
+              setCachedThread(id, next);
+              return next;
+            });
+            return;
+          }
           setMsgs((prev) => {
             const i = prev.findIndex((m) => m.id === row.id);
             let next: WaMessage[];

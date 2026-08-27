@@ -22,6 +22,7 @@ import {
   FileText, PanelRight, Columns, Maximize2, Minimize2,
   ExternalLink, Loader2, Bot, Pause, Play, Square, ShieldCheck, Plus, Send as SendIcon,
   MessageSquare, Settings2, X, MoreHorizontal, Eraser, Trash2, Bell, BellOff, CheckCheck,
+  ClipboardList,
 } from 'lucide-react';
 import { playChime } from '@/lib/chime';
 import { waSoundMuted, setWaSoundMuted, useWaUnread, setWaUnreadLocal } from '@/components/whatsapp/wa-alerts';
@@ -234,7 +235,11 @@ export default function WhatsAppPage() {
     setSettings((sRes.data || null) as WaSettings | null);
     // {{pdf}} / {{video}} / {{booking}} live on the settings row since mig 062.
     const s = sRes.data as (WaSettings & { pdf_url?: string | null; video_url?: string | null; booking_url?: string | null }) | null;
-    setTokenLinks({ pdf: s?.pdf_url ?? '', video: s?.video_url ?? '', booking: s?.booking_url ?? '' });
+    // An UPLOADED process PDF is stored as "storage:<path>" — a pointer, not a
+    // link. It must never be pasted into a message body, so the manual {{pdf}}
+    // token resolves to empty here; the autopilot signs a real URL server-side.
+    const pdfLink = (s?.pdf_url ?? '').startsWith('storage:') ? '' : (s?.pdf_url ?? '');
+    setTokenLinks({ pdf: pdfLink, video: s?.video_url ?? '', booking: s?.booking_url ?? '' });
     if (sRes.error) setLoadError(sRes.error.message);
   }, [supabase, workspace.id, loadConvs, loadStats]);
 
@@ -330,6 +335,17 @@ export default function WhatsAppPage() {
         (payload) => {
           const row = payload.new as WaMessage | undefined;
           if (!row) return;
+          // A delete-for-me from another tab/device (077): drop the row
+          // everywhere instead of treating the update as a no-op.
+          if (row.hidden) {
+            if (row.conversation_id === activeIdRef.current) {
+              setMsgs((prev) => prev.filter((m) => m.id !== row.id));
+            }
+            const hid = getCachedThread(row.conversation_id);
+            if (hid) setCachedThread(row.conversation_id, hid.filter((m) => m.id !== row.id));
+            queueRefresh();
+            return;
+          }
           // Keep the cache authoritative even for threads not on screen, so
           // switching to them later shows the new message immediately.
           if (row.conversation_id !== activeIdRef.current) {
@@ -598,6 +614,54 @@ export default function WhatsAppPage() {
       'width=520,height=760,menubar=no,toolbar=no,location=no,status=no'
     );
   }, []);
+
+  // ── right-click menus (077): conversations and single messages ────────────
+  // Same affordances WhatsApp itself gives — mark unread, copy, delete-for-me
+  // — reached the same way, so nobody has to learn anything.
+  const [ctxMenu, setCtxMenu] = useState<null | {
+    x: number; y: number;
+    kind: 'conv' | 'msg';
+    id: string;
+    unread?: boolean;
+    body?: string | null;
+    canHide?: boolean;
+  }>(null);
+
+  const markUnread = async (convId: string) => {
+    setCtxMenu(null);
+    const { data, error } = await supabase.rpc('whatsapp_mark_unread', { p_conversation_id: convId });
+    if (error || data !== true) { toast.error(error?.message || 'Run migration 077 first'); return; }
+    setConvs((cs) => cs.map((c) => c.id === convId ? { ...c, unread_count: Math.max(1, c.unread_count) } : c));
+  };
+
+  const markReadOne = async (convId: string) => {
+    setCtxMenu(null);
+    await supabase.rpc('whatsapp_touch_read', { p_conversation_id: convId });
+    setConvs((cs) => cs.map((c) => c.id === convId ? { ...c, unread_count: 0 } : c));
+  };
+
+  const copyMessage = async (body: string | null | undefined) => {
+    setCtxMenu(null);
+    try { await navigator.clipboard.writeText(body || ''); toast.success('Copied'); }
+    catch { toast.error('Could not copy'); }
+  };
+
+  // DELETE FOR ME. The honest version: the WhatsApp Business API cannot
+  // recall a message from the customer's phone — nothing can. This hides it
+  // from OUR inbox; their copy is theirs.
+  const hideMessage = async (messageId: string) => {
+    setCtxMenu(null);
+    const { data, error } = await supabase.rpc('whatsapp_hide_message', {
+      p_message_id: messageId, p_hidden: true,
+    });
+    if (error || data !== true) { toast.error(error?.message || 'Run migration 077 first'); return; }
+    setMsgs((prev) => prev.filter((m) => m.id !== messageId));
+    if (activeIdRef.current) {
+      const cached = getCachedThread(activeIdRef.current);
+      if (cached) setCachedThread(activeIdRef.current, cached.filter((m) => m.id !== messageId));
+    }
+    toast.success('Deleted from your inbox — the customer still has their copy');
+  };
 
   // "Close it completely so it opens fresh." Two shapes of that, because they
   // mean different things: empty the thread, or remove the conversation.
@@ -981,12 +1045,16 @@ export default function WhatsAppPage() {
                   key={c.id}
                   onClick={() => setActiveId(c.id)}
                   onDoubleClick={() => popOut(c.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setCtxMenu({ x: e.clientX, y: e.clientY, kind: 'conv', id: c.id, unread: c.unread_count > 0 });
+                  }}
                   // Pointing at a row starts its fetch, so the click that
                   // follows has nothing left to wait for.
                   onMouseEnter={() => prefetchThreads(supabase, [c.id], 1)}
-                  title="Double-click to open in its own window"
+                  title="Double-click to open in its own window · right-click for options"
                   className={cn(
-                    'flex w-full items-start gap-2.5 px-2.5 py-2 text-left transition-colors duration-150',
+                    'flex w-full items-start gap-2.5 px-2.5 py-2.5 text-left transition-colors duration-150',
                     on
                       ? 'border-l-[3px] border-l-[#25A25A] bg-[#EDFAF1]'
                       : 'border-l-[3px] border-l-transparent hover:bg-[#F9FAFB]'
@@ -1159,7 +1227,19 @@ export default function WhatsAppPage() {
                     ) : (
                       <div key={`g${gi}`} className={cn('flex flex-col gap-1', g.dir === 'out' ? 'items-end' : 'items-start')}>
                         {g.items.map((m, i) => (
-                          <MessageBubble key={m.id} m={m} last={i === g.items.length - 1} />
+                          <div
+                            key={m.id}
+                            className="contents"
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              setCtxMenu({
+                                x: e.clientX, y: e.clientY, kind: 'msg', id: m.id,
+                                body: m.body, canHide: !m.id.startsWith('tmp_'),
+                              });
+                            }}
+                          >
+                            <MessageBubble m={m} last={i === g.items.length - 1} />
+                          </div>
                         ))}
                       </div>
                     )
@@ -1173,7 +1253,7 @@ export default function WhatsAppPage() {
                 </div>
 
                 {/* composer */}
-                <div className="flex-shrink-0 border-t border-[#E8EAF0] bg-white p-4">
+                <div className="flex-shrink-0 border-t border-[#E8EAF0] bg-white p-4 pb-[max(16px,env(safe-area-inset-bottom))]">
                   {active.suppressed ? (
                     <div className="flex items-center gap-3 rounded-xl border border-[#F8D6D6] bg-[#FEEFEF] px-4 py-[15px]">
                       <ShieldCheck className="h-5 w-5 flex-shrink-0 text-[#B02B2B]" />
@@ -1296,18 +1376,18 @@ export default function WhatsAppPage() {
                       <div className="flex items-center justify-between rounded-b-lg border-t border-[#E8EAF0] bg-[#FAFBFC] p-2">
                         <div className="flex gap-1">
                           <button onClick={() => setPickerOpen(true)} title="Send an approved template"
-                            className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728]">
+                            className="rounded-lg p-2 text-[#7A8095] transition-all hover:bg-[#E8EAF0] hover:text-[#0F1728] active:scale-[.92]">
                             <Zap className="h-[18px] w-[18px]" />
                           </button>
                           <input ref={fileRef} type="file" className="hidden"
                             onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickFile(f); }} />
                           <button onClick={() => fileRef.current?.click()} disabled={uploading}
                             title="Attach a photo or document"
-                            className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728] disabled:opacity-50">
+                            className="rounded-lg p-2 text-[#7A8095] transition-all hover:bg-[#E8EAF0] hover:text-[#0F1728] active:scale-[.92] disabled:opacity-50">
                             {uploading ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Paperclip className="h-[18px] w-[18px]" />}
                           </button>
                           <button onClick={() => { setEmojiOpen((v) => !v); setSlashOpen(false); }} title="Emoji"
-                            className="rounded p-1.5 text-[#7A8095] transition-colors hover:bg-[#E8EAF0] hover:text-[#0F1728]">
+                            className="rounded-lg p-2 text-[#7A8095] transition-all hover:bg-[#E8EAF0] hover:text-[#0F1728] active:scale-[.92]">
                             <Smile className="h-[18px] w-[18px]" />
                           </button>
                           <button
@@ -1337,7 +1417,7 @@ export default function WhatsAppPage() {
                               const v = (drafts[active.id] || '').trim();
                               if (v || pendingMedia) { send(v, undefined, pendingMedia ?? undefined); setPendingMedia(null); }
                             }}
-                            className="flex items-center gap-2 rounded-md bg-[#131b2d] px-4 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#2a3040] disabled:opacity-40"
+                            className="flex items-center gap-2 rounded-full bg-[#25A25A] px-[18px] py-[8px] text-[13px] font-semibold text-white shadow-[0_4px_14px_-4px_rgba(37,162,90,.55)] transition-all hover:bg-[#1B7A44] hover:shadow-[0_6px_18px_-4px_rgba(37,162,90,.6)] active:scale-[.96] disabled:opacity-40 disabled:shadow-none"
                           >
                             Send <SendIcon className="h-[13px] w-[13px]" />
                           </button>
@@ -1411,6 +1491,60 @@ export default function WhatsAppPage() {
         }}
       />
       </>)}
+
+      {/* ── right-click menu (077) ─────────────────────────────────────────── */}
+      {ctxMenu && (
+        <>
+          <span
+            className="fixed inset-0 z-[70]"
+            onClick={() => setCtxMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
+          />
+          <div
+            className="fixed z-[71] w-[224px] overflow-hidden rounded-xl border border-[#E8EAF0] bg-white p-1 shadow-[0_16px_40px_-14px_rgba(20,24,40,.35)]"
+            style={{
+              left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 236),
+              top: Math.min(ctxMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 150),
+            }}
+          >
+            {ctxMenu.kind === 'conv' ? (
+              <>
+                {ctxMenu.unread ? (
+                  <button onClick={() => markReadOne(ctxMenu.id)}
+                    className="flex w-full items-center gap-[9px] rounded-lg px-[10px] py-[8px] text-left text-[12.6px] font-medium text-[#0F1728] transition hover:bg-[#F4F5F8]">
+                    <CheckCheck className="h-[14px] w-[14px] text-[#7A8095]" /> Mark as read
+                  </button>
+                ) : (
+                  <button onClick={() => markUnread(ctxMenu.id)}
+                    className="flex w-full items-center gap-[9px] rounded-lg px-[10px] py-[8px] text-left text-[12.6px] font-medium text-[#0F1728] transition hover:bg-[#F4F5F8]">
+                    <MessageSquare className="h-[14px] w-[14px] text-[#7A8095]" /> Mark as unread
+                  </button>
+                )}
+                <button onClick={() => { setCtxMenu(null); popOut(ctxMenu.id); }}
+                  className="flex w-full items-center gap-[9px] rounded-lg px-[10px] py-[8px] text-left text-[12.6px] font-medium text-[#0F1728] transition hover:bg-[#F4F5F8]">
+                  <Maximize2 className="h-[14px] w-[14px] text-[#7A8095]" /> Open in its own window
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => copyMessage(ctxMenu.body)}
+                  className="flex w-full items-center gap-[9px] rounded-lg px-[10px] py-[8px] text-left text-[12.6px] font-medium text-[#0F1728] transition hover:bg-[#F4F5F8]">
+                  <ClipboardList className="h-[14px] w-[14px] text-[#7A8095]" /> Copy text
+                </button>
+                {ctxMenu.canHide && (
+                  <button onClick={() => hideMessage(ctxMenu.id)}
+                    className="flex w-full items-center gap-[9px] rounded-lg px-[10px] py-[8px] text-left text-[12.6px] font-semibold text-[#B02B2B] transition hover:bg-[#FEEFEF]">
+                    <Trash2 className="h-[14px] w-[14px]" /> Delete for me
+                  </button>
+                )}
+                <span className="block border-t border-[#F0F1F5] px-[10px] pb-1 pt-[6px] text-[10.3px] leading-[1.5] text-[#A8ADBF]">
+                  WhatsApp doesn&apos;t let any business recall a delivered message — this removes it from your inbox only.
+                </span>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -30,6 +30,8 @@ export interface WaConversation {
 }
 
 export interface WaMessage {
+  /** Delete-for-me (077): hidden from our inbox; the customer's copy is untouched. */
+  hidden?: boolean | null;
   id: string;
   workspace_id: string;
   conversation_id: string;

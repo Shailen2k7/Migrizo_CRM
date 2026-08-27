@@ -22,7 +22,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdmin, type SupabaseClient } from '@supabase/supabase-js';
 import {
   getWaSettings, resolveSavedReply, fillPlaceholders, valuesFor, firstName,
-  sendSessionText, sendApprovedTemplate, sendProcessDocument,
+  sendSessionText, sendApprovedTemplate, sendProcessDocument, resolveProcessPdf,
 } from '@/lib/whatsapp/outbound';
 
 export const runtime = 'nodejs';
@@ -98,6 +98,11 @@ export async function POST(req: NextRequest) {
   let sent = 0, failed = 0, deferred = 0;
   const results: Array<Record<string, unknown>> = [];
 
+  // Resolve the process PDF ONCE per run: {{pdf}} in message text gets the
+  // long-lived link (never the raw "storage:" pointer), the T5 document
+  // attachment gets the short fetch link.
+  const pdfResolved = settings.pdf_url ? await resolveProcessPdf(admin, settings) : null;
+
   for (const row of rows) {
     const first = firstName(row.lead_name);
     const tKey = `t${row.next_step}`;
@@ -121,7 +126,7 @@ export async function POST(req: NextRequest) {
       first,
       video: settings.video_url,
       booking: settings.booking_url,
-      pdf: settings.pdf_url,
+      pdf: pdfResolved?.textUrl ?? null,
       route,
     });
 
@@ -151,10 +156,10 @@ export async function POST(req: NextRequest) {
         phone: row.phone_e164, leadId: row.lead_id, body: filled.text, step, dryRun,
       });
       // T5 through the drain still carries the process document with it.
-      if (res.ok && row.track === 'verdict' && row.next_step === 5 && settings.pdf_url) {
+      if (res.ok && row.track === 'verdict' && row.next_step === 5 && pdfResolved?.ok && pdfResolved.url) {
         await sendProcessDocument(admin, wsId, {
           phone: row.phone_e164, leadId: row.lead_id,
-          pdfUrl: settings.pdf_url, step: 'intake:T5-doc', dryRun,
+          pdfUrl: pdfResolved.url, step: 'intake:T5-doc', dryRun,
         });
       }
       await admin.rpc('wa_intake_advance', {

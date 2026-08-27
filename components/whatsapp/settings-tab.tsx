@@ -9,7 +9,7 @@
 // value next to its control — a settings screen that hides current state is
 // how 3 AM sends happen.
 // =============================================================================
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Loader2, Zap, ShieldCheck, Clock, Gauge, PlugZap, RefreshCw, Bot,
   ExternalLink, AlertTriangle, CheckCircle2, PlayCircle,
@@ -51,6 +51,47 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
   const [bookingUrl, setBookingUrl] = useState<string>(s?.booking_url ?? '');
   const [videoUrl, setVideoUrl] = useState<string>(s?.video_url ?? '');
   const [pdfUrl, setPdfUrl] = useState<string>(s?.pdf_url ?? '');
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const pdfFileRef = useRef<HTMLInputElement>(null);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillNote, setBackfillNote] = useState<string | null>(null);
+
+  async function uploadPdf(file: File) {
+    setUploadingPdf(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/whatsapp/assets/upload', { method: 'POST', body: fd });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.reason || 'Upload failed');
+      setPdfUrl(j.stored as string);
+      await onSettingsChanged();
+      toast.success('Process PDF uploaded — T5 now attaches this exact file');
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setUploadingPdf(false);
+    }
+  }
+
+  // One press per batch; repeat until "remaining: 0". Old photo CVs get the
+  // same verdict flow as new ones; non-CVs are left untouched.
+  async function backfillImages() {
+    setBackfilling(true); setBackfillNote(null);
+    try {
+      const res = await fetch('/api/whatsapp/intake/backfill-images', { method: 'POST' });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.reason || 'Backfill failed');
+      const done = (j.results ?? []).map((r: { who?: string; outcome?: string }) => `${r.who ?? '?'}: ${r.outcome ?? '?'}`).join(' · ');
+      setBackfillNote(`Checked ${j.processed} chat${j.processed === 1 ? '' : 's'}${done ? ` — ${done}` : ''}. Remaining: ${j.remaining}.`);
+      if (j.remaining > 0) toast.info(`${j.remaining} more to scan — press again`);
+      else toast.success('All older photo chats scanned');
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBackfilling(false);
+    }
+  }
   const [savingSend, setSavingSend] = useState(false);
   const [testing, setTesting] = useState(false);
   const [draining, setDraining] = useState(false);
@@ -70,6 +111,7 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
       const clean = (v: string) => {
         const t = v.trim();
         if (!t) return null;
+        if (t.startsWith('storage:')) return t; // an uploaded asset — already validated bytes
         if (!/^https?:\/\//i.test(t)) throw new Error(`"${t.slice(0, 40)}" is not a link — it must start with https://`);
         return t;
       };
@@ -242,12 +284,29 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
             <input type="url" value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)}
               placeholder="https://youtu.be/…" className={`${FIELD} w-full max-w-[340px]`} />
           </Row>
-          <Row label="Process PDF link">
-            <input type="url" value={pdfUrl} onChange={(e) => setPdfUrl(e.target.value)}
-              placeholder="https://… (public link to the process document)" className={`${FIELD} w-full max-w-[340px]`} />
+          <Row label="Process PDF">
+            <span className="flex flex-wrap items-center gap-[8px]">
+              {pdfUrl.startsWith('storage:') ? (
+                <span className="inline-flex items-center gap-[6px] rounded-[8px] bg-[#EDFAF1] px-[10px] py-[6px] text-[12px] font-semibold text-[#1B7A44]">
+                  <CheckCircle2 className="h-[13px] w-[13px]" /> Uploaded PDF in use
+                </span>
+              ) : (
+                <input type="url" value={pdfUrl} onChange={(e) => setPdfUrl(e.target.value)}
+                  placeholder="https://…/file.pdf — or just upload it →" className={`${FIELD} w-full max-w-[240px]`} />
+              )}
+              <button onClick={() => pdfFileRef.current?.click()} disabled={uploadingPdf}
+                className="inline-flex items-center gap-[6px] rounded-[9px] border border-[#D6E9DD] bg-white px-[12px] py-[7px] text-[12px] font-semibold text-[#1B7A44] transition hover:bg-[#EDFAF1] disabled:opacity-50">
+                {uploadingPdf ? <Loader2 className="h-[12px] w-[12px] animate-spin" /> : null}
+                {pdfUrl.startsWith('storage:') ? 'Replace PDF' : 'Upload PDF'}
+              </button>
+              <input ref={pdfFileRef} type="file" accept="application/pdf,.pdf" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPdf(f); e.target.value = ''; }} />
+            </span>
           </Row>
           <p className="m-0 mt-[6px] text-[11.4px] leading-[1.55] text-faint">
-            The autopilot fills these into T5 and T6. A missing link stops that message with a visible error — a lead never sees a broken placeholder.
+            Upload beats pasting a link: Drive/Dropbox share links serve a preview page, not the file — that is the
+            &ldquo;not supported for Document media&rdquo; failure. An uploaded PDF can never break that way.
+            The autopilot fills these into T5 and T6; a missing link stops that message with a visible error.
           </p>
 
           <div className="mt-[12px]">
@@ -270,11 +329,22 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
             POST https://crm.migrizo.com/api/whatsapp/campaigns/run<br />
             x-cron-secret: &lt;CRON_SECRET&gt;
           </div>
-          <button onClick={runDrain} disabled={draining}
-            className="inline-flex items-center gap-[7px] rounded-[9px] bg-[#25A25A] px-[16px] py-[9px] text-[13px] font-semibold text-white transition hover:bg-[#1B7A44] disabled:opacity-50">
-            {draining ? <Loader2 className="h-[14px] w-[14px] animate-spin" /> : <PlayCircle className="h-[14px] w-[14px]" />}
-            Run now{dryRun ? ' (dry-run)' : ''}
-          </button>
+          <span className="flex flex-wrap items-center gap-[8px]">
+            <button onClick={runDrain} disabled={draining}
+              className="inline-flex items-center gap-[7px] rounded-[9px] bg-[#25A25A] px-[16px] py-[9px] text-[13px] font-semibold text-white transition hover:bg-[#1B7A44] disabled:opacity-50">
+              {draining ? <Loader2 className="h-[14px] w-[14px] animate-spin" /> : <PlayCircle className="h-[14px] w-[14px]" />}
+              Run now{dryRun ? ' (dry-run)' : ''}
+            </button>
+            <button onClick={backfillImages} disabled={backfilling}
+              title="Reads photo CVs sent BEFORE the vision pipeline existed — judges them, stores the profile, deletes the images. Non-CV photos are left alone."
+              className="inline-flex items-center gap-[7px] rounded-[9px] border border-[#D6E9DD] bg-white px-[16px] py-[9px] text-[13px] font-semibold text-[#1B7A44] transition hover:bg-[#EDFAF1] disabled:opacity-50">
+              {backfilling ? <Loader2 className="h-[14px] w-[14px] animate-spin" /> : null}
+              Scan old photo CVs
+            </button>
+          </span>
+          {backfillNote && (
+            <p className="m-0 mt-[8px] rounded-[9px] bg-[#F9FAFB] px-[11px] py-[8px] text-[11.6px] leading-[1.6] text-[#45464c]">{backfillNote}</p>
+          )}
           {drainResult && (
             <div className="mt-[12px] rounded-[11px] border border-[#E8EAF0] bg-[#F9FAFB] px-[13px] py-[11px] text-[12.4px]">
               {drainResult.skipped ? (

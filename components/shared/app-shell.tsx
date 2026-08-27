@@ -120,10 +120,11 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
             shell so they run on every page, not only on Meetings. */}
         <MeetingAlerts workspaceId={workspace.id} />
         <FollowUpAlerts workspaceId={workspace.id} onOpenLead={(id) => setDrawerLeadId(id)} />
-        {/* WhatsApp: soft chime on an inbound message + "(3) Migrizo CRM" in
-            the browser tab, from anywhere in the CRM. Admin-only, matching who
-            can see the WhatsApp screen at all. */}
-        <WaAlerts workspaceId={workspace.id} enabled={role === 'admin'} />
+        {/* WhatsApp: melodious chime on an inbound message + "(3) Migrizo CRM"
+            in the browser tab, from anywhere in the CRM. Every role hears it —
+            a lead writing in is everyone's business (founder decision, 077).
+            The mute button in the inbox still silences it per device. */}
+        <WaAlerts workspaceId={workspace.id} enabled />
       </UIContext.Provider>
     </AppProvider>
   );

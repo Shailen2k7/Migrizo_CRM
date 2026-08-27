@@ -231,6 +231,66 @@ export async function sendApprovedTemplate(
     }));
 }
 
+/**
+ * Resolve settings.pdf_url into a URL Interakt can actually fetch.
+ *
+ * Two forms are supported:
+ *   storage:<path>   an asset UPLOADED in WhatsApp Settings — lives in our
+ *                    private bucket; resolved to a 10-minute signed URL at
+ *                    send time. This is the recommended, cannot-break form.
+ *   https://…        a direct link. Validated with a HEAD request first,
+ *                    because a Drive/Dropbox SHARE PAGE serves HTML — which
+ *                    is exactly the "is not supported for Document media"
+ *                    failure Interakt returns. Better to refuse with a clear
+ *                    error than to let a lead see a broken send.
+ */
+export async function resolveProcessPdf(
+  admin: SupabaseClient,
+  settings: WaSettings
+): Promise<{ ok: boolean; url: string | null; textUrl: string | null; error?: string }> {
+  const raw = (settings.pdf_url || '').trim();
+  if (!raw) return { ok: false, url: null, textUrl: null };
+
+  if (raw.startsWith('storage:')) {
+    const path = raw.slice('storage:'.length);
+    // Two lifetimes on purpose: `url` (10 min) is for Interakt to FETCH the
+    // document right now; `textUrl` (1 year) is what may be EMBEDDED in a
+    // message body via {{pdf}} — a lead clicking a link tomorrow must not
+    // hit an expired-signature error.
+    const [{ data: fetchUrl, error }, { data: longUrl }] = await Promise.all([
+      admin.storage.from('whatsapp-media').createSignedUrl(path, 600),
+      admin.storage.from('whatsapp-media').createSignedUrl(path, 60 * 60 * 24 * 365),
+    ]);
+    if (error || !fetchUrl?.signedUrl) {
+      return { ok: false, url: null, textUrl: null, error: `uploaded PDF missing from storage (${error?.message ?? 'no url'}) — re-upload it in WhatsApp Settings` };
+    }
+    return { ok: true, url: fetchUrl.signedUrl, textUrl: longUrl?.signedUrl ?? fetchUrl.signedUrl };
+  }
+
+  if (!/^https?:\/\//i.test(raw)) {
+    return { ok: false, url: null, textUrl: null, error: 'Process PDF link is not a valid URL' };
+  }
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    let head: Response;
+    try {
+      head = await fetch(raw, { method: 'HEAD', redirect: 'follow', signal: ctrl.signal });
+    } finally { clearTimeout(timer); }
+    if (head.status === 405) return { ok: true, url: raw, textUrl: raw }; // server dislikes HEAD; let Interakt try
+    const ct = (head.headers.get('content-type') || '').toLowerCase();
+    if (head.ok && (ct.includes('pdf') || ct.includes('octet-stream'))) {
+      return { ok: true, url: raw, textUrl: raw };
+    }
+    return {
+      ok: false, url: null, textUrl: null,
+      error: `Process PDF link serves "${ct || `HTTP ${head.status}`}", not a PDF — use the Upload button in WhatsApp Settings, or a direct link ending in .pdf`,
+    };
+  } catch {
+    return { ok: false, url: null, textUrl: null, error: 'Process PDF link is unreachable — upload the file in WhatsApp Settings instead' };
+  }
+}
+
 /** The process document that rides along with T5, when settings.pdf_url is set. */
 export async function sendProcessDocument(
   admin: SupabaseClient,
