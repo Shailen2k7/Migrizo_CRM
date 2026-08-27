@@ -41,6 +41,45 @@ interface AiVerdictShape {
 const MAX_CHARS = 28_000; // plenty for any CV; keeps the prompt bounded
 const INDUSTRY_VOCAB = ['tech', 'research', 'art', 'engineering', 'education', 'business', 'healthcare', 'finance', 'other'] as const;
 
+// ── THE ELIGIBILITY RUBRIC ──────────────────────────────────────────────────
+// ONE rubric, shared by the text prompt and the vision prompt. They used to
+// carry two separate copies of a much narrower description, so a CV sent as a
+// PDF and the same CV photographed could be judged differently.
+//
+// The old wording described Digital Technology as "product/engineering
+// leadership, scaling products, open-source impact, founding or senior roles at
+// product-led tech companies" and then added "routine IT service roles ... are
+// usually NOT eligible". Cybersecurity was never mentioned. Nor was data,
+// infrastructure, DevOps, ML, semiconductors or telecom. A security architect
+// matched none of the positive wording and every word of the negative, so the
+// model rejected genuinely eligible people — which is exactly what happened.
+//
+// Two further corrections are load-bearing:
+//   * Exceptional PROMISE exists. The old prompt only ever described the
+//     proven-leader bar, so early-career candidates were judged against a
+//     standard that does not apply to them.
+//   * A WhatsApp CV is one or two pages. Talks, patents, CVEs, certifications
+//     and publications are routinely absent from it. Absence of evidence on a
+//     short CV is not evidence of an ineligible person.
+const ELIGIBILITY_RUBRIC = `ENDORSEMENT ROUTES
+
+- Digital Technology: the whole of the technology sector, not only product companies. Software engineering and development (frontend, backend, full-stack, mobile, web, embedded, firmware); architecture (solutions, technical, enterprise, platform); cloud and infrastructure (AWS, Azure, GCP, Kubernetes, Docker, Terraform, IaC, serverless, distributed systems, edge, SRE, DevOps, DevSecOps, MLOps, platform engineering); CYBERSECURITY in every form (security engineering, information security, security architecture, threat intelligence and research, SOC, incident response, digital forensics, network/cloud/application security, penetration testing, ethical hacking, vulnerability research, IAM, cryptography, zero trust, malware research, privacy engineering, cyber defence); AI and machine learning (AI/ML engineering and research, deep learning, NLP, computer vision, generative AI, LLMs, reinforcement learning, AI safety, AI infrastructure, applied AI); data (data science, data engineering, data architecture, big data, analytics, BI, quantitative analysis, decision science); computer science fundamentals (algorithms, distributed computing, operating systems, databases, networks, compilers, systems programming, HPC, parallel computing, quantum computing); fintech (payments, digital banking, open banking, regtech, insurtech, wealthtech, quantitative finance, algorithmic trading, fraud and AML technology); blockchain, DLT, smart contracts, Web3, DeFi; telecommunications (5G/6G, wireless, RF, satellite, optical, signal processing); semiconductors and hardware (chip and IC design, VLSI, ASIC, FPGA, microelectronics, processor architecture, embedded systems); robotics and autonomous systems (autonomous vehicles, drones/UAV, industrial robotics, human-robot interaction, IoT, digital twins, AR/VR/XR); health and bio technology (bioinformatics, computational biology, digital health, medtech, medical AI, genomics, drug discovery technology); energy and climate technology (renewables, batteries and storage, EV, hydrogen, smart grids, carbon capture, cleantech). Technical leadership counts as evidence, not as a separate category: CTO, CIO, CISO, VP/Head of Engineering or Technology, technical/engineering/R&D/innovation director, principal, staff, distinguished or lead engineer, technical fellow.
+
+- Research & Academia: a research record in ANY scientific, engineering or technical discipline — PhD or doctoral candidacy, postdoctoral work, publications, citations, grants, patents, peer review, academic appointments, principal investigator roles, industrial R&D. This is the right route for the classical engineering disciplines (mechanical, electrical, electronic, civil, structural, chemical, aerospace, automotive, mechatronics, industrial, manufacturing, biomedical, materials, environmental, energy, petroleum, nuclear, marine, instrumentation, control, systems) when the person's case rests on research and innovation rather than on digital product work.
+
+- Arts & Culture: significant creative work with media recognition, awards or international showings.
+
+TWO STANDARDS, NOT ONE
+- Exceptional Talent: already a recognised leader in the field.
+- Exceptional Promise: EARLY-CAREER with strong potential to become one. Judge a candidate with under roughly eight years of experience against Promise, never against Talent. Missing this distinction wrongly rejects strong early-career people.
+
+HOW TO JUDGE
+- Do NOT rely on exact job-title matching. Equivalent, adjacent, interdisciplinary, specialist, senior, research, academic and leadership roles all count. Someone whose profession, education, research, publications, technical expertise, innovation or professional work sits anywhere in technology, computer science, AI, ML, data science, cybersecurity, software, cloud, engineering, scientific research, STEM, fintech, robotics, telecom, semiconductors, biotech, healthtech, energy tech, climate tech or blockchain is in scope.
+- Never mark someone ineligible merely because their specialism is not named above, or because their title does not sound like a product role. Judge the substance of the work.
+- A WhatsApp CV is one or two pages and routinely omits awards, talks, patents, publications and certifications. Do not treat a thin CV as a weak candidate — judge what the work itself implies.
+- "Plausible with our help building the evidence portfolio" counts as ELIGIBLE. Reserve ineligible for someone genuinely years away from any credible case, or plainly outside every field above.
+- When it is genuinely borderline, lean ELIGIBLE and say why in the reason. A wrong "no" is sent to the person and loses a real client; a wrong "yes" costs one consultation call. The two errors are not equal.`;
+
 // ── text extraction ─────────────────────────────────────────────────────────
 async function extractText(bytes: Uint8Array, mime: string, name: string): Promise<string | null> {
   const lower = (name || '').toLowerCase();
@@ -88,12 +127,7 @@ async function judgeCv(cvText: string, leadName: string): Promise<AiVerdict | nu
 
   const prompt = `You are the intake reviewer for Migrizo, a premium UK immigration consultancy. A prospective client named "${leadName}" sent this CV over WhatsApp. Assess it for the UK Global Talent Visa.
 
-Global Talent endorsement paths and what a plausible candidate looks like:
-- Digital Technology (Tech Nation criteria): product/engineering leadership, scaling products, open-source impact, founding or senior roles at product-led tech companies.
-- Research & Academia: PhD or equivalent research record, publications, grants, peer review, academic appointments.
-- Arts & Culture: significant creative work with media recognition, awards, international showings.
-
-Judge STRICTLY on evidence in the CV. "Plausible with our help building the evidence portfolio" counts as eligible; "years away from any credible case" does not. Routine IT service roles with no leadership, product ownership, or external recognition are usually NOT eligible.
+${ELIGIBILITY_RUBRIC}
 
 Respond with ONLY a JSON object, no markdown fences:
 {
@@ -118,6 +152,10 @@ ${cvText.slice(0, MAX_CHARS)}`;
       body: JSON.stringify({
         model,
         max_tokens: 3000,
+        // Deterministic. The API default is 1.0, which is fine for prose and
+        // wrong for a verdict: the same CV could come back eligible on one
+        // run and not eligible on the next. A judgement must be reproducible.
+        temperature: 0,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -378,11 +416,9 @@ export async function processCvImages(
 
 FIRST decide: is this actually a CV / resume (possibly photographed pages of one)? A selfie, screenshot, certificate photo, payment proof or anything else is NOT a CV.
 
-If it IS a CV, assess it for the UK Global Talent Visa:
-- Digital Technology (Tech Nation criteria): product/engineering leadership, scaling products, open-source impact, founding or senior roles at product-led tech companies.
-- Research & Academia: PhD or equivalent research record, publications, grants, peer review, academic appointments.
-- Arts & Culture: significant creative work with media recognition, awards, international showings.
-Judge STRICTLY on evidence visible in the images. "Plausible with our help building the evidence portfolio" counts as eligible; "years away from any credible case" does not.
+If it IS a CV, assess it for the UK Global Talent Visa using this rubric:
+
+${ELIGIBILITY_RUBRIC}
 
 Respond with ONLY a JSON object, no markdown fences:
 {
@@ -400,6 +436,8 @@ Respond with ONLY a JSON object, no markdown fences:
       headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model, max_tokens: 3000,
+        // Deterministic — see the note on the text path. Same CV, same verdict.
+        temperature: 0,
         messages: [{ role: 'user', content: [...blocks, { type: 'text', text: prompt }] }],
       }),
     });

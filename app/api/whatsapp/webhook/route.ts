@@ -74,15 +74,68 @@ interface LogRow {
  * and keep them. A failure here must never lose the message: we fall back to
  * recording the source URL so the file can be retried later.
  */
+/**
+ * A human-readable filename for an attachment.
+ *
+ * Interakt does NOT send the customer's original filename. Every inbound media
+ * payload was checked: the message object carries media_url and
+ * message_content_type and nothing else identifying the file, and the URL
+ * itself is a random blob ("ylfdTBkupHNu.pdf"). There is no original name to
+ * preserve, so one has to be built.
+ *
+ * "Upen Pathak — CV.pdf" beats "document-1787852212034.pdf" for the only
+ * things a name is for here: recognising it in the inbox and in a download
+ * folder. Falls back to the phone number when the chat has no lead yet.
+ */
+async function mediaFileName(
+  admin: SupabaseClient,
+  wsId: string,
+  phone: string | null,
+  declaredType: string,
+  ext: string
+): Promise<string> {
+  const label = declaredType === 'image' ? 'Photo'
+    : declaredType === 'document' ? 'CV'
+    : declaredType === 'audio' ? 'Voice note'
+    : declaredType === 'video' ? 'Video' : 'File';
+
+  let who: string | null = null;
+  if (phone) {
+    try {
+      const { data } = await admin
+        .from('whatsapp_conversations')
+        .select('phone_e164, lead:leads(full_name)')
+        .eq('workspace_id', wsId)
+        .eq('phone_e164', phone)
+        .maybeSingle();
+      const lead = data?.lead as { full_name?: string } | { full_name?: string }[] | null;
+      const full = Array.isArray(lead) ? lead[0]?.full_name : lead?.full_name;
+      who = (full || data?.phone_e164 || phone) as string;
+    } catch {
+      who = phone;
+    }
+  }
+
+  // Strip anything that would break a Content-Disposition header or a storage
+  // key, then cap it — storage keys have limits and long names are unreadable.
+  const safe = (who || 'Unknown').replace(/[^\w.\- ]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+  return `${safe} — ${label}.${ext}`;
+}
+
 async function captureMedia(
   admin: SupabaseClient,
   wsId: string,
-  message: Json
+  message: Json,
+  phone: string | null
 ): Promise<{
   path: string | null; type: string | null; name: string | null;
   mime: string | null; size: number | null; sourceUrl: string | null;
+  error: string | null;
 }> {
-  const empty = { path: null, type: null, name: null, mime: null, size: null, sourceUrl: null };
+  const empty = {
+    path: null, type: null, name: null, mime: null, size: null,
+    sourceUrl: null, error: null,
+  };
 
   // Interakt is not consistent about the field name across content types.
   const sourceUrl =
@@ -96,42 +149,66 @@ async function captureMedia(
   const fallbackName =
     str(message.file_name) ?? str(message.fileName) ?? str(message.caption) ?? null;
 
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 20_000);
-    let res: Response;
+  // Two attempts on BOTH the download and the upload. The old code tried each
+  // once and, on failure, dropped the file on the floor with the reason going
+  // only to console.error — which is why 35% of attachments read "file not
+  // available" with nothing anywhere saying why. Most of these failures are
+  // transient; a second attempt a moment later fixes them.
+  //
+  // Whatever happens, sourceUrl and the failure reason are RETURNED, so a
+  // failed capture stays recoverable instead of becoming a dead row.
+  let lastError = 'unknown';
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      res = await fetch(sourceUrl, { signal: ctrl.signal });
-    } finally {
-      clearTimeout(timer);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20_000);
+      let res: Response;
+      try {
+        res = await fetch(sourceUrl, { signal: ctrl.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!res.ok) { lastError = `download HTTP ${res.status}`; continue; }
+
+      const buf = new Uint8Array(await res.arrayBuffer());
+      // 100MB is past anything WhatsApp will deliver; treat it as hostile.
+      if (buf.byteLength === 0) { lastError = 'downloaded 0 bytes'; continue; }
+      if (buf.byteLength > 100 * 1024 * 1024) {
+        return { ...empty, type: declaredType, name: fallbackName, sourceUrl,
+                 error: `file too large (${Math.round(buf.byteLength / 1048576)}MB)` };
+      }
+
+      const mime = res.headers.get('content-type')?.split(';')[0] || 'application/octet-stream';
+      const extFromMime = mime.split('/')[1]?.replace(/[^\w]/g, '').slice(0, 8) || 'bin';
+      // Interakt sends no filename, so build a readable one. A caption that
+      // already looks like a filename is still honoured — if a name ever does
+      // arrive, it wins over anything we invent.
+      const name = (fallbackName && /\.[A-Za-z0-9]{2,5}$/.test(fallbackName))
+        ? fallbackName.replace(/[^\w.\- ]+/g, '_').slice(0, 120)
+        : await mediaFileName(admin, wsId, phone, declaredType, extFromMime);
+
+      const path = `${wsId}/in/${Math.random().toString(36).slice(2, 12)}-${name}`;
+      const { error } = await admin.storage.from('whatsapp-media')
+        .upload(path, buf, { contentType: mime, upsert: false });
+      if (error) {
+        lastError = `storage upload: ${error.message}`;
+        console.error('[whatsapp][webhook] media upload failed', error.message, { attempt });
+        continue;
+      }
+
+      return { path, type: declaredType, name, mime, size: buf.byteLength, sourceUrl, error: null };
+    } catch (e) {
+      lastError = `fetch threw: ${e instanceof Error ? e.message : String(e)}`;
+      console.error('[whatsapp][webhook] media capture failed', lastError, { attempt });
     }
-    if (!res.ok) return { ...empty, type: declaredType, name: fallbackName, sourceUrl };
-
-    const buf = new Uint8Array(await res.arrayBuffer());
-    // 100MB is past anything WhatsApp will deliver; treat it as hostile.
-    if (buf.byteLength === 0 || buf.byteLength > 100 * 1024 * 1024) {
-      return { ...empty, type: declaredType, name: fallbackName, sourceUrl };
-    }
-
-    const mime = res.headers.get('content-type')?.split(';')[0] || 'application/octet-stream';
-    const extFromMime = mime.split('/')[1]?.replace(/[^\w]/g, '').slice(0, 8) || 'bin';
-    const name = (fallbackName && /\.[A-Za-z0-9]{2,5}$/.test(fallbackName))
-      ? fallbackName.replace(/[^\w.\- ]+/g, '_').slice(0, 120)
-      : `${declaredType}-${Date.now()}.${extFromMime}`;
-
-    const path = `${wsId}/in/${Math.random().toString(36).slice(2, 12)}-${name}`;
-    const { error } = await admin.storage.from('whatsapp-media')
-      .upload(path, buf, { contentType: mime, upsert: false });
-    if (error) {
-      console.error('[whatsapp][webhook] media upload failed', error.message);
-      return { ...empty, type: declaredType, name, sourceUrl };
-    }
-
-    return { path, type: declaredType, name, mime, size: buf.byteLength, sourceUrl };
-  } catch (e) {
-    console.error('[whatsapp][webhook] media fetch failed', e);
-    return { ...empty, type: declaredType, name: fallbackName, sourceUrl };
   }
+
+  // Both attempts failed. The row is still written with the type, the name and
+  // — critically — the source URL, which Interakt keeps alive for years. That
+  // is what lets /api/whatsapp/media/backfill recover it later.
+  console.error('[whatsapp][webhook] media capture gave up', lastError);
+  return { ...empty, type: declaredType, name: fallbackName, sourceUrl, error: lastError };
 }
 
 export async function POST(req: NextRequest) {
@@ -293,7 +370,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, skipped: 'no_workspace' });
       }
 
-      const media = await captureMedia(admin, wsId, message);
+      const media = await captureMedia(admin, wsId, message, phone);
 
       const { data: res, error } = await admin.rpc('whatsapp_record_inbound', {
         p_workspace_id: wsId,
@@ -316,6 +393,17 @@ export async function POST(req: NextRequest) {
       }
 
       const r = obj(res);
+
+      // A failed capture is written onto the message itself (079), not just to
+      // console.error. Without this the inbox says "file not available" and
+      // nothing anywhere records why, which is how 35% of attachments went
+      // missing unnoticed. Best-effort: never worth failing the webhook over.
+      if (media.error && r.message_id) {
+        await admin.from('whatsapp_messages')
+          .update({ media_error: media.error })
+          .eq('id', String(r.message_id));
+      }
+
       log.outcome = 'handled';
       log.detail = [
         media.type ? `media:${media.type}${media.path ? '' : ' (capture failed)'}` : null,
