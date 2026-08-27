@@ -292,15 +292,29 @@ export async function handleInboundForIntake(
         p_workspace_id: wsId, p_phone: conv.phone_e164, p_track: 'chase', p_step: 1,
       });
 
-      // The message can beat Make's ingest POST. Create the chase ourselves
-      // for a genuinely fresh lead: cold stage, created in the last 48h,
-      // never yet messaged by us. Anything older is a returning contact.
+      // The message can beat Make's ingest POST — and plenty of legitimate
+      // leads are older than any freshness window, already sitting in the Cold
+      // campaign, or came in from a source nobody tagged. None of that is a
+      // reason to leave a real person on read.
+      //
+      // So the guard is now the only question that actually matters: have we
+      // ever sent THIS conversation its T1? If not, it gets one. Stage, age,
+      // source and country are all irrelevant — if a number messages us, we
+      // reply. wa_intake_enqueue still refuses suppressed numbers, and the
+      // atomic claim below still means concurrent webhooks send exactly once.
       if (!claimedId) {
-        const freshLead =
-          lead.stage === 'cold' &&
-          Date.now() - new Date(lead.created_at).getTime() < 48 * 3600 * 1000 &&
-          !conv.last_outbound_at;
-        if (freshLead) {
+        const { data: priorT1, error: priorT1Error } = await admin
+          .from('whatsapp_messages')
+          .select('id')
+          .eq('conversation_id', conv.id)
+          .eq('direction', 'out')
+          .eq('sequence_step', 'intake:T1')
+          .limit(1);
+
+        // A query that FAILED has not told us T1 was never sent — it told us
+        // nothing. Treating that as "never sent" would re-fire T1 at someone
+        // who already has it, so an error means we leave this to the drain.
+        if (!priorT1Error && !priorT1?.length) {
           await admin.rpc('wa_intake_enqueue', {
             p_workspace_id: wsId, p_lead_id: lead.id, p_phone: conv.phone_e164,
             p_track: 'chase', p_first_step: 1, p_delay_minutes: 0,
