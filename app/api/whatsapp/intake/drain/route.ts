@@ -3,10 +3,8 @@
 // -----------------------------------------------------------------------------
 // Cron hits this every 5 minutes (pg_cron job migrizo-wa-intake, migration
 // 076) with x-cron-secret. It walks the wa_intake queue: the T2–T4 chase
-// nudges, the CV JUDGEMENT (verdict step 4 — moved here because Netlify's
-// ~26s webhook ceiling was killing verdicts mid-flight), the T5/T7 verdict
-// sends, and the T6 booking-link follow-up. Only T1 still fires inline in
-// the webhook — it is a fast text send that always fits.
+// nudges and the T6 booking-link follow-up. T1, T5 and T7 never come through
+// here — they fire inline in the webhook the moment their trigger happens.
 //
 // BRANCH IS DECIDED PER SEND, from the conversation's real state:
 //   window open  (inbound < 23h ago) → free-form quick-reply text, any hour.
@@ -26,7 +24,6 @@ import {
   getWaSettings, resolveSavedReply, fillPlaceholders, valuesFor, firstName,
   sendSessionText, sendApprovedTemplate, sendProcessDocument, resolveProcessPdf,
 } from '@/lib/whatsapp/outbound';
-import { judgeQueuedCv } from '@/lib/whatsapp/intake';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -107,72 +104,6 @@ export async function POST(req: NextRequest) {
   const pdfResolved = settings.pdf_url ? await resolveProcessPdf(admin, settings) : null;
 
   for (const row of rows) {
-    // ── STEP 4: JUDGE — the CV verdict, moved OUT of the webhook ──────────
-    // Netlify kills a function at ~26s and an AI read of a CV does not
-    // reliably fit, so the webhook only queues this row; the reading happens
-    // here, where a killed run is retried by the lease instead of vanishing.
-    // On a verdict the SAME iteration falls through to the send machinery
-    // below as step 5 (T5 + process PDF) or step 7 (T7) — the lead waits one
-    // cron tick, not two.
-    if (row.track === 'verdict' && row.next_step === 4) {
-      if (!row.lead_id) {
-        await admin.from('wa_intake').update({
-          status: 'done', last_error: 'no lead on judge row', updated_at: new Date().toISOString(),
-        }).eq('id', row.intake_id);
-        results.push({ who: row.lead_name, step: 'intake:judge', ok: false, why: 'no_lead' });
-        continue;
-      }
-      const j = await judgeQueuedCv(admin, wsId, {
-        leadId: row.lead_id, phoneE164: row.phone_e164, conversationId: row.conversation_id,
-      });
-
-      if (j.kind === 'eligible' || j.kind === 'not_eligible') {
-        row.next_step = j.kind === 'eligible' ? 5 : 7;
-        await admin.from('wa_intake').update({
-          next_step: row.next_step, updated_at: new Date().toISOString(),
-        }).eq('id', row.intake_id);
-        results.push({ who: row.lead_name, step: 'intake:judge', ok: true, verdict: j.kind });
-        // fall through — T5/T7 goes out right now, below.
-      } else if (j.kind === 'defer') {
-        // Not a failure: photos still arriving, or another run holds the
-        // claim. Next tick, no strike.
-        await admin.from('wa_intake').update({
-          next_send_at: new Date(Date.now() + 60_000).toISOString(),
-          claimed_at: null, updated_at: new Date().toISOString(),
-        }).eq('id', row.intake_id);
-        deferred++;
-        results.push({ who: row.lead_name, step: 'intake:judge', ok: true, deferred: j.reason });
-        continue;
-      } else if (j.kind === 'skip') {
-        // Terminal and already flagged for a human inside the profile
-        // pipeline (not a CV, unreadable, a human verdict exists...).
-        await admin.from('wa_intake').update({
-          status: 'done', last_error: j.reason, updated_at: new Date().toISOString(),
-        }).eq('id', row.intake_id);
-        results.push({ who: row.lead_name, step: 'intake:judge', ok: false, why: j.reason });
-        continue;
-      } else {
-        // Transient (AI down, file mid-recovery): retry in 5 minutes, and
-        // let the standard 5-strike rule surface a persistent failure.
-        if (row.fail_count >= 4) {
-          await admin.rpc('wa_intake_advance', {
-            p_intake_id: row.intake_id, p_ok: false, p_branch: 'session',
-            p_error: `judge: ${j.reason}`,
-          });
-        } else {
-          await admin.from('wa_intake').update({
-            fail_count: row.fail_count + 1,
-            next_send_at: new Date(Date.now() + 5 * 60_000).toISOString(),
-            claimed_at: null, last_error: `judge: ${j.reason}`,
-            updated_at: new Date().toISOString(),
-          }).eq('id', row.intake_id);
-        }
-        failed++;
-        results.push({ who: row.lead_name, step: 'intake:judge', ok: false, why: j.reason });
-        continue;
-      }
-    }
-
     const first = firstName(row.lead_name);
     const tKey = `t${row.next_step}`;
     const step = `intake:T${row.next_step}`;

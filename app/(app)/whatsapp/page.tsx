@@ -1072,14 +1072,6 @@ export default function WhatsAppPage() {
                       c.unread_count ? 'font-bold' : on ? 'font-semibold' : 'font-medium'
                     )}>
                       {c.lead_name}
-                      {c.tag && (
-                        <span
-                          className="flex-shrink-0 rounded-[4px] bg-[#EEF0FB] px-[5px] py-[1px] text-[9.5px] font-semibold uppercase tracking-[0.03em] text-[#4B4DDB]"
-                          title="Came back through the ad form — we already have their profile, so the autopilot stayed quiet"
-                        >
-                          {c.tag}
-                        </span>
-                      )}
                       {c.suppressed && <span className="h-[6px] w-[6px] flex-shrink-0 rounded-full bg-[#B02B2B]" title="Opted out" />}
                       {!c.suppressed && c.needs_attention && <span className="h-[6px] w-[6px] flex-shrink-0 rounded-full bg-[#F0A020]" title="Needs reply" />}
                     </span>
