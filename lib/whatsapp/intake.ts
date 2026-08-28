@@ -404,12 +404,13 @@ export async function applyVerdictActions(
     } else {
       out.t5 = 'quick_reply_missing';
     }
-    // T6 rides 4 minutes behind a DELIVERED T5. If T5 failed, queue the pair
-    // from step 5 instead — the drain retries T5 first, then T6.
+    // T6 rides ONE minute behind a DELIVERED T5 (the founder's spec). If T5
+    // failed, queue the pair from step 5 instead — the drain retries T5
+    // first, then T6.
     await admin.rpc('wa_intake_enqueue', {
       p_workspace_id: wsId, p_lead_id: opts.leadId, p_phone: opts.phone,
       p_track: 'verdict', p_first_step: t5Sent ? 6 : 5,
-      p_delay_minutes: t5Sent ? 4 : 15,
+      p_delay_minutes: t5Sent ? 1 : 15,
     });
     if (!t5Sent) await flagAttention(admin, opts.conversationId);
   } else {
@@ -440,6 +441,116 @@ export async function applyVerdictActions(
     }
   }
   return out;
+}
+
+// ── THE JUDGE — called by the DRAIN for verdict rows at step 4 ──────────────
+// The heavy part of the pipeline (download, extract, AI verdict) lives here,
+// in a cron invocation that can be killed and retried, never in the webhook.
+export type JudgeOutcome =
+  | { kind: 'eligible'; route: string | null }
+  | { kind: 'not_eligible'; route: string | null }
+  | { kind: 'defer'; reason: string }   // try again next tick, no strike
+  | { kind: 'skip'; reason: string }    // terminal: nothing to judge, row done
+  | { kind: 'error'; reason: string };  // transient: retry with a strike
+
+export async function judgeQueuedCv(
+  admin: SupabaseClient,
+  wsId: string,
+  row: { leadId: string; phoneE164: string; conversationId: string | null }
+): Promise<JudgeOutcome> {
+  const { data: lead } = await admin
+    .from('leads')
+    .select('id, full_name')
+    .eq('id', row.leadId)
+    .maybeSingle();
+  if (!lead) return { kind: 'skip', reason: 'lead_gone' };
+  if (!row.conversationId) return { kind: 'skip', reason: 'no_conversation' };
+
+  // The newest inbound document in the last 24h is the CV to judge. Falling
+  // back to photos below keeps both arrival shapes on one path.
+  const daySince = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const { data: docs } = await admin
+    .from('whatsapp_messages')
+    .select('id, media_path, media_name, media_mime, provider_msg_id, created_at')
+    .eq('conversation_id', row.conversationId)
+    .eq('direction', 'in')
+    .eq('media_type', 'document')
+    .not('hidden', 'is', true)
+    .gte('created_at', daySince)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  const doc = docs?.[0];
+
+  if (doc) {
+    // A document row with no stored file means capture is still fighting —
+    // its retry or the backfill may land the bytes; judging now would fail
+    // for a reason that fixes itself.
+    if (!doc.media_path) return { kind: 'error', reason: 'file_not_stored_yet' };
+    const verdict = await processCvMessage(admin, wsId, {
+      leadId: lead.id, leadName: lead.full_name || 'the candidate',
+      conversationId: row.conversationId, mediaPath: doc.media_path as string,
+      mediaName: doc.media_name, mediaMime: doc.media_mime,
+      providerMsgId: doc.provider_msg_id,
+    });
+    return mapVerdict(verdict);
+  }
+
+  // Photos. Same gathering the webhook used to do inline, minus the 20-second
+  // sleep — the queue delay plus the cron tick IS the settle time now. If the
+  // newest photo is under 45 seconds old, more pages may still be arriving:
+  // wait one more tick rather than judge half a CV.
+  const since = new Date(Date.now() - 20 * 60_000).toISOString();
+  const { data: imgs } = await admin
+    .from('whatsapp_messages')
+    .select('id, media_path, media_mime, created_at')
+    .eq('conversation_id', row.conversationId)
+    .eq('direction', 'in')
+    .eq('media_type', 'image')
+    .not('media_path', 'is', null)
+    .not('hidden', 'is', true)
+    .gte('created_at', since)
+    .order('created_at', { ascending: true })
+    .limit(4);
+  const paths = (imgs ?? []).map((m) => ({ path: m.media_path as string, mime: m.media_mime as string | null }));
+  if (!paths.length) return { kind: 'skip', reason: 'no_media_found' };
+
+  const newest = imgs![imgs!.length - 1].created_at as string;
+  if (Date.now() - new Date(newest).getTime() < 45_000) {
+    return { kind: 'defer', reason: 'photos_still_arriving' };
+  }
+
+  if (!(await claimProfileJudgement(admin, lead.id))) {
+    // Another run holds it. A crashed holder frees itself after 15 minutes
+    // (the stale-claim rule), so waiting is safe and double-T5 is not.
+    return { kind: 'defer', reason: 'judgement_held_elsewhere' };
+  }
+  try {
+    const verdict = await processCvImages(admin, wsId, {
+      leadId: lead.id, leadName: lead.full_name || 'the candidate',
+      conversationId: row.conversationId, images: paths, claimHeld: true,
+    });
+    return mapVerdict(verdict);
+  } catch (e) {
+    try { await releaseProfileJudgement(admin, lead.id); } catch { /* best effort */ }
+    return { kind: 'error', reason: e instanceof Error ? e.message : 'image_judge_threw' };
+  }
+}
+
+function mapVerdict(v: { ok: boolean; eligible?: boolean; route?: string; skipped?: string }): JudgeOutcome {
+  if (v.ok) {
+    return v.eligible === true
+      ? { kind: 'eligible', route: v.route ?? null }
+      : { kind: 'not_eligible', route: v.route ?? null };
+  }
+  const s = v.skipped || 'unknown';
+  // Transient troubles retry; everything else has already flagged a human
+  // inside the profile pipeline and the row can rest.
+  if (s === 'ai_unavailable' || s.startsWith('download_failed') || s === 'judgement_in_progress') {
+    return s === 'judgement_in_progress'
+      ? { kind: 'defer', reason: s }
+      : { kind: 'error', reason: s };
+  }
+  return { kind: 'skip', reason: s };
 }
 
 // ── THE WEBHOOK ENTRY POINT ─────────────────────────────────────────────────
@@ -563,80 +674,38 @@ export async function handleInboundForIntake(
     }
   }
 
-  // ── 2. CV as a file ───────────────────────────────────────────────────────
-  if (isDocument) {
+  // ── 2 + 3. A CV arrived (file or photos) — QUEUE the judgement ───────────
+  // The verdict used to run right here, inside the webhook request. Netlify
+  // kills a function at ~26 seconds, and an AI read of a full CV does not
+  // reliably fit — one real lead's verdict died mid-flight leaving a stored
+  // CV, a taken claim, and total silence. The webhook's job is now only to
+  // acknowledge fast; the DRAIN judges (verdict track, step 4) on its next
+  // tick, where a killed run simply retries instead of vanishing.
+  //
+  // Photos get a one-minute delay on purpose: a two-page CV arrives as two
+  // webhook calls seconds apart, and judging page 1 alone produces a verdict
+  // from half a document. By the time the drain picks the row up, the set has
+  // settled — the 20-second in-request sleep this replaces was itself most of
+  // Netlify's budget.
+  if (isDocument || isImage) {
     try {
-      const verdict = await processCvMessage(admin, wsId, {
-        leadId: lead.id, leadName: lead.full_name || 'the candidate',
-        conversationId: conv.id, mediaPath: ctx.media.path as string,
-        mediaName: ctx.media.name, mediaMime: ctx.media.mime,
-        providerMsgId: ctx.providerMsgId,
+      // The profile arrived, so the ask-for-a-CV chase is over — including a
+      // step-1 chase that never sent (the reply trigger only cancels rows
+      // with sent_count >= 1, and T1 arriving AFTER their CV reads absurd).
+      await admin.from('wa_intake')
+        .update({ status: 'replied', replied_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('workspace_id', wsId).eq('phone_e164', conv.phone_e164)
+        .eq('track', 'chase').eq('status', 'waiting');
+
+      await admin.rpc('wa_intake_enqueue', {
+        p_workspace_id: wsId, p_lead_id: lead.id, p_phone: conv.phone_e164,
+        p_track: 'verdict', p_first_step: 4, p_delay_minutes: isImage ? 1 : 0,
       });
-      out.cv = verdict.ok ? (verdict.eligible ? 'eligible' : 'not_eligible') : verdict.skipped;
-      if (verdict.ok) {
-        Object.assign(out, await applyVerdictActions(admin, wsId, settings, {
-          leadId: lead.id, phone: conv.phone_e164, first, conversationId: conv.id,
-          eligible: verdict.eligible === true, route: verdict.route,
-        }));
-      }
+      out.cv = 'queued_for_judgement';
     } catch (e) {
-      console.error('[intake] CV pipeline threw', e);
+      console.error('[intake] CV queue step threw', e);
+      await flagAttention(admin, conv.id);
       out.cv = 'error';
-    }
-  }
-
-  // ── 3. CV as a photo ──────────────────────────────────────────────────────
-  if (isImage) {
-    try {
-      // Two photos of a two-page CV arrive as two webhook invocations seconds
-      // apart. ONE claims the judgement (atomic UPDATE on the lead); the
-      // loser walks away. The winner then WAITS 20 seconds so the remaining
-      // pages land, gathers everything from the last 20 minutes, and reads
-      // them as ONE document. Without the claim: two verdicts, two T5s.
-      // Without the wait: a verdict from half a CV.
-      const claimed = await claimProfileJudgement(admin, lead.id);
-      if (!claimed) {
-        out.image_cv = 'another_invocation_holds_it';
-      } else {
-        await new Promise((r) => setTimeout(r, 20_000));
-
-        const since = new Date(Date.now() - 20 * 60_000).toISOString();
-        const { data: imgs } = await admin
-          .from('whatsapp_messages')
-          .select('id, media_path, media_mime')
-          .eq('conversation_id', conv.id)
-          .eq('direction', 'in')
-          .eq('media_type', 'image')
-          .not('media_path', 'is', null)
-          .not('hidden', 'is', true)
-          .gte('created_at', since)
-          .order('created_at', { ascending: true })
-          .limit(4);
-
-        const paths = (imgs ?? []).map((m) => ({ path: m.media_path as string, mime: m.media_mime as string | null }));
-        if (!paths.length) {
-          await releaseProfileJudgement(admin, lead.id);
-          out.image_cv = 'no_images_found';
-        } else {
-          const verdict = await processCvImages(admin, wsId, {
-            leadId: lead.id, leadName: lead.full_name || 'the candidate',
-            conversationId: conv.id, images: paths, claimHeld: true,
-          });
-          out.image_cv = verdict.ok
-            ? (verdict.eligible ? 'eligible' : 'not_eligible')
-            : verdict.skipped;
-          if (verdict.ok) {
-            Object.assign(out, await applyVerdictActions(admin, wsId, settings, {
-              leadId: lead.id, phone: conv.phone_e164, first, conversationId: conv.id,
-              eligible: verdict.eligible === true, route: verdict.route,
-            }));
-          }
-        }
-      }
-    } catch (e) {
-      console.error('[intake] image CV pipeline threw', e);
-      try { await releaseProfileJudgement(admin, lead.id); } catch { /* best effort */ }
-      out.image_cv = 'error';
     }
   }
 
