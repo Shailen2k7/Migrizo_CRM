@@ -99,28 +99,93 @@ async function mediaFileName(
     : declaredType === 'audio' ? 'Voice note'
     : declaredType === 'video' ? 'Video' : 'File';
 
-  let who: string | null = null;
+  let who: string | null = phone;
   if (phone) {
     try {
+      // The conversation first — it holds the lead link once one exists.
       const { data } = await admin
         .from('whatsapp_conversations')
-        .select('phone_e164, lead:leads(full_name)')
+        .select('lead:leads(full_name)')
         .eq('workspace_id', wsId)
         .eq('phone_e164', phone)
         .maybeSingle();
       const lead = data?.lead as { full_name?: string } | { full_name?: string }[] | null;
-      const full = Array.isArray(lead) ? lead[0]?.full_name : lead?.full_name;
-      who = (full || data?.phone_e164 || phone) as string;
+      who = (Array.isArray(lead) ? lead[0]?.full_name : lead?.full_name) || phone;
+
+      // On a FIRST message there is no conversation yet — capture runs before
+      // whatsapp_record_inbound creates one — so the lookup above finds
+      // nothing and every first CV would be named after a phone number. That
+      // is the most common case of all, so fall back to matching the lead
+      // directly on the last ten digits of the number. This only ever decides
+      // a FILENAME, so a loose match is the right trade: worst case the file
+      // is named after the phone, exactly as it would have been anyway.
+      if (who === phone) {
+        const last10 = phone.replace(/\D/g, '').slice(-10);
+        if (last10.length === 10) {
+          const { data: byPhone } = await admin
+            .from('leads')
+            .select('full_name')
+            .eq('workspace_id', wsId)
+            .ilike('phone', `%${last10}`)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          who = byPhone?.[0]?.full_name || phone;
+        }
+      }
     } catch {
       who = phone;
     }
   }
 
-  // Strip anything that would break a Content-Disposition header or a storage
-  // key, then cap it — storage keys have limits and long names are unreadable.
+  // ASCII only, and no em-dash. This string ends up in BOTH the display name
+  // and (via storageKey below) the storage object key, and Supabase storage
+  // rejects a key containing non-ASCII with a 400 — verified the hard way: an
+  // em-dash here fails the upload while the database row still records the
+  // path, leaving a message pointing at a file that does not exist.
   const safe = (who || 'Unknown').replace(/[^\w.\- ]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
-  return `${safe} — ${label}.${ext}`;
+  return `${safe} - ${label}.${ext}`;
 }
+
+/**
+ * A storage object key derived from a display name. Storage is far stricter
+ * than a filename: anything outside plain ASCII word characters, dot and dash
+ * is replaced. The pretty name still goes on the message row for the inbox and
+ * the download dialog — only the KEY is flattened.
+ */
+/**
+ * File extension for a MIME type.
+ *
+ * Naively taking mime.split('/')[1] produces ".vndopenx" for a Word document,
+ * because its type is
+ * "application/vnd.openxmlformats-officedocument.wordprocessingml.document".
+ * A file called "Upen Pathak - CV.vndopenx" does not open on a double-click,
+ * so the common types are mapped explicitly and the split is only the
+ * fallback for anything unrecognised.
+ */
+const EXT_BY_MIME: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.oasis.opendocument.text': 'odt',
+  'application/rtf': 'rtf',
+  'text/plain': 'txt',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+  'audio/ogg': 'ogg',
+  'audio/mpeg': 'mp3',
+  'video/mp4': 'mp4',
+};
+
+const extFor = (mime: string): string =>
+  EXT_BY_MIME[mime.toLowerCase()]
+  ?? mime.split('/')[1]?.replace(/[^\w]/g, '').slice(0, 8)
+  ?? 'bin';
+
+const storageKey = (wsId: string, name: string): string =>
+  `${wsId}/in/${Math.random().toString(36).slice(2, 12)}-` +
+  (name.normalize('NFKD').replace(/[^\w.\-]+/g, '_').replace(/_+/g, '_').slice(0, 80) || 'file');
 
 async function captureMedia(
   admin: SupabaseClient,
@@ -180,7 +245,7 @@ async function captureMedia(
       }
 
       const mime = res.headers.get('content-type')?.split(';')[0] || 'application/octet-stream';
-      const extFromMime = mime.split('/')[1]?.replace(/[^\w]/g, '').slice(0, 8) || 'bin';
+      const extFromMime = extFor(mime);
       // Interakt sends no filename, so build a readable one. A caption that
       // already looks like a filename is still honoured — if a name ever does
       // arrive, it wins over anything we invent.
@@ -188,7 +253,7 @@ async function captureMedia(
         ? fallbackName.replace(/[^\w.\- ]+/g, '_').slice(0, 120)
         : await mediaFileName(admin, wsId, phone, declaredType, extFromMime);
 
-      const path = `${wsId}/in/${Math.random().toString(36).slice(2, 12)}-${name}`;
+      const path = storageKey(wsId, name);
       const { error } = await admin.storage.from('whatsapp-media')
         .upload(path, buf, { contentType: mime, upsert: false });
       if (error) {

@@ -9,7 +9,8 @@ rubric). Deploying it once brings production fully up to date.
 ```
 1. Supabase SQL editor   supabase/migrations/078_wa_form_restart.sql      run TWICE
 2. Supabase SQL editor   supabase/migrations/079_wa_media_reliability.sql run TWICE
-3. GitHub (same paths)   the six code files below → let Netlify redeploy
+3. GitHub (same paths)   the code files below → let Netlify redeploy
+                         (package.json changed — Netlify installs word-extractor automatically)
 ```
 
 Second run of each migration must finish with NOTICEs only. Both end with
@@ -31,6 +32,8 @@ exist until they have run — in particular `/api/whatsapp/media/backfill` write
 | `app/api/whatsapp/webhook/route.ts` | media capture retry, readable filenames, failure recorded to the DB |
 | `lib/whatsapp/profile.ts` | the eligibility rubric, shared by both prompts; `temperature: 0` |
 | `app/api/whatsapp/media/backfill/route.ts` | **NEW** — recovers attachments that failed to store |
+| `lib/whatsapp/word-extractor.d.ts` | **NEW** — types for the legacy .doc reader |
+| `package.json` / `package-lock.json` | + `word-extractor` (pure JS, no native build) |
 
 ---
 
@@ -107,6 +110,25 @@ Exceptional Promise added. `temperature: 0` on both calls.
 
 Two false negatives fixed; the controls still correctly return no.
 
+## 4. Legacy .doc files, and the verdict lockout
+
+**Legacy Word 97-2003 (.doc)** could not be read at all — `mammoth` only opens
+.docx, and the old code returned null with a comment saying a human would read
+it. In practice the lead got silence. Now handled by `word-extractor` (pure JS,
+no native build). Verified on a real .doc from your inbox: 4,664 characters
+extracted, verdict **eligible / Digital Technology**, T5 sent.
+
+**One failed verdict used to lock a lead out forever.** `claimProfileJudgement`
+only claimed when `profile_ai` was NULL, and nothing released it if the run died
+mid-flight. A real lead sat jammed for twelve hours and no CV he sent could ever
+be judged again. A claim older than 15 minutes is now treated as abandoned.
+Tested against live data: free lead claims, a claim 1 minute old is refused
+(so two photos of one CV still cannot produce two verdicts), a 40-minute-old
+claim is taken, and the jammed lead auto-recovers.
+
+**Scanned PDFs that extract 0 characters are deliberately left as they are** —
+kept, conversation flagged, no automated reply. Your decision.
+
 ## Still open — not in this zip
 
 **Your Process PDF is a Google Drive link.** `pdf_url` points at
@@ -115,17 +137,15 @@ correctly refuses it, so **T5's document is failing for every eligible lead**.
 Fix it in WhatsApp → Settings → **Upload PDF** with the actual file. `video_url`
 is also a Drive link.
 
-**One lead is jammed.** `Modassir Faiaz` has
-`profile_ai = {"status":"processing"}` left over from an interrupted run, and no
-CV he sends will ever be judged. There is no staleness timeout on that claim.
-Clear it with:
+**The jammed lead is already cleared.** `Modassir Faiaz` was stuck for twelve
+hours; the stale-claim fix in this zip means it cannot happen again, and his
+lead has been reset.
 
-```sql
-update public.leads set profile_ai = null where profile_ai->>'status' = 'processing';
-```
-
-A proper fix (a timeout on the claim, and moving the verdict out of the webhook
-into the cron drain) is a separate change worth planning.
+**Worth planning separately:** the CV verdict runs inside the webhook request.
+Netlify's ceiling is 26 seconds (this repo's own `sequences/tick/route.ts` says
+so), while the webhook declares `maxDuration = 60`. A slow vision call can be
+killed mid-flight. Moving the verdict into the cron drain would remove that
+whole class of failure.
 
 ## Verified
 

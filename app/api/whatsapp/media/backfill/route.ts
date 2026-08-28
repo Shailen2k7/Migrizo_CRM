@@ -137,9 +137,19 @@ export async function POST(req: NextRequest) {
       }
 
       const mime = res.headers.get('content-type')?.split(';')[0] || 'application/octet-stream';
-      const ext = mime.split('/')[1]?.replace(/[^\w]/g, '').slice(0, 8) || 'bin';
+      // Same map as the webhook: mime.split('/')[1] turns a Word document
+      // into ".vndopenx", which will not open on a double-click.
+      const EXT: Record<string,string> = {
+        'application/pdf':'pdf','application/msword':'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document':'docx',
+        'image/jpeg':'jpg','image/png':'png','image/webp':'webp',
+      };
+      const ext = EXT[mime.toLowerCase()] ?? mime.split('/')[1]?.replace(/[^\w]/g, '').slice(0, 8) ?? 'bin';
       const name = row.media_name || `${row.media_type ?? 'file'}.${ext}`;
-      const path = `${wsId}/in/${Math.random().toString(36).slice(2, 12)}-${name}`;
+      // ASCII-safe key: storage 400s on non-ASCII, and a failed upload paired
+      // with a written row is how a message ends up pointing at nothing.
+      const path = `${wsId}/in/${Math.random().toString(36).slice(2, 12)}-`
+        + (name.normalize('NFKD').replace(/[^\w.\-]+/g, '_').replace(/_+/g, '_').slice(0, 80) || 'file');
 
       const { error: upErr } = await admin.storage
         .from('whatsapp-media').upload(path, buf, { contentType: mime, upsert: false });

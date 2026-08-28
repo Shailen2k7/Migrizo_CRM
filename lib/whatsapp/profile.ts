@@ -103,7 +103,16 @@ async function extractText(bytes: Uint8Array, mime: string, name: string): Promi
       const out = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
       return out.value || null;
     }
-    if (isDoc) return null; // legacy .doc — no safe pure-JS parser; human reads it
+    if (isDoc) {
+      // Legacy Word 97-2003 (.doc) is an OLE2 binary, not a zip, so mammoth
+      // cannot touch it. It is still common in India — a real lead sent one
+      // and got no reply at all, because this used to return null.
+      // word-extractor is pure JS (no native build, works on Netlify) and
+      // reads the WordDocument stream directly.
+      const WordExtractor = (await import('word-extractor')).default;
+      const doc = await new WordExtractor().extract(Buffer.from(bytes));
+      return doc.getBody() || null;
+    }
     return null;
   } catch (e) {
     console.error('[profile] extraction failed', e);
@@ -189,14 +198,37 @@ ${cvText.slice(0, MAX_CHARS)}`;
 // The claim is one atomic conditional UPDATE on the lead: whoever flips
 // profile_ai from NULL wins; everyone else walks away. Released on every
 // failure path; consumed (overwritten with the real verdict) on success.
+// How long a judgement may hold the claim before another run may take it.
+// Generous: a vision call on a multi-page CV is slow, and stealing a claim
+// from a run that is still working would produce two verdicts and two T5s.
+// But it MUST expire — see below.
+const CLAIM_STALE_MINUTES = 15;
+
+/**
+ * Take the exclusive right to judge this lead's CV.
+ *
+ * The claim is one atomic conditional UPDATE: whoever flips profile_ai wins,
+ * everyone else walks away. That is what stops two photos of a two-page CV,
+ * arriving seconds apart, from producing two verdicts and two T5s.
+ *
+ * The stale check is NOT optional. This used to claim only when profile_ai
+ * was NULL, with nothing to release it if the run died mid-flight — a timeout,
+ * a deploy, a crash. The lead was then locked out permanently: every future
+ * CV they sent returned 'judgement_in_progress' and no verdict could ever be
+ * produced for them again. That is not hypothetical, it happened to a real
+ * lead who sat jammed for twelve hours. A claim older than CLAIM_STALE_MINUTES
+ * is treated as abandoned and may be taken.
+ */
 export async function claimProfileJudgement(admin: SupabaseClient, leadId: string): Promise<boolean> {
+  const cutoff = new Date(Date.now() - CLAIM_STALE_MINUTES * 60_000).toISOString();
   const { data } = await admin
     .from('leads')
     .update({ profile_ai: { status: 'processing', at: new Date().toISOString() } })
     .eq('id', leadId)
-    .is('profile_ai', null)
     .is('profile_text', null)
     .or('eligibility_source.is.null,eligibility_source.neq.manual')
+    // Free, or abandoned. Still one statement, so still atomic.
+    .or(`profile_ai.is.null,and(profile_ai->>status.eq.processing,profile_ai->>at.lt.${cutoff})`)
     .select('id');
   return (data?.length ?? 0) > 0;
 }
