@@ -466,12 +466,25 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                           ]}
                           size="sm"
                         />
-                        {effectiveLead.profile_text && (
-                          <button
-                            onClick={() => setShowProfile(true)}
-                            className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[12px] font-medium text-ink transition hover:bg-surface-2">
-                            <FileText className="h-3.5 w-3.5" /> View profile
-                          </button>
+                        {(effectiveLead.profile_text || effectiveLead.profile_received) && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            {effectiveLead.profile_text && (
+                              <button
+                                onClick={() => setShowProfile(true)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[12px] font-medium text-ink transition hover:bg-surface-2">
+                                <FileText className="h-3.5 w-3.5" /> View profile
+                              </button>
+                            )}
+                            {/* The permanent record (079): archived original if we
+                                have it, the newest chat file if not, a printable
+                                document from the extracted text as last resort. */}
+                            <a
+                              href={`/api/lead/cv/${effectiveLead.id}`}
+                              target="_blank" rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[12px] font-medium text-ink transition hover:bg-surface-2">
+                              <Inbox className="h-3.5 w-3.5" /> Download CV
+                            </a>
+                          </div>
                         )}
                       </div>
                     </Row>

@@ -94,10 +94,14 @@ export interface Lead {
   eligibility_at?: string | null;
   eligibility_by?: string | null;
   eligibility_source?: 'manual' | 'derived' | 'ai' | null;
-  // WhatsApp intake autopilot (076): the CV, read once then deleted — this
-  // text is the durable copy behind the drawer's "View profile" button.
+  // WhatsApp intake autopilot (076): the extracted profile text behind the
+  // drawer's "View profile" button.
   profile_text?: string | null;
   profile_ai?: Record<string, unknown> | null;
+  // CV on record (079): permanent archived copy of the CV they sent,
+  // served by /api/lead/cv/[leadId] via the drawer's "Download CV" button.
+  cv_path?: string | null;
+  cv_name?: string | null;
   created_at: string;
   created_by: string | null;
   updated_at: string;

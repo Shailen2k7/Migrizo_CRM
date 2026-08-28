@@ -305,6 +305,38 @@ async function persistCvVerdict(
           .eq('id', m.id);
       }
     }
+
+    // CV ON RECORD (079): copy the original file(s) into the lead's permanent
+    // archive. The chat copy can be purged or cleared later — this copy is
+    // forever, behind the drawer's "Download CV" button.
+    try {
+      const firstExt = (opts.mediaPaths[0].split('.').pop() || 'pdf').toLowerCase();
+      const niceBase = (opts.fileLabel && /\.\w{2,5}$/.test(opts.fileLabel))
+        ? opts.fileLabel.replace(/[^\w.\- ()]+/g, '_')
+        : `${(opts.leadDisplayName || 'Lead').replace(/[^\w.\- ()]+/g, ' ').trim()} — CV.${firstExt}`;
+
+      const archived: string[] = [];
+      for (let i = 0; i < opts.mediaPaths.length; i++) {
+        const src = opts.mediaPaths[i];
+        const ext = (src.split('.').pop() || 'bin').toLowerCase();
+        const dest = opts.mediaPaths.length === 1
+          ? `${wsId}/cv/${opts.leadId}/${Date.now()}.${ext}`
+          : `${wsId}/cv/${opts.leadId}/${Date.now()}-page-${i + 1}.${ext}`;
+        const { error: cpErr } = await admin.storage.from('whatsapp-media').copy(src, dest);
+        if (!cpErr) archived.push(dest);
+        else console.error('[profile] cv archive copy failed', cpErr.message);
+      }
+      if (archived.length) {
+        await admin.from('leads').update({
+          cv_path: archived[0],
+          cv_name: opts.mediaPaths.length === 1
+            ? niceBase
+            : `${(opts.leadDisplayName || 'Lead').trim()} — CV page 1.${archived[0].split('.').pop()}`,
+        }).eq('id', opts.leadId);
+      }
+    } catch (e) {
+      console.error('[profile] cv archive step threw', e);
+    }
   }
 
   await admin.from('activity').insert({
