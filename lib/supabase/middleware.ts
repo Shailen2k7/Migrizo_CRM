@@ -5,22 +5,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 // themselves with a shared secret instead of a user session (Meta lead ingest
 // and the push-dispatch cron). Without these here, middleware redirects the
 // unauthenticated POST to /login, which returns 405 Method Not Allowed.
-// EVERY endpoint pg_cron calls MUST be listed here. When one is missing, the
-// middleware answers the cron's POST with a 307 to /login, net.http_post does
-// not follow redirects, and the job silently never runs — no error anywhere,
-// because from Postgres's side the HTTP call "succeeded".
-//
-// That is exactly what happened to the three WhatsApp drains below: they were
-// scheduled by migrations 058/067/076 but never added here, so T2/T3/T4 chase
-// follow-ups, the T6 booking link and the sequence sends had never once fired
-// in production. Found by curling the drain and reading the Location header.
-//
-// Listing a path here does NOT make it unauthenticated: every drain checks
-// x-cron-secret against CRON_SECRET, or falls back to a logged-in campaign
-// admin. Middleware is a session gate, and these callers have no session.
-//
-// If you schedule a new cron job, add its path here in the same commit.
-const PUBLIC_PATHS = ['/login', '/auth/callback', '/api/ingest', '/api/push/dispatch', '/api/campaigns/drain', '/api/sequences/tick', '/api/unsubscribe', '/book', '/api/booking', '/api/scheduler/remind', '/api/email/inbound', '/api/email/bounce', '/api/whatsapp/webhook', '/api/whatsapp/campaigns/run', '/api/whatsapp/intake/drain', '/api/whatsapp/automation/drain', '/api/whatsapp/sequences/drain'];
+const PUBLIC_PATHS = ['/login', '/auth/callback', '/api/ingest', '/api/push/dispatch', '/api/campaigns/drain', '/api/sequences/tick', '/api/unsubscribe', '/book', '/api/booking', '/api/scheduler/remind', '/api/email/inbound', '/api/email/bounce', '/api/whatsapp/webhook', '/api/whatsapp/campaigns/run'];
 const PLACEHOLDER_URL = 'https://placeholder.supabase.co';
 const PLACEHOLDER_KEY = 'placeholder-anon-key';
 

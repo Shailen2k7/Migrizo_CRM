@@ -27,12 +27,6 @@ export interface WaConversation {
   window_open: boolean;
   window_expires_at: string | null;
   suppressed: boolean;
-  /**
-   * Short human label shown as a chip in the inbox (078). 'Returning' means
-   * they came back through the Meta ad form and we already hold their profile,
-   * so the autopilot stayed silent and a human should answer.
-   */
-  tag?: string | null;
 }
 
 export interface WaMessage {

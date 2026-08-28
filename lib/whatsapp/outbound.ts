@@ -97,16 +97,13 @@ export function valuesFor(
     booking: ctx.booking || '',
     pdf: ctx.pdf || '',
   };
-  // {{1}} is ALWAYS the first name, for every step. This used to be rationed
-  // per-step on the theory that "T1/T2 carry no variables by design" — then
-  // the founder edited the T2 quick reply to open with "Hi {{1}}", and every
-  // T2 in the chase failed with missing:1. The templates are the founder's to
-  // edit; the code's job is to fill whatever they wrote, not to enforce a
-  // remembered version of it.
   switch (step) {
+    case 3:
+    case 4:
+    case 7: return { ...named, '1': ctx.first };
     case 5: return { ...named, '1': ctx.first, '2': ctx.route || '', '3': ctx.video || '' };
     case 6: return { ...named, '1': ctx.first, '2': ctx.booking || '' };
-    default: return { ...named, '1': ctx.first };
+    default: return named; // T1, T2
   }
 }
 
