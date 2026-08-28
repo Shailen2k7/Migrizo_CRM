@@ -107,6 +107,21 @@ export async function POST(req: NextRequest) {
     const first = firstName(row.lead_name);
     const tKey = `t${row.next_step}`;
     const step = `intake:T${row.next_step}`;
+
+    // A chase must never nag for a CV we already hold. A returning lead can
+    // legitimately re-enter the chase (form re-submission → fresh T1), but
+    // the moment their profile exists, the nudges stop for good.
+    if (row.track === 'chase' && row.lead_id) {
+      const { data: ld } = await admin.from('leads')
+        .select('profile_received').eq('id', row.lead_id).maybeSingle();
+      if (ld?.profile_received === 'cv' || ld?.profile_received === 'both') {
+        await admin.from('wa_intake')
+          .update({ status: 'done', last_error: null, updated_at: new Date().toISOString() })
+          .eq('id', row.intake_id);
+        results.push({ who: row.lead_name, step, ok: true, skipped: 'cv_already_on_file' });
+        continue;
+      }
+    }
     const windowOpen =
       !!row.last_inbound_at &&
       Date.now() - new Date(row.last_inbound_at).getTime() < WINDOW_MS;

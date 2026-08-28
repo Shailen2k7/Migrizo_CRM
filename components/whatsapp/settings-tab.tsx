@@ -74,6 +74,28 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
     }
   }
 
+  // v2 keeps every CV a lead sends. This is the deliberate clean-up: deletes
+  // the FILES of all inbound documents/photos; messages, extracted profiles
+  // and verdicts all stay. Batched — press again if it reports more.
+  const [purging, setPurging] = useState(false);
+  async function purgeCvs() {
+    if (!window.confirm(
+      'Delete ALL stored CV files (documents and photos leads have sent)?\n\n' +
+      'Chats, extracted profiles and verdicts are kept — only the files are removed, and this cannot be undone.'
+    )) return;
+    setPurging(true);
+    try {
+      const res = await fetch('/api/whatsapp/assets/purge-cvs', { method: 'POST' });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.reason || 'Purge failed');
+      toast.success(`Deleted ${j.deleted} file${j.deleted === 1 ? '' : 's'}${j.remaining ? ' — press again for the rest' : ' — storage is clean'}`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setPurging(false);
+    }
+  }
+
   // One press per batch; repeat until "remaining: 0". Old photo CVs get the
   // same verdict flow as new ones; non-CVs are left untouched.
   async function backfillImages() {
@@ -336,10 +358,16 @@ export default function SettingsTab({ workspaceId, settings, stats, onSettingsCh
               Run now{dryRun ? ' (dry-run)' : ''}
             </button>
             <button onClick={backfillImages} disabled={backfilling}
-              title="Reads photo CVs sent BEFORE the vision pipeline existed — judges them, stores the profile, deletes the images. Non-CV photos are left alone."
+              title="Reads photo CVs sent BEFORE the vision pipeline existed — judges them and stores the profile. Non-CV photos are left alone."
               className="inline-flex items-center gap-[7px] rounded-[9px] border border-[#D6E9DD] bg-white px-[16px] py-[9px] text-[13px] font-semibold text-[#1B7A44] transition hover:bg-[#EDFAF1] disabled:opacity-50">
               {backfilling ? <Loader2 className="h-[14px] w-[14px] animate-spin" /> : null}
               Scan old photo CVs
+            </button>
+            <button onClick={purgeCvs} disabled={purging}
+              title="Deletes the FILES of every CV/photo leads have sent. Chats, extracted profiles and verdicts stay."
+              className="inline-flex items-center gap-[7px] rounded-[9px] border border-[#E8B4B4] bg-white px-[16px] py-[9px] text-[13px] font-semibold text-[#B02B2B] transition hover:bg-[#FEEFEF] disabled:opacity-50">
+              {purging ? <Loader2 className="h-[14px] w-[14px] animate-spin" /> : null}
+              Delete all stored CVs
             </button>
           </span>
           {backfillNote && (

@@ -1,13 +1,12 @@
 // =============================================================================
-// PROFILE PIPELINE — a CV lands in the chat, and 30 seconds later the lead
-// has a formatted text profile, an industry, and an eligibility verdict.
+// PROFILE PIPELINE — a CV lands in the chat, and moments later the lead has
+// a formatted text profile, an industry, and an eligibility verdict.
 //
-// THE FILE IS DELETED. Founder rule: the CRM keeps no documents. The bytes are
-// pulled from storage, the text is extracted, and the object is removed — what
-// survives is leads.profile_text (the formatted profile behind the drawer's
-// Profile button) and leads.profile_ai (the verdict working-out). The message
-// row keeps its file NAME so the inbox still reads "📄 CV.pdf", but the path
-// is cleared so nothing can fetch bytes that no longer exist.
+// THE FILE IS KEPT (founder decision, v2). The team opens CVs from the inbox
+// long after the verdict, so the original file stays in storage under its
+// original name — a file with no name gets "<Lead> — CV.<ext>". Bulk
+// clean-up is a deliberate act: the "Delete all stored CVs" button in
+// WhatsApp Settings, never an automatic side effect.
 //
 // VERDICT SAFETY
 //   * A human's verdict is never overwritten: eligibility_source='manual' stops
@@ -19,6 +18,7 @@
 // =============================================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { keywordEligibility, ELIGIBILITY_PROMPT_BLOCK } from './eligibility';
 
 export interface ProfileVerdict {
   ok: boolean;
@@ -64,7 +64,13 @@ async function extractText(bytes: Uint8Array, mime: string, name: string): Promi
       const out = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
       return out.value || null;
     }
-    if (isDoc) return null; // legacy .doc — no safe pure-JS parser; human reads it
+    if (isDoc) {
+      // Legacy binary .doc — still a third of Indian CVs. word-extractor
+      // parses the OLE container in pure JS.
+      const { default: WordExtractor } = await import('word-extractor');
+      const doc = await new WordExtractor().extract(Buffer.from(bytes));
+      return doc.getBody() || null;
+    }
     return null;
   } catch (e) {
     console.error('[profile] extraction failed', e);
@@ -86,19 +92,13 @@ async function judgeCv(cvText: string, leadName: string): Promise<AiVerdict | nu
   if (!apiKey) return null;
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 
-  const prompt = `You are the intake reviewer for Migrizo, a premium UK immigration consultancy. A prospective client named "${leadName}" sent this CV over WhatsApp. Assess it for the UK Global Talent Visa.
-
-Global Talent endorsement paths and what a plausible candidate looks like:
-- Digital Technology (Tech Nation criteria): product/engineering leadership, scaling products, open-source impact, founding or senior roles at product-led tech companies.
-- Research & Academia: PhD or equivalent research record, publications, grants, peer review, academic appointments.
-- Arts & Culture: significant creative work with media recognition, awards, international showings.
-
-Judge STRICTLY on evidence in the CV. "Plausible with our help building the evidence portfolio" counts as eligible; "years away from any credible case" does not. Routine IT service roles with no leadership, product ownership, or external recognition are usually NOT eligible.
+  const prompt = `You are the intake reviewer for Migrizo, a premium UK immigration consultancy. A prospective client named "${leadName}" sent this CV over WhatsApp.
+${ELIGIBILITY_PROMPT_BLOCK}
 
 Respond with ONLY a JSON object, no markdown fences:
 {
   "eligible": true|false,
-  "route": "Digital Technology" | "Research & Academia" | "Arts & Culture" | "None",
+  "route": a short route name, e.g. "Digital Technology", "Digital Technology — Cybersecurity", "Research & Academia", "Engineering & Technology", "Arts & Culture", or "None",
   "industry": one of ${JSON.stringify(INDUSTRY_VOCAB)},
   "reason": "2-3 plain sentences a consultant can read aloud",
   "profile_md": "the CV reformatted as clean markdown: ## Name & headline, ## Experience (role — company — years, one line each), ## Education, ## Achievements & recognition (awards, publications, patents, media), ## Links. Keep every fact, invent nothing."
@@ -227,6 +227,19 @@ export async function processCvMessage(
     return { ok: false, skipped: 'ai_unavailable' };
   }
 
+  // THE SAFETY NET (founder rulebook): a CV whose text matches the
+  // eligibility dictionary can NEVER go out as not-eligible, whatever the
+  // model concluded. The override is recorded so the drawer shows both.
+  if (!verdict.eligible) {
+    const kw = keywordEligibility(text);
+    if (kw.eligible) {
+      verdict.eligible = true;
+      verdict.route = kw.route || verdict.route || 'Digital Technology';
+      if (kw.industry) verdict.industry = kw.industry;
+      verdict.reason = `Rulebook match (${kw.matched.slice(0, 5).join(', ')}). ${verdict.reason}`.slice(0, 500);
+    }
+  }
+
   return persistCvVerdict(admin, wsId, {
     leadId: opts.leadId,
     priorProfile: lead.profile_received as string | null,
@@ -234,14 +247,14 @@ export async function processCvMessage(
     mediaPaths: [opts.mediaPath],
     source: 'whatsapp_cv',
     fileLabel: opts.mediaName,
+    leadDisplayName: opts.leadName,
   });
 }
 
 /**
  * The single write path for an accepted CV verdict — file, photo, or backfill.
- * Persists the profile + verdict on the lead, DELETES the source files
- * (founder rule: no document storage; the formatted text is the durable
- * copy), and logs the activity.
+ * Persists the profile + verdict on the lead, KEEPS the source files (named
+ * after the lead when the upload carried no name), and logs the activity.
  */
 async function persistCvVerdict(
   admin: SupabaseClient,
@@ -253,6 +266,7 @@ async function persistCvVerdict(
     mediaPaths: string[];
     source: 'whatsapp_cv' | 'whatsapp_cv_image';
     fileLabel: string | null;
+    leadDisplayName?: string | null;
   }
 ): Promise<ProfileVerdict> {
   const { verdict } = opts;
@@ -275,14 +289,22 @@ async function persistCvVerdict(
 
   await admin.from('leads').update(patch).eq('id', opts.leadId);
 
-  // Delete the files — keep each message's NAME so the bubble still says what
-  // arrived; clear the path so nothing dangles.
+  // KEEP the files. Only fix meaningless auto-names ("document-1724….pdf")
+  // so the inbox reads "Satpreet Kaur — CV.pdf" instead of a timestamp.
   if (opts.mediaPaths.length) {
-    await admin.storage.from('whatsapp-media').remove(opts.mediaPaths);
-    await admin.from('whatsapp_messages')
-      .update({ media_path: null, media_source_url: null, updated_at: now })
+    const { data: msgRows } = await admin.from('whatsapp_messages')
+      .select('id, media_path, media_name')
       .eq('workspace_id', wsId)
       .in('media_path', opts.mediaPaths);
+    for (const m of msgRows ?? []) {
+      const genericName = !m.media_name || /^(document|image|file|img|doc)[-_ ]?[\d.]*\.\w+$/i.test(m.media_name);
+      if (genericName) {
+        const ext = (m.media_path as string).split('.').pop() || 'pdf';
+        await admin.from('whatsapp_messages')
+          .update({ media_name: `${opts.leadDisplayName || 'Lead'} — CV.${ext}`, updated_at: now })
+          .eq('id', m.id);
+      }
+    }
   }
 
   await admin.from('activity').insert({
@@ -378,17 +400,15 @@ export async function processCvImages(
 
 FIRST decide: is this actually a CV / resume (possibly photographed pages of one)? A selfie, screenshot, certificate photo, payment proof or anything else is NOT a CV.
 
-If it IS a CV, assess it for the UK Global Talent Visa:
-- Digital Technology (Tech Nation criteria): product/engineering leadership, scaling products, open-source impact, founding or senior roles at product-led tech companies.
-- Research & Academia: PhD or equivalent research record, publications, grants, peer review, academic appointments.
-- Arts & Culture: significant creative work with media recognition, awards, international showings.
-Judge STRICTLY on evidence visible in the images. "Plausible with our help building the evidence portfolio" counts as eligible; "years away from any credible case" does not.
+If it IS a CV, assess it using this binding rulebook:
+${ELIGIBILITY_PROMPT_BLOCK}
+Transcribe faithfully from the images; judge on what is visible.
 
 Respond with ONLY a JSON object, no markdown fences:
 {
   "is_cv": true|false,
   "eligible": true|false,
-  "route": "Digital Technology" | "Research & Academia" | "Arts & Culture" | "None",
+  "route": a short route name, e.g. "Digital Technology", "Digital Technology — Cybersecurity", "Research & Academia", "Engineering & Technology", "Arts & Culture", or "None",
   "industry": one of ${JSON.stringify(INDUSTRY_VOCAB)},
   "reason": "2-3 plain sentences a consultant can read aloud",
   "profile_md": "if is_cv: every fact from the images as clean markdown — ## Name & headline, ## Experience, ## Education, ## Achievements & recognition, ## Links. Transcribe faithfully, invent nothing. If not a CV: empty string."
@@ -418,6 +438,18 @@ Respond with ONLY a JSON object, no markdown fences:
       return bail('ai_bad_response', true);
     }
 
+    // Safety net on the TRANSCRIBED text: the dictionary outranks the model
+    // for photos exactly as it does for files.
+    if (!parsed.eligible) {
+      const kw = keywordEligibility(parsed.profile_md);
+      if (kw.eligible) {
+        parsed.eligible = true;
+        parsed.route = kw.route || parsed.route || 'Digital Technology';
+        if (kw.industry) parsed.industry = kw.industry;
+        parsed.reason = `Rulebook match (${kw.matched.slice(0, 5).join(', ')}). ${parsed.reason ?? ''}`.slice(0, 500);
+      }
+    }
+
     return persistCvVerdict(admin, wsId, {
       leadId: opts.leadId,
       priorProfile: lead.profile_received as string | null,
@@ -432,6 +464,7 @@ Respond with ONLY a JSON object, no markdown fences:
       mediaPaths: usedPaths,
       source: 'whatsapp_cv_image',
       fileLabel: `${usedPaths.length} photo${usedPaths.length === 1 ? '' : 's'}`,
+      leadDisplayName: opts.leadName,
     });
   } catch (e) {
     console.error('[profile] vision pipeline threw', e);

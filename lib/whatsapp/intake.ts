@@ -43,6 +43,7 @@ import {
   processCvMessage, processCvImages, recordLinkedInOnly,
   claimProfileJudgement, releaseProfileJudgement,
 } from './profile';
+import { parseFormHello, type FormHello } from './formhello';
 
 const LINKEDIN_RE = /https?:\/\/(?:[\w.]*\.)?linkedin\.com\/in\/[\w\-%.]+/i;
 
@@ -207,14 +208,23 @@ export async function applyVerdictActions(
     } else {
       out.t5 = 'quick_reply_missing';
     }
-    // T6 rides 4 minutes behind a DELIVERED T5. If T5 failed, queue the pair
-    // from step 5 instead — the drain retries T5 first, then T6.
-    await admin.rpc('wa_intake_enqueue', {
-      p_workspace_id: wsId, p_lead_id: opts.leadId, p_phone: opts.phone,
-      p_track: 'verdict', p_first_step: t5Sent ? 6 : 5,
-      p_delay_minutes: t5Sent ? 4 : 15,
-    });
-    if (!t5Sent) await flagAttention(admin, opts.conversationId);
+    // T6 rides 30 SECONDS behind a DELIVERED T5 (078: the drain runs every
+    // minute, so the booking link lands 30–90s after the verdict). If T5
+    // failed, queue the pair from step 5 instead — the drain retries T5
+    // first, then T6.
+    if (t5Sent) {
+      await admin.rpc('wa_intake_enqueue_at', {
+        p_workspace_id: wsId, p_lead_id: opts.leadId, p_phone: opts.phone,
+        p_track: 'verdict', p_first_step: 6,
+        p_send_at: new Date(Date.now() + 30_000).toISOString(),
+      });
+    } else {
+      await admin.rpc('wa_intake_enqueue', {
+        p_workspace_id: wsId, p_lead_id: opts.leadId, p_phone: opts.phone,
+        p_track: 'verdict', p_first_step: 5, p_delay_minutes: 15,
+      });
+      await flagAttention(admin, opts.conversationId);
+    }
   } else {
     // Honest no, plus the IFV door left open — T7, right now.
     const t7 = await resolveSavedReply(admin, wsId, 't7');
@@ -245,6 +255,95 @@ export async function applyVerdictActions(
   return out;
 }
 
+// ── LEAD FROM THE FORM BODY ─────────────────────────────────────────────────
+// The form-hello message IS the lead record — name, email, the phone they
+// typed. The WhatsApp sender id can be a different number entirely (VoIP,
+// second SIM, wrong country code from Meta). So when a form-hello arrives on
+// a conversation with no lead — or the wrong one — we find the lead by the
+// form's own email/phone, or create it on the spot, and link the chat.
+// Nobody who can message us is ever left floating.
+async function ensureLeadFromForm(
+  admin: SupabaseClient,
+  wsId: string,
+  conv: { id: string; lead_id: string | null; phone_e164: string },
+  form: FormHello
+): Promise<string | null> {
+  // Already linked: enrich blanks from the form and keep the link.
+  if (conv.lead_id) {
+    const { data: cur } = await admin.from('leads')
+      .select('id, full_name, email').eq('id', conv.lead_id).maybeSingle();
+    if (cur) {
+      const patch: Record<string, unknown> = {};
+      if (!cur.email && form.email) patch.email = form.email;
+      if ((!cur.full_name || /^\+?\d[\d\s]*$/.test(cur.full_name)) && form.fullName) {
+        patch.full_name = form.fullName; // replace a phone-number-as-name
+      }
+      if (Object.keys(patch).length) await admin.from('leads').update(patch).eq('id', cur.id);
+      return cur.id;
+    }
+  }
+
+  // Find by the form's email… (escape LIKE wildcards — "john_doe@…" must not
+  // match "johnxdoe@…" and silently link the wrong person's record)
+  if (form.email) {
+    const safeEmail = form.email.replace(/([%_\\])/g, '\\$1');
+    const { data: byEmail } = await admin.from('leads')
+      .select('id').eq('workspace_id', wsId).ilike('email', safeEmail).limit(1);
+    if (byEmail?.length) {
+      await admin.from('whatsapp_conversations')
+        .update({ lead_id: byEmail[0].id, updated_at: new Date().toISOString() })
+        .eq('id', conv.id);
+      return byEmail[0].id;
+    }
+  }
+  // …or by the phone typed INTO the form (last 10 digits)…
+  if (form.phone) {
+    const digits = form.phone.replace(/\D/g, '').slice(-10);
+    if (digits.length === 10) {
+      const { data: byPhone } = await admin.from('leads')
+        .select('id, phone').eq('workspace_id', wsId).not('phone', 'is', null)
+        .order('created_at', { ascending: false }).limit(5000);
+      const hit = (byPhone ?? []).find((l) =>
+        (l.phone || '').replace(/\D/g, '').slice(-10) === digits);
+      if (hit) {
+        await admin.from('whatsapp_conversations')
+          .update({ lead_id: hit.id, updated_at: new Date().toISOString() })
+          .eq('id', conv.id);
+        return hit.id;
+      }
+    }
+  }
+
+  // …or create the lead right here. A form-hello with no CRM record means
+  // Make's POST is missing or broken — the lead must not pay for that.
+  const { data: created, error } = await admin.from('leads').insert({
+    workspace_id: wsId,
+    full_name: form.fullName || conv.phone_e164,
+    phone: form.phone || conv.phone_e164,
+    email: form.email,
+    source: 'Meta Ads',
+    stage: 'cold',
+    tags: ['meta-lead', 'whatsapp-first'],
+    intake: {
+      ...(form.expertise ? { expertise: form.expertise } : {}),
+      ...(form.readiness ? { investment_readiness: form.readiness } : {}),
+    },
+  }).select('id').single();
+  if (error || !created) {
+    console.error('[intake] lead auto-create failed', error?.message);
+    return null;
+  }
+  await admin.from('whatsapp_conversations')
+    .update({ lead_id: created.id, updated_at: new Date().toISOString() })
+    .eq('id', conv.id);
+  await admin.from('activity').insert({
+    workspace_id: wsId, user_id: null, lead_id: created.id,
+    action: 'lead_created',
+    meta: { auto: true, source: 'whatsapp_form_hello', phone_on_form: form.phone, wa_number: conv.phone_e164 },
+  });
+  return created.id;
+}
+
 // ── THE WEBHOOK ENTRY POINT ─────────────────────────────────────────────────
 export async function handleInboundForIntake(
   admin: SupabaseClient,
@@ -258,12 +357,42 @@ export async function handleInboundForIntake(
     .select('id, lead_id, phone_e164, last_outbound_at')
     .eq('id', ctx.conversationId)
     .maybeSingle();
-  if (!conv?.lead_id) return { skipped: 'no_lead_on_conversation' };
+  if (!conv) return { skipped: 'no_conversation' };
+
+  // The form-hello is authoritative: it links or CREATES the lead, whatever
+  // number it arrived from.
+  const form = parseFormHello(ctx.text);
+  let leadId = conv.lead_id;
+  if (form.isFormHello) {
+    leadId = await ensureLeadFromForm(admin, wsId, conv, form);
+    if (leadId) out.lead = conv.lead_id ? 'linked' : 'created_or_linked';
+  } else if (!leadId && (ctx.text.trim().length > 0 || ctx.media.path)) {
+    // A number nobody knows says "Hi" (or sends a CV straight away). The
+    // founder rule stands: if a number can message us, we reply — so it gets
+    // a minimal lead (named after its number until we learn better) and the
+    // full ladder, instead of silence.
+    const { data: created } = await admin.from('leads').insert({
+      workspace_id: wsId,
+      full_name: conv.phone_e164,
+      phone: conv.phone_e164,
+      source: 'WhatsApp',
+      stage: 'cold',
+      tags: ['whatsapp-inbound'],
+    }).select('id').single();
+    if (created) {
+      await admin.from('whatsapp_conversations')
+        .update({ lead_id: created.id, updated_at: new Date().toISOString() })
+        .eq('id', conv.id);
+      leadId = created.id;
+      out.lead = 'created_minimal';
+    }
+  }
+  if (!leadId) return { skipped: 'no_lead_on_conversation' };
 
   const { data: lead } = await admin
     .from('leads')
     .select('id, full_name, stage, created_at, profile_received, eligibility_source')
-    .eq('id', conv.lead_id)
+    .eq('id', leadId)
     .maybeSingle();
   if (!lead) return { skipped: 'lead_gone' };
 
@@ -292,15 +421,32 @@ export async function handleInboundForIntake(
         p_workspace_id: wsId, p_phone: conv.phone_e164, p_track: 'chase', p_step: 1,
       });
 
-      // The message can beat Make's ingest POST. Create the chase ourselves
-      // for a genuinely fresh lead: cold stage, created in the last 48h,
-      // never yet messaged by us. Anything older is a returning contact.
+      // FOUNDER RULES (v2): if a number can message us, we reply.
+      //   * A FORM-HELLO always earns a T1 — even a returning customer who
+      //     re-enquired through the form is starting a new enquiry. Deduped
+      //     to one T1 per conversation per 24 hours, so webhook retries and
+      //     double-submits cannot double-message.
+      //   * Any OTHER first-ever message earns a T1 too (never sent one =
+      //     never welcomed). Country, stage, lead age — irrelevant.
+      // The only hard stops are the database's own: suppressions (opt-outs)
+      // and the atomic claim (no concurrent double-T1).
       if (!claimedId) {
-        const freshLead =
-          lead.stage === 'cold' &&
-          Date.now() - new Date(lead.created_at).getTime() < 48 * 3600 * 1000 &&
-          !conv.last_outbound_at;
-        if (freshLead) {
+        const t1Query = admin
+          .from('whatsapp_messages')
+          .select('id, created_at')
+          .eq('workspace_id', wsId)
+          .eq('conversation_id', conv.id)
+          .eq('direction', 'out')
+          .eq('sequence_step', 'intake:T1')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        const { data: pastT1 } = await t1Query;
+        const lastT1At = pastT1?.[0]?.created_at ? new Date(pastT1[0].created_at).getTime() : null;
+        const t1Blocked = form.isFormHello
+          ? (lastT1At !== null && Date.now() - lastT1At < 24 * 3600 * 1000)
+          : lastT1At !== null;
+
+        if (!t1Blocked) {
           await admin.rpc('wa_intake_enqueue', {
             p_workspace_id: wsId, p_lead_id: lead.id, p_phone: conv.phone_e164,
             p_track: 'chase', p_first_step: 1, p_delay_minutes: 0,
@@ -317,6 +463,16 @@ export async function handleInboundForIntake(
         out.t1 = await sendT1Claimed(admin, wsId, settings, claimedId as string, {
           phone: conv.phone_e164, leadId: lead.id, first,
         });
+      }
+
+      // ── QUESTION → HUMAN ────────────────────────────────────────────────
+      // They wrote actual words, it wasn't the form, and no T1 just went out
+      // (meaning we've already welcomed them before): that is a human
+      // conversation now. No auto-reply — light the amber flag and step back.
+      // The chase (T2–T4) was already cancelled by the reply trigger.
+      if (!form.isFormHello && !out.t1 && ctx.text.trim().length > 0) {
+        await flagAttention(admin, conv.id);
+        out.human = 'flagged_for_takeover';
       }
     } catch (e) {
       console.error('[intake] T1 step threw', e);
