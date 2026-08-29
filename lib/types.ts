@@ -75,7 +75,7 @@ export interface Lead {
   intake?: Record<string, unknown> | null;
   // Special pricing used to win a high-quality case (migration 066). This sits
   // ALONGSIDE the stage, never replacing it — a lead can be Hot AND on a free
-  // offer, and overwriting stage would drop them out of their WhatsApp campaign.
+  // offer, and overwriting stage would drop them out of their outreach.
   offer_type?: OfferType | null;
   offer_amount?: number | null;
   offer_currency?: 'GBP' | 'INR' | 'USD' | null;
@@ -84,7 +84,7 @@ export interface Lead {
   offer_by?: string | null;
   is_spotlight: boolean;
   // Lead intelligence (migration 074) — the three facts the dashboards read.
-  // first_response_at is stamped by DB triggers on inbound WhatsApp/email and
+  // first_response_at is stamped by DB triggers on the first inbound reply and
   // is never hand-edited. eligibility NULL means "not reviewed", which is a
   // real state and deliberately distinct from not_eligible.
   first_response_at?: string | null;
@@ -94,7 +94,7 @@ export interface Lead {
   eligibility_at?: string | null;
   eligibility_by?: string | null;
   eligibility_source?: 'manual' | 'derived' | 'ai' | null;
-  // WhatsApp intake autopilot (076): the extracted profile text behind the
+  // CV on record: the extracted profile text behind the
   // drawer's "View profile" button.
   profile_text?: string | null;
   profile_ai?: Record<string, unknown> | null;
@@ -414,7 +414,7 @@ export function formatFollowUpTime(scheduledAt: string): string {
 // SPECIAL OFFER (£500 / FREE)
 // =========================================
 // Deliberately NOT a stage. See migration 066 for the reasoning: a lead on an
-// offer is still Hot or Cold, and the WhatsApp engine enrols by stage.
+// offer is still Hot or Cold, and outreach enrols by stage.
 export type OfferType = 'discount' | 'free';
 
 export const OFFER_META: Record<OfferType, { label: string; bg: string; fg: string; dot: string }> = {

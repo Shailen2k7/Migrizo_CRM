@@ -1,80 +1,127 @@
-# Fix pack — CV downloads + WhatsApp search
+# WhatsApp removal — complete
 
-Two confirmed defects. Both verified with `npm run type-check` and `npm run build` (green).
-Nothing else in the system is touched.
+The WhatsApp module is gone from the CRM. WhatsApp now lives entirely in Interakt.
+`npm run type-check` and `npm run build` are both green with zero WhatsApp code in the app.
 
-## Order
-
-1. **Supabase SQL editor** → paste and run `supabase/migrations/080_wa_search.sql`.
-   Idempotent — safe to run twice.
-2. **Upload the 5 code files** to GitHub, keeping the exact folder paths.
-3. Netlify redeploys. Done.
-
-Steps 1 and 2 are independent — if you deploy the code before running the SQL,
-search still works on the loaded conversations and simply falls back; it does not error.
+There are **three steps**, in this order. Do not skip step 1.
 
 ---
 
-## 1. The empty CV download — fixed at the root
+## STEP 1 — Delete these folders and files on GitHub
 
-The file you sent me was **0 bytes**. Every earlier fix chased the *filename*.
-The problem was the *body*.
+This is the part a zip cannot do for you. Delete each of these from the repo.
 
-`new NextResponse(blob)` — Supabase hands back a stream-backed Blob, and Netlify's
-Next adapter did not always drain that stream before closing the response. The
-browser was told "here is your CV" and given nothing.
+| Delete | What it was |
+|---|---|
+| `app/(app)/whatsapp/` | The WhatsApp inbox page |
+| `app/wa/` | The popout chat window |
+| `app/api/whatsapp/` | All 11 WhatsApp API routes (webhook, send, drain, campaigns, media, assets, diagnose, test-connection) |
+| `components/whatsapp/` | All 11 WhatsApp components |
+| `lib/whatsapp/` | The whole engine — Interakt adapter, intake, outbound, profile, eligibility, types |
 
-**Now:** every file is read fully into a Buffer, with an explicit `Content-Length`,
-before it leaves the server (`lib/whatsapp/serve-bytes.ts`). A file arrives whole or
-we say plainly that we could not read it. There is no third outcome.
+On GitHub: open the folder → **⋯** → **Delete directory** → commit.
+Locally, if you prefer: `git rm -r "app/(app)/whatsapp" app/wa app/api/whatsapp components/whatsapp lib/whatsapp`
 
-Three more things came with it:
-
-- **A 0-byte object no longer gets served.** If what we stored is empty, we re-pull
-  the bytes from the sender's WhatsApp link, overwrite the object, and serve the
-  real file. The record heals itself on the first click.
-- **The extension is read from the actual bytes**, not guessed from the mime string.
-  A PDF whose sender gave it no filename now saves as `.pdf`, not `.vndopenx`.
-  Your rule is kept: if the customer named the file, that name is used untouched.
-- **Non-English filenames survive** (Hindi, accents) via `filename*=UTF-8''…`.
-
-Applies to both buttons — the paperclip in the chat and **Open CV** in the lead drawer.
-
-## 2. WhatsApp search — fixed and made server-side
-
-Two bugs in one line.
-
-The search filtered a JavaScript array that only ever holds the **300 most-recently-active
-conversations**. Anyone older was invisible — which is why searching a real customer
-returned nothing. And for any text query the phone check ran `phone.includes('')`,
-which is true for every row, so that clause matched everything and hid the real logic.
-
-**Now:** local matches appear instantly as you type, and 220ms later Postgres searches
-**every conversation you have**, on:
-
-- lead name (case-insensitive)
-- lead email
-- phone — digits only on both sides, so `9999311087`, `99993 11087` and
-  `+91 9999311087` all find `+919999311087`
-- the last message text, so "booking link" finds the thread
-
-Plus a clear (✕) button, a spinner while it searches, and an honest empty state that
-says what was searched instead of showing a blank list.
-
-Trigram indexes are created so this stays fast as the inbox grows.
+**Nothing else in the repo is deleted.**
 
 ---
 
-## Test in 60 seconds
+## STEP 2 — Upload the files in this zip
 
-1. Open any chat where a customer sent a CV → click the file → **it opens.**
-2. Open that lead's drawer → **Open CV** → same file, right name, right extension.
-3. WhatsApp search → type a customer's **name** → they appear, even if the chat is months old.
-4. Type the **last 5 digits** of a number → that chat appears.
-5. Clear with ✕ → full list returns.
+Same paths, overwriting what's there.
 
-## Not in this pack
+| File | What changed |
+|---|---|
+| `components/sidebar.tsx` | WhatsApp nav item, unread badge and the `useWaUnread` hook removed |
+| `components/shared/app-shell.tsx` | The `<WaAlerts>` watcher removed — no more inbound chime or tab counter |
+| `lib/supabase/middleware.ts` | The two WhatsApp webhook paths taken out of the public allowlist |
+| `app/api/ingest/meta-lead/route.ts` | No longer enqueues the T1 chase. Meta leads still land, still get the welcome email |
+| `app/api/lead/cv/[leadId]/route.ts` | **Open CV still works.** Now reads the archived file, then falls back to the extracted profile as a printable document. No chat lookup |
+| `lib/files/serve.ts` | **New.** The file-download code, moved out of `lib/whatsapp/`. Same fix that stopped the 0-byte downloads |
+| `components/leads/lead-drawer.tsx` | Stale "sent on WhatsApp / file deleted" copy corrected |
+| `lib/types.ts`, `lib/ai/context.ts`, `app/(app)/ai/page.tsx`, `app/api/queue/draft/route.ts` | Wording made channel-neutral |
+| `package.json` | Removed `pdf-parse`, `mammoth`, `word-extractor` — only the CV pipeline used them |
 
-Still to come, in order: the two-column lead drawer + Visa route button + redesigned
-Profile-received block (waiting on your approval of the mockup), template sync with
-Interakt, and chat tags.
+Netlify redeploys. The CRM has no WhatsApp module.
+
+**Optional but tidy:** delete `INTERAKT_API_KEY` and `WHATSAPP_WEBHOOK_SECRET` from Netlify environment variables.
+Also turn off the webhook in Interakt so it stops posting to a URL that no longer exists.
+
+---
+
+## STEP 3 — The database, when you're ready
+
+Two SQL files. **Run them in order, on separate days if you want.**
+
+### `081_preserve_cvs_before_whatsapp_removal.sql` — run this first, it is safe
+
+Some leads' CVs were never copied into the permanent archive; their only pointer
+is a row in `whatsapp_messages`. This finds every one of them and points
+`leads.cv_path` at the file that is already sitting in Storage.
+
+No file is moved or copied. It only ever fills a blank. Run it twice if you like.
+
+It prints how many CVs it recovered. **Read that number before going further.**
+
+At the bottom of the file there is a query that exports your whole chat history
+to CSV. Run it and download the file. Interakt has the same history, so this is
+a second copy, not your only one.
+
+### `082_remove_whatsapp.sql` — destructive, no undo
+
+Unschedules the three cron jobs, drops every `whatsapp_*` and `wa_*` function
+and trigger, then drops the 11 tables. It prints a confirmation showing 0 tables,
+0 functions and 0 cron jobs remaining.
+
+**What deliberately survives:**
+
+- The `whatsapp-media` storage bucket and every file in it. Your archived CVs
+  live there and `leads.cv_path` still points at them, so **Open CV keeps working**.
+  A Supabase bucket cannot be renamed, so the name stays. Nobody sees it.
+- Every lead column: `profile_text`, `profile_ai`, `eligibility`,
+  `eligibility_source`, `profile_received`, `cv_path`, `cv_name`,
+  `first_response_at`. That is lead data, not WhatsApp data — and it is years of
+  AI eligibility verdicts. Deleting it would be throwing away the asset.
+- The `whatsapp` option on follow-up channel. You still message people; you just
+  do it from Interakt now.
+
+---
+
+## What I deliberately did NOT remove
+
+Three things mention WhatsApp but are not the module. Say the word and they go too.
+
+| Where | What it is | Why I kept it |
+|---|---|---|
+| **My Queue** | A "Send on WhatsApp" button that opens `wa.me` | It is how a rep starts a chat from their own phone. More useful now, not less, since chats live in Interakt |
+| **Follow-ups** | "WhatsApp" as a channel option | You still follow up on WhatsApp. Removing it would break existing follow-up records |
+| **Public blog** | Share-on-WhatsApp button and a "WhatsApp us" CTA | Marketing on the public site, nothing to do with the CRM |
+
+---
+
+## `_ARCHIVE-do-not-upload/`
+
+Six files pulled out before deletion. **Do not put these in the repo** — they are
+not wired to anything and would be dead code.
+
+Keep them in a folder on your machine. Two of them matter:
+
+- **`eligibility.ts`** — the 8-family, ~400-keyword rulebook. The single most
+  valuable file we wrote. Channel-agnostic; it works on any text.
+- **`profile.ts`** — the CV pipeline. PDF / DOC / DOCX / photo → text →
+  Claude verdict. Works on any file source, not just WhatsApp.
+
+When you build v2 with a client portal for CV uploads, these two drop straight in.
+The other four (`intake`, `outbound`, `interakt`, `formhello`) are WhatsApp-specific
+and only worth keeping as a reference for how the T1–T7 ladder was timed.
+
+---
+
+## Verify it worked
+
+- [ ] No **WhatsApp** item in the sidebar
+- [ ] `/whatsapp` returns 404
+- [ ] No chime and no `(3)` in the browser tab when a message arrives
+- [ ] A new Meta lead still lands in the CRM and still gets the welcome email
+- [ ] Open a lead who sent a CV → **Open CV** → the file opens
+- [ ] Leads, payments, cases, meetings, campaigns and emails all unchanged

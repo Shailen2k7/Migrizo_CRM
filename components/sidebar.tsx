@@ -2,10 +2,9 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Megaphone, ListChecks, MessageCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Megaphone, ListChecks, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { useWaUnread } from '@/components/whatsapp/wa-alerts';
 import { initials } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -36,7 +35,6 @@ const NAV: NavItem[] = [
   // putting these two lines back:
   //   { href: '/my-queue', label: 'My Queue', icon: Target },
   //   { href: '/lead-engine', label: 'Lead Engine', icon: Zap, adminOnly: true },
-  { href: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, adminOnly: true, newUntil: '2026-08-20' },
   { href: '/campaigns', label: 'Campaigns', icon: Megaphone, adminOnly: true, newUntil: '2026-08-08' },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -61,12 +59,6 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
   const supabase = createClient();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Live WhatsApp unread count. This used to run its OWN realtime channel and
-  // call whatsapp_stats() — seven count queries — on every conversation change.
-  // <WaAlerts> in the app shell already maintains this number from a single
-  // cheap query, so the badge now just reads it. One watcher, not two.
-  const { workspace } = useApp();
-  const waUnread = useWaUnread();
 
   // Hide the Payments item for team members the admin hasn't granted access to.
   // Payments: hidden unless granted. Cases: admin/owner only.
@@ -126,9 +118,7 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
         {nav.map((item) => {
           const Icon = item.icon;
           const active = path === item.href || path.startsWith(item.href + '/');
-          {
-            const waBadge = item.href === '/whatsapp' && waUnread > 0;
-            return (
+          return (
             <Link
               key={item.href} href={item.href} onClick={onClose}
               title={collapsed ? item.label : undefined}
@@ -136,10 +126,6 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
             >
               <span className="relative flex-shrink-0">
                 <Icon className={item.href === '/ai' ? 'w-[17px] h-[17px] text-indigo-600' : 'w-[17px] h-[17px]'} />
-                {/* Collapsed rail has no room for a number, so unread becomes a dot */}
-                {waBadge && collapsed && (
-                  <span className="hidden md:block absolute -top-1 -right-1 h-[7px] w-[7px] rounded-full bg-[#25A25A] ring-2 ring-surface" />
-                )}
               </span>
               <span className={collapsed ? 'md:hidden' : ''}>{item.label}</span>
               {item.href === '/leads' && leadsCount > 0 && (
@@ -151,15 +137,11 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
               {item.href === '/daily-tracker' && urgentFollowUps > 0 && (
                 <span className={`ml-auto count ${collapsed ? 'md:hidden' : ''}`} style={{ background: '#FEE2E2', color: '#B91C1C' }}>{urgentFollowUps}</span>
               )}
-              {waBadge && (
-                <span className={`ml-auto count ${collapsed ? 'md:hidden' : ''}`} style={{ background: '#EDFAF1', color: '#1B7A44' }}>{waUnread}</span>
-              )}
-              {!waBadge && isNew(item.newUntil) && (
+              {isNew(item.newUntil) && (
                 <span className={`ml-auto chip ${collapsed ? 'md:hidden' : ''}`} style={{ background: 'hsl(var(--indigo-soft))', color: '#4338CA', border: 'none', fontSize: '9px', padding: '1px 5px' }}>NEW</span>
               )}
             </Link>
           );
-          }
         })}
       </nav>
 

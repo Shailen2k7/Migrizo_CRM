@@ -21,7 +21,7 @@ const SUGGESTIONS = [
   'Which leads have gone stale and need reviving?',
   'What meetings do I have coming up, and any no-shows to chase?',
   'How did my last email campaign perform?',
-  'Draft a WhatsApp follow-up for my most recent hot lead',
+  'Draft a follow-up message for my most recent hot lead',
   'Where are my delivery cases stuck?',
 ];
 

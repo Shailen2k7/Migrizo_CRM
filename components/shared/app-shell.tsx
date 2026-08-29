@@ -9,7 +9,6 @@ import { CooBanner } from '@/components/shared/coo-banner';
 import { LeadDrawer } from '@/components/leads/lead-drawer';
 import { MeetingAlerts } from '@/components/meetings/meeting-alerts';
 import { FollowUpAlerts } from '@/components/meetings/followup-alerts';
-import { WaAlerts } from '@/components/whatsapp/wa-alerts';
 import { AddLeadDialog } from '@/components/leads/add-lead-dialog';
 import { ImportDialog } from '@/components/leads/import-dialog';
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog';
@@ -120,11 +119,6 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
             shell so they run on every page, not only on Meetings. */}
         <MeetingAlerts workspaceId={workspace.id} />
         <FollowUpAlerts workspaceId={workspace.id} onOpenLead={(id) => setDrawerLeadId(id)} />
-        {/* WhatsApp: melodious chime on an inbound message + "(3) Migrizo CRM"
-            in the browser tab, from anywhere in the CRM. Every role hears it —
-            a lead writing in is everyone's business (founder decision, 077).
-            The mute button in the inbox still silences it per device. */}
-        <WaAlerts workspaceId={workspace.id} enabled />
       </UIContext.Provider>
     </AppProvider>
   );

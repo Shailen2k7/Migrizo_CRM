@@ -1,6 +1,6 @@
 // ============================================================================
 // FOLLOW-UP DRAFT — POST /api/queue/draft
-// When a rep marks a lead "not right now", Claude writes the short WhatsApp
+// When a rep marks a lead "not right now", Claude writes the short
 // message that keeps the door open. Returns plain text the rep can edit.
 // ============================================================================
 import { NextResponse } from 'next/server';
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     .single();
   if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
 
-  const system = `You write short WhatsApp follow-ups for a UK immigration consultancy (Migrizo).
+  const system = `You write short follow-up messages for a UK immigration consultancy (Migrizo).
 
 Rules:
 - 2 sentences maximum, under 45 words.

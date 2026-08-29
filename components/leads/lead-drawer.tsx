@@ -374,8 +374,8 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     </Row>
                     {/* Special pricing sits directly under Stage — the two are
                         read together — but is a SEPARATE field on purpose. A
-                        lead on a free case is still Hot, still in their WhatsApp
-                        campaign, still counted in the funnel. Saves immediately
+                        lead on a free case is still Hot, still in their
+                        outreach, still counted in the funnel. Saves immediately
                         rather than joining the pending patch, because granting a
                         discount is a decision worth stamping with a time and a
                         name the moment it is made. */}
@@ -1087,7 +1087,7 @@ function ProfileModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
           <div>
             <h2 className="text-[15px] font-semibold text-ink">{lead.full_name} — profile</h2>
             <p className="mt-0.5 text-[12px] text-muted">
-              Extracted from the CV they sent on WhatsApp · the file itself was deleted after reading
+              Extracted from the CV on record · open the original with the button in the drawer
             </p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-muted transition hover:bg-surface-2 hover:text-ink" aria-label="Close">

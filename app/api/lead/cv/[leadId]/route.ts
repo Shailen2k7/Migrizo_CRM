@@ -1,42 +1,35 @@
 // =============================================================================
 // LEAD CV — GET /api/lead/cv/<leadId>
 // -----------------------------------------------------------------------------
-// The drawer's "Download CV" button. One promise: THIS BUTTON ALWAYS GIVES
-// YOU SOMETHING, in a format that opens.
+// The drawer's "Open CV" button. One promise: THIS BUTTON ALWAYS GIVES YOU
+// SOMETHING, in a format that opens.
 //
-//   1. The archived original (leads.cv_path — permanent, survives purges),
-//      served under a proper filename WITH an extension.
-//   2. No archive? The newest CV-looking file still sitting in their chat.
-//   3. No file at all (deleted by the old pipeline)? A clean, printable
-//      document rendered from the extracted profile text — because the
-//      CONTENT was never lost, only the bytes. Opens as a page; ⌘P saves
-//      it as a PDF.
-//   4. Truly nothing? A plain-English explanation, never a bare 404.
+//   1. The archived original (leads.cv_path), served under the sender's own
+//      filename WITH a real extension.
+//   2. No file? A clean, printable document rendered from the extracted profile
+//      text — because the CONTENT is stored on the lead, not in a chat. Opens as
+//      a page; ⌘P saves it as a PDF.
+//   3. Truly nothing? A plain-English explanation, never a bare 404.
 //
-// ?download=1 forces a save dialog for the file cases.
+// ?download=1 forces a save dialog for the file case.
 // =============================================================================
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdmin, type SupabaseClient } from '@supabase/supabase-js';
-import { toBuffer, safeFilename, mimeFor, fileResponse } from '@/lib/whatsapp/serve-bytes';
+import { toBuffer, safeFilename, mimeFor, fileResponse, LEAD_FILES_BUCKET } from '@/lib/files/serve';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function withExtension(name: string, path: string): string {
-  return safeFilename({ name, path }).filename;
-}
-
 /**
  * Reads the object and sends it as a Buffer with a real Content-Length.
  * A 0-byte object counts as a MISS (returns null) so the caller falls through
- * to the next source instead of handing the founder an empty file — that empty
- * file was the whole "hell pain".
+ * to the extracted profile rather than handing over an empty file.
  */
 async function serveFile(
   admin: SupabaseClient, path: string, name: string, download: boolean
 ): Promise<NextResponse | null> {
-  const { data: file, error } = await admin.storage.from('whatsapp-media').download(path);
+  const { data: file, error } = await admin.storage.from(LEAD_FILES_BUCKET).download(path);
   if (error || !file) return null;
   const buf = await toBuffer(file);
   if (buf.byteLength === 0) return null;
@@ -73,55 +66,13 @@ export async function GET(
   }
   const displayName = (lead.full_name || 'Lead').trim();
 
-  // ── 1. the permanent archive ──────────────────────────────────────────────
+  // ── 1. the archived original ──────────────────────────────────────────────
   if (lead.cv_path) {
     const res = await serveFile(admin, lead.cv_path, lead.cv_name || `${displayName} — CV`, download);
     if (res) return res;
   }
 
-  // ── 2. the newest CV-looking file still in their chat ─────────────────────
-  // Covers every lead judged BEFORE the archive existed whose file survived.
-  // Found via the lead's conversation, documents first, then photos.
-  const { data: convs } = await admin
-    .from('whatsapp_conversations').select('id')
-    .eq('workspace_id', lead.workspace_id).eq('lead_id', lead.id);
-  const convIds = (convs ?? []).map((c) => c.id);
-  if (convIds.length) {
-    const { data: files } = await admin
-      .from('whatsapp_messages')
-      .select('media_path, media_name, media_type, created_at')
-      .in('conversation_id', convIds)
-      .eq('direction', 'in')
-      .in('media_type', ['document', 'image'])
-      .not('media_path', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(10);
-    const pick = (files ?? []).find((f) => f.media_type === 'document') ?? (files ?? [])[0];
-    if (pick?.media_path) {
-      const res = await serveFile(
-        admin, pick.media_path,
-        pick.media_name || `${displayName} — CV`, download);
-      if (res) {
-        // SELF-HEALING RECORD: this lead predates the archive — copy the file
-        // into it right now, so the record survives future chat purges. Best
-        // effort; the serve above already succeeded either way.
-        try {
-          const ext = (pick.media_path.split('.').pop() || 'pdf').toLowerCase();
-          const dest = `${lead.workspace_id}/cv/${lead.id}/${Date.now()}.${ext}`;
-          const { error: cpErr } = await admin.storage.from('whatsapp-media').copy(pick.media_path, dest);
-          if (!cpErr) {
-            await admin.from('leads').update({
-              cv_path: dest,
-              cv_name: withExtension(pick.media_name || `${displayName} — CV`, pick.media_path),
-            }).eq('id', lead.id);
-          }
-        } catch { /* record stays chat-backed until next click */ }
-        return res;
-      }
-    }
-  }
-
-  // ── 3. the extracted profile, as a proper printable document ──────────────
+  // ── 2. the extracted profile, as a proper printable document ──────────────
   if (lead.profile_text) {
     const ai = (lead.profile_ai ?? {}) as { eligible?: boolean; route?: string; reason?: string };
     const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -156,7 +107,7 @@ export async function GET(
   </div>
   ${ai.route || ai.reason ? `<div class="verdict"><b>${ai.eligible ? 'Eligible' : 'Not eligible'}${ai.route ? ` — ${esc(ai.route)}` : ''}.</b> ${esc(ai.reason || '')}</div>` : ''}
   ${bodyHtml}
-  <div class="note">Extracted by Migrizo CRM from the CV the lead sent on WhatsApp. The original file is no longer stored; this document preserves its full content. Press ⌘P / Ctrl+P to save as PDF.</div>
+  <div class="note">Extracted by Migrizo CRM from the CV this lead sent. The original file is not on record; this document preserves its full content. Press ⌘P / Ctrl+P to save as PDF.</div>
 <script>${download ? 'window.print();' : ''}</script>
 </body></html>`;
     return new NextResponse(html, {
@@ -164,9 +115,10 @@ export async function GET(
     });
   }
 
-  // ── 4. honestly nothing ───────────────────────────────────────────────────
+  // ── 3. honestly nothing ───────────────────────────────────────────────────
   return new NextResponse(
-    `No CV on record for ${displayName} yet. When they send one on WhatsApp (PDF, Word or photos), it is judged automatically and archived here permanently.`,
+    `No CV on record for ${displayName} yet. Attach one to the lead, or ask them to send it by email — ` +
+    `inbound attachments are filed against the lead automatically.`,
     { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
   );
 }

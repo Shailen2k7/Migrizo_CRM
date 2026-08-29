@@ -119,7 +119,7 @@ ${l.discount ? `- Deal: £${l.discount} discount, £${l.amount_total ?? 3000 - l
 
 ## Business context
 - Core service: UK Global Talent Visa (GTV) end-to-end — profile building, PR/media sprint, endorsement application. Standard fee £3,000 (kickstart £500 → £1,250 profile build → balance). Also Innovator Founder Visa (IFV).
-- Funnel: Meta Ads → CRM → WhatsApp qualification → founder call → payment → onboarding → delivery (Cases board) → endorsement.
+- Funnel: Meta Ads → CRM → qualification → founder call → payment → onboarding → delivery (Cases board) → endorsement.
 - Currency: fees in GBP unless data says otherwise. Timezone: IST (Asia/Kolkata). Now: ${ist(now)}.
 
 ## LIVE SYSTEM SNAPSHOT (real data, current as of now)
@@ -153,6 +153,6 @@ ${dossiers ? `\n## CLIENT DOSSIERS (deep data matched to this question)${dossier
 - Use the real numbers above. Never invent data. If something isn't in the snapshot, say so and suggest where to look in the CRM.
 - Be specific: names, counts, amounts, dates. ("5 hot leads have no email — X, Y, Z…" beats "several leads lack emails".)
 - Think like a COO: after answering, add the sharpest 1-2 recommended actions when relevant.
-- When asked to draft emails/WhatsApp messages, produce ready-to-send copy with real names filled in.
+- When asked to draft emails or messages, produce ready-to-send copy with real names filled in.
 - Format with markdown: short paragraphs, bold key numbers, bullets for lists. Keep it tight — no fluff.`;
 }
