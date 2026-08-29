@@ -26,6 +26,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { mediaTypeFromInterakt } from '@/lib/whatsapp/interakt';
 import { handleInboundForIntake } from '@/lib/whatsapp/intake';
+import { safeFilename } from '@/lib/whatsapp/serve-bytes';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -114,10 +115,15 @@ async function captureMedia(
     }
 
     const mime = res.headers.get('content-type')?.split(';')[0] || 'application/octet-stream';
-    const extFromMime = mime.split('/')[1]?.replace(/[^\w]/g, '').slice(0, 8) || 'bin';
-    const name = (fallbackName && /\.[A-Za-z0-9]{2,5}$/.test(fallbackName))
-      ? fallbackName.replace(/[^\w.\- ]+/g, '_').slice(0, 120)
-      : `${declaredType}-${Date.now()}.${extFromMime}`;
+    // The customer's own filename is kept exactly as they sent it. When they
+    // sent none, the extension is read from the BYTES — never invented from the
+    // mime string, which used to produce unopenable names like ".vndopenx".
+    const name = safeFilename({
+      name: fallbackName,
+      mime,
+      buf: Buffer.from(buf),
+      fallback: `${declaredType}-${Date.now()}`,
+    }).filename.replace(/[^\w.\- ]+/g, '_').slice(0, 120);
 
     const path = `${wsId}/in/${Math.random().toString(36).slice(2, 12)}-${name}`;
     const { error } = await admin.storage.from('whatsapp-media')

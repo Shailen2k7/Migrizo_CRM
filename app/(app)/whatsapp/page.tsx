@@ -101,6 +101,9 @@ export default function WhatsAppPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
+  // Server-side search results (whole table), merged with the local list.
+  const [searchHits, setSearchHits] = useState<WaConversation[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -739,19 +742,65 @@ export default function WhatsAppPage() {
     return m;
   }, [convs]);
 
+  // ── SEARCH ────────────────────────────────────────────────────────────────
+  // The old search filtered the in-memory array only. That array holds the 300
+  // most-recently-active conversations, so anyone older simply could not be
+  // found — the box looked broken. And for any text query the phone clause was
+  // `phone.includes('')`, which is true for every row.
+  //
+  // Now: local matches appear instantly as you type (no round trip), and a
+  // debounced RPC searches the WHOLE table in Postgres and merges anything the
+  // local list did not have. Name, email, phone digits, or message text.
+  const matchesLocally = useCallback((c: WaConversation, q: string) => {
+    if (!q) return true;
+    const digits = q.replace(/\D/g, '');
+    if (c.lead_name.toLowerCase().includes(q)) return true;
+    if (digits.length >= 3
+        && c.phone_e164.replace(/\D/g, '').includes(digits)) return true;
+    if ((c.last_preview || '').toLowerCase().includes(q)) return true;
+    return false;
+  }, []);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) { setSearchHits(null); setSearching(false); return; }
+    let cancelled = false;
+    setSearching(true);
+    const t = setTimeout(async () => {
+      const { data, error } = await supabase.rpc('whatsapp_conversations_search', {
+        p_workspace_id: workspace.id, p_query: q, p_limit: 80,
+      });
+      if (cancelled) return;
+      setSearching(false);
+      // A missing RPC (migration 080 not applied yet) must not break the box —
+      // local matching carries on exactly as before.
+      if (error) { setSearchHits(null); return; }
+      setSearchHits((data || []) as WaConversation[]);
+    }, 220);
+    return () => { cancelled = true; clearTimeout(t); setSearching(false); };
+  }, [query, supabase, workspace.id]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return convs.filter((c) => {
+    const passesFilter = (c: WaConversation) => {
       if (filter === 'unread' && !c.unread_count) return false;
       if (filter === 'attention' && !c.needs_attention) return false;
       if (filter === 'open' && !c.window_open) return false;
       if (filter === 'failed' && !c.suppressed) return false;
-      if (!q) return true;
-      return c.lead_name.toLowerCase().includes(q)
-        || c.phone_e164.includes(q.replace(/\D/g, ''))
-        || (c.last_preview || '').toLowerCase().includes(q);
-    });
-  }, [convs, filter, query]);
+      return true;
+    };
+    if (!q) return convs.filter(passesFilter);
+
+    const seen = new Set<string>();
+    const out: WaConversation[] = [];
+    for (const c of convs) {
+      if (passesFilter(c) && matchesLocally(c, q)) { seen.add(c.id); out.push(c); }
+    }
+    for (const c of searchHits || []) {
+      if (!seen.has(c.id) && passesFilter(c)) { seen.add(c.id); out.push(c); }
+    }
+    return out;
+  }, [convs, filter, query, searchHits, matchesLocally]);
 
   const counts = useMemo(() => ({
     all: convs.length,
@@ -991,9 +1040,21 @@ export default function WhatsAppPage() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search conversations…"
-                className="w-full rounded-md border border-[#E8EAF0] py-[7px] pl-9 pr-3 text-[13px] outline-none transition-all duration-150 placeholder:text-[#7A8095] focus:border-[#25A25A] focus:ring-1 focus:ring-[#25A25A]"
+                placeholder="Search name, number or message…"
+                className="w-full rounded-md border border-[#E8EAF0] py-[7px] pl-9 pr-8 text-[13px] outline-none transition-all duration-150 placeholder:text-[#7A8095] focus:border-[#25A25A] focus:ring-1 focus:ring-[#25A25A]"
               />
+              {searching && (
+                <Loader2 className="pointer-events-none absolute right-8 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-[#25A25A]" />
+              )}
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-[#7A8095] transition-colors hover:bg-[#F0F1F5] hover:text-[#2C2E36]">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -1032,8 +1093,14 @@ export default function WhatsAppPage() {
             )}
 
             {!loading && !loadError && filtered.length === 0 && (
-              <p className="px-[18px] py-10 text-center text-[13px] text-muted">
-                {convs.length === 0 ? 'No conversations yet. They appear here the moment a lead replies.' : 'Nothing matches that filter.'}
+              <p className="px-[18px] py-10 text-center text-[13px] leading-[1.6] text-muted">
+                {searching
+                  ? 'Searching all conversations…'
+                  : query.trim()
+                    ? <>No conversation matches <b className="text-[#2C2E36]">{query.trim()}</b>.<br />Searched every name, email, number and message.</>
+                    : convs.length === 0
+                      ? 'No conversations yet. They appear here the moment a lead replies.'
+                      : 'Nothing matches that filter.'}
               </p>
             )}
             {filtered.map((c) => {

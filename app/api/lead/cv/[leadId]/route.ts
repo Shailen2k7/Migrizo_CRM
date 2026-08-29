@@ -18,37 +18,30 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdmin, type SupabaseClient } from '@supabase/supabase-js';
+import { toBuffer, safeFilename, mimeFor, fileResponse } from '@/lib/whatsapp/serve-bytes';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const EXT_MIME: Record<string, string> = {
-  pdf: 'application/pdf',
-  doc: 'application/msword',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
-};
-
 function withExtension(name: string, path: string): string {
-  const clean = (name || '').replace(/["\\]/g, '').trim();
-  if (/\.\w{2,5}$/.test(clean)) return clean;
-  const ext = path.split('.').pop() || 'pdf';
-  return `${clean || 'CV'}.${ext}`;
+  return safeFilename({ name, path }).filename;
 }
 
+/**
+ * Reads the object and sends it as a Buffer with a real Content-Length.
+ * A 0-byte object counts as a MISS (returns null) so the caller falls through
+ * to the next source instead of handing the founder an empty file — that empty
+ * file was the whole "hell pain".
+ */
 async function serveFile(
   admin: SupabaseClient, path: string, name: string, download: boolean
 ): Promise<NextResponse | null> {
   const { data: file, error } = await admin.storage.from('whatsapp-media').download(path);
   if (error || !file) return null;
-  const ext = (path.split('.').pop() || '').toLowerCase();
-  return new NextResponse(file, {
-    headers: {
-      'Content-Type': EXT_MIME[ext] || 'application/octet-stream',
-      'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${withExtension(name, path)}"`,
-      'Cache-Control': 'private, max-age=3600',
-    },
-  });
+  const buf = await toBuffer(file);
+  if (buf.byteLength === 0) return null;
+  const { filename, ext } = safeFilename({ name, path, buf, fallback: 'CV' });
+  return fileResponse(buf, filename, mimeFor(ext), download);
 }
 
 export async function GET(

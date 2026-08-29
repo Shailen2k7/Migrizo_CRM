@@ -1,65 +1,80 @@
-# No more calculating — every option tells you how many people are in it
+# Fix pack — CV downloads + WhatsApp search
 
-2 files. Run the migration, upload, redeploy.
+Two confirmed defects. Both verified with `npm run type-check` and `npm run build` (green).
+Nothing else in the system is touched.
 
-```
-supabase/migrations/061_audience_facets.sql   NEW — run in Supabase SQL Editor
-components/whatsapp/campaigns-tab.tsx         REPLACE
-```
+## Order
 
-**Verified:** `tsc` clean · `next build` green · migrations 056→061 applied
-**twice in order** · **7 new facet tests** + the **8 campaign-engine tests
-re-run** (061 replaces the audience matcher, so the old suite had to prove no
-regression — it did).
+1. **Supabase SQL editor** → paste and run `supabase/migrations/080_wa_search.sql`.
+   Idempotent — safe to run twice.
+2. **Upload the 5 code files** to GitHub, keeping the exact folder paths.
+3. Netlify redeploys. Done.
 
-> One note on rigour: my first run of the new tests was passing *vacuously* —
-> the workspace guard was refusing the call and every assertion compared
-> against NULL, which never raises. Fixed by asserting `ok = true` before
-> anything else. The results above are real.
+Steps 1 and 2 are independent — if you deploy the code before running the SQL,
+search still works on the loaded conversations and simply falls back; it does not error.
 
 ---
 
-## What went wrong — my fault, not yours
+## 1. The empty CV download — fixed at the root
 
-You ticked Yes / Maybe / No under "Can invest". All 82 hot leads have that
-field empty, so the filter removed every one of them and the screen said **0**
-with no reason. You had to open SQL to find out why. A filter that deletes
-people invisibly is a broken filter.
+The file you sent me was **0 bytes**. Every earlier fix chased the *filename*.
+The problem was the *body*.
 
-## Three changes, and you never do arithmetic again
+`new NextResponse(blob)` — Supabase hands back a stream-backed Blob, and Netlify's
+Next adapter did not always drain that stream before closing the response. The
+browser was told "here is your CV" and given nothing.
 
-**1. Every chip carries its own count.**
-`Hot leads 82` · `Tech 24` · `Never asked 82` · `Yes 0`. Chips holding nobody
-are greyed out — visibly a dead end *before* you click. Counts are true
-faceted counts: each row is counted with its own filter lifted, so a chip's
-number is exactly what you get by clicking it.
+**Now:** every file is read fully into a Buffer, with an explicit `Content-Length`,
+before it leaves the server (`lib/whatsapp/serve-bytes.ts`). A file arrives whole or
+we say plainly that we could not read it. There is no third outcome.
 
-**2. Stage is the only decision. Everything else is optional.**
-Opens with three big stage chips and one green line: *"Reaching **everyone**
-in the stage above — nobody is left out."* Filters hide behind **Narrow it
-down**; **Reach everyone** undoes any mess in one click.
+Three more things came with it:
 
-**3. A zero explains itself and offers the fix.**
+- **A 0-byte object no longer gets served.** If what we stored is empty, we re-pull
+  the bytes from the sender's WhatsApp link, overwrite the object, and serve the
+  real file. The record heals itself on the first click.
+- **The extension is read from the actual bytes**, not guessed from the mime string.
+  A PDF whose sender gave it no filename now saves as `.pdf`, not `.vndopenx`.
+  Your rule is kept: if the customer named the file, that name is used untouched.
+- **Non-English filenames survive** (Hindi, accents) via `filename*=UTF-8''…`.
 
-> Your **Can invest** filter is removing everyone. Without it you reach **82**.
-> [ Remove Can invest filter ]
+Applies to both buttons — the paperclip in the chat and **Open CV** in the lead drawer.
 
-**Also fixed:** "Unknown" was a dead chip that matched nothing. It is now
-**Never asked** / **No tag** / **No route set**, each with a real count — and
-Visa gained the same option, because all 82 of your hot leads have no route
-set, which made that row unusable. Audiences you already saved are migrated
-automatically. New campaigns default to stage-only with no recency rule; the
-24-hour "never talk over a live chat" safety is always on and cannot be
-switched off.
+## 2. WhatsApp search — fixed and made server-side
 
-## Test it (30 seconds)
+Two bugs in one line.
 
-1. Run 061 in Supabase.
-2. Upload `campaigns-tab.tsx`, redeploy.
-3. Open **Hot Lead - Follow up** → Stage row reads **Hot leads 82** → green
-   line confirms you are reaching everyone → count card shows 82.
-4. Click **Narrow it down** → *Can invest* shows `Yes 0` `Maybe 0` `No 0`
-   `Never asked 82`. The reason your screen said 0 is now visible at a glance.
-5. Tick **Yes** only → count drops to 0 → amber panel names "Can invest" and
-   offers the one-click fix. Press it → back to 82.
-6. Press **Apply changes** to enrol them.
+The search filtered a JavaScript array that only ever holds the **300 most-recently-active
+conversations**. Anyone older was invisible — which is why searching a real customer
+returned nothing. And for any text query the phone check ran `phone.includes('')`,
+which is true for every row, so that clause matched everything and hid the real logic.
+
+**Now:** local matches appear instantly as you type, and 220ms later Postgres searches
+**every conversation you have**, on:
+
+- lead name (case-insensitive)
+- lead email
+- phone — digits only on both sides, so `9999311087`, `99993 11087` and
+  `+91 9999311087` all find `+919999311087`
+- the last message text, so "booking link" finds the thread
+
+Plus a clear (✕) button, a spinner while it searches, and an honest empty state that
+says what was searched instead of showing a blank list.
+
+Trigram indexes are created so this stays fast as the inbox grows.
+
+---
+
+## Test in 60 seconds
+
+1. Open any chat where a customer sent a CV → click the file → **it opens.**
+2. Open that lead's drawer → **Open CV** → same file, right name, right extension.
+3. WhatsApp search → type a customer's **name** → they appear, even if the chat is months old.
+4. Type the **last 5 digits** of a number → that chat appears.
+5. Clear with ✕ → full list returns.
+
+## Not in this pack
+
+Still to come, in order: the two-column lead drawer + Visa route button + redesigned
+Profile-received block (waiting on your approval of the mockup), template sync with
+Interakt, and chat tags.
