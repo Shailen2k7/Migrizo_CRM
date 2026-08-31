@@ -2,15 +2,9 @@
   command = "npm run build"
   publish = ".next"
 
-[build.environment]
-  # @supabase/supabase-js deprecates Node 20 and below. Netlify's default image
-  # is older than this, so pin it or the build warns now and breaks later.
-  NODE_VERSION = "22"
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
 
-# No [[plugins]] block on purpose.
-#
-# Netlify detects Next.js and installs its runtime automatically. Declaring
-# @netlify/plugin-nextjs explicitly while it is absent from package.json makes
-# the build depend on Netlify resolving it from the plugin registry, which fails
-# on some accounts with "Failed to install plugins" — before a single line of
-# app code is compiled. Auto-detection has no such failure mode.
+# NEXT_USE_NETLIFY_EDGE was a flag for the old Netlify Next.js Runtime v4.
+# The current runtime (v5) ignores it and decides edge vs. serverless itself,
+# so keeping it here only misleads whoever reads this file next.
