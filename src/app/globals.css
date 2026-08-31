@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Dark theme (default) — Deep Navy / Slate from DESIGN.md ── */
+:root,
+.dark {
+  --bg: 19 19 21; /* #131315 */
+  --surface: 27 27 29; /* #1b1b1d */
+  --surface-2: 31 31 33; /* #1f1f21 */
+  --surface-3: 42 42 43; /* #2a2a2b */
+  --border: 55 58 66;
+  --border-strong: 69 71 76; /* #45474c */
+  --text: 228 226 227; /* #e4e2e3 */
+  --text-2: 197 198 205; /* #c5c6cd */
+  --text-3: 143 144 151; /* #8f9097 */
+  --primary: 190 199 220; /* #bec7dc */
+  --primary-fg: 26 35 51; /* #1a2333 deep navy */
+  --navy: 26 35 51;
+  --positive: 52 211 153; /* emerald */
+  --negative: 251 113 133; /* refined coral */
+  --warning: 250 204 21;
+  --gold: 220 195 161; /* #dcc3a1 */
+  --chart-1: 129 140 248; /* indigo */
+  --chart-2: 96 165 250; /* blue */
+  --chart-3: 192 132 252; /* purple */
+  --chart-4: 244 114 182; /* pink */
+  --chart-5: 45 212 191; /* teal */
+  --chart-6: 251 191 36; /* amber */
+  --glass-bg: rgba(31, 31, 35, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-hover: rgba(255, 255, 255, 0.16);
+  color-scheme: dark;
+}
+
+/* ── Light theme ── */
+.light {
+  --bg: 244 245 248;
+  --surface: 255 255 255;
+  --surface-2: 250 250 252;
+  --surface-3: 240 241 245;
+  --border: 226 228 234;
+  --border-strong: 203 206 216;
+  --text: 24 30 42;
+  --text-2: 71 80 98;
+  --text-3: 116 124 139;
+  --primary: 40 51 74;
+  --primary-fg: 235 240 250;
+  --navy: 26 35 51;
+  --positive: 5 150 105;
+  --negative: 225 29 72;
+  --warning: 202 138 4;
+  --gold: 161 128 84;
+  --chart-1: 99 102 241;
+  --chart-2: 59 130 246;
+  --chart-3: 147 51 234;
+  --chart-4: 219 39 119;
+  --chart-5: 13 148 136;
+  --chart-6: 217 119 6;
+  --glass-bg: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(20, 30, 50, 0.08);
+  --glass-border-hover: rgba(20, 30, 50, 0.18);
+  color-scheme: light;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  /* Global UI scale — the whole portal renders at ~81% (13px root) so
+     information density matches a Cmd+- zoom without the user zooming. */
+  font-size: 81.25%;
+}
+
+body {
+  background-color: rgb(var(--bg));
+  color: rgb(var(--text));
+  font-family: var(--font-inter), system-ui, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Ambient background glow */
+.app-bg {
+  background:
+    radial-gradient(1000px 500px at 80% -10%, rgb(var(--chart-1) / 0.07), transparent 60%),
+    radial-gradient(800px 400px at 10% 110%, rgb(var(--chart-5) / 0.05), transparent 60%),
+    rgb(var(--bg));
+}
+
+/* Glass card — semi-transparent surface, backdrop blur, inner-glow border */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+}
+.glass-hover:hover {
+  border-color: var(--glass-border-hover);
+}
+
+.num {
+  font-family: var(--font-jetbrains), monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.label-caps {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--text-3));
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--border-strong) / 0.6);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--text-3) / 0.7);
+  background-clip: content-box;
+  border: 2px solid transparent;
+}
+
+/* Skeleton shimmer */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--surface-3)) 25%,
+    rgb(var(--border)) 50%,
+    rgb(var(--surface-3)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+/* Recharts theming */
+.recharts-cartesian-grid line {
+  stroke: rgb(var(--border) / 0.5);
+}
+.recharts-text {
+  fill: rgb(var(--text-3));
+  font-size: 11px;
+  font-family: var(--font-jetbrains), monospace;
+}
+.recharts-default-tooltip {
+  border-radius: 12px !important;
+}
