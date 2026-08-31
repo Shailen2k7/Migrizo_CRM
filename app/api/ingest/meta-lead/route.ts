@@ -20,7 +20,7 @@
 // form tomorrow lands here with no code change. See lib/intake.ts.
 // =============================================================================
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { renderProcess } from '@/lib/email/branded';
 import { flattenAnswer, mapExpertise, mapReadiness, detectAnswers } from '@/lib/intake';
 
@@ -48,7 +48,26 @@ const escLike = (v: string) => v.replace(/[%_\\]/g, (m) => '\\' + m);
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * Logs the outcome of every POST — including the rejected ones, which used to
+ * vanish without trace. Fire-and-forget and fully guarded: if 085 has not been
+ * applied, or the insert fails, lead creation carries on untouched.
+ */
+async function logIngest(
+  admin: SupabaseClient | null,
+  row: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const db = admin || (url && key ? createClient(url, key, { auth: { persistSession: false } }) : null);
+    if (!db) return;
+    await db.from('ingest_log').insert(row as never);
+  } catch { /* logging must never be the reason a lead is lost */ }
+}
+
 export async function POST(req: Request) {
+  const t0 = Date.now();
   // ---- parse body ----------------------------------------------------------
   let body: {
     token?: string; full_name?: string; phone?: string; email?: string;
@@ -60,18 +79,34 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
+    await logIngest(null, { outcome: 'rejected', reason: 'bad_json', ms: Date.now() - t0 });
     return NextResponse.json({ ok: false, reason: 'bad_json' }, { status: 400 });
   }
 
   // ---- auth: shared token --------------------------------------------------
   const expected = process.env.INGEST_SECRET;
   if (!expected || body.token !== expected) {
+    await logIngest(null, {
+      outcome: 'rejected', reason: 'unauthorized', ms: Date.now() - t0,
+      // The token itself is never logged. The rest is, so a misconfigured
+      // scenario is identifiable at a glance.
+      full_name: String(body.full_name || '') || null,
+      payload: { has_token: Boolean(body.token) },
+    });
     return NextResponse.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
   }
 
   // ---- required field ------------------------------------------------------
   const fullName = (body.full_name || '').trim();
   if (!fullName) {
+    // The single most likely silent failure: Make's field mapping broke after a
+    // form was renamed. The whole payload is kept so you can see what arrived.
+    await logIngest(null, {
+      outcome: 'rejected', reason: 'missing_name', ms: Date.now() - t0,
+      phone: String(body.phone || '') || null,
+      email: String(body.email || '') || null,
+      payload: body as Record<string, unknown>,
+    });
     return NextResponse.json({ ok: false, reason: 'missing_name' }, { status: 400 });
   }
   const phone = unprefix(body.phone || '') || null;
@@ -123,6 +158,10 @@ export async function POST(req: Request) {
     .limit(1)
     .maybeSingle();
   if (wsErr || !ws) {
+    await logIngest(admin, {
+      outcome: 'rejected', reason: 'no_workspace', ms: Date.now() - t0,
+      full_name: fullName, phone, email,
+    });
     return NextResponse.json({ ok: false, reason: 'no_workspace' }, { status: 500 });
   }
 
@@ -205,6 +244,11 @@ export async function POST(req: Request) {
       },
     });
 
+    await logIngest(admin, {
+      outcome: 'returning', workspace_id: ws.id, lead_id: prev.id, ms: Date.now() - t0,
+      full_name: fullName, phone, email, payload: intake,
+    });
+
     return NextResponse.json({
       ok: true, duplicate: true, returning: true, id: prev.id,
       submissions: patch.form_submission_count,
@@ -234,8 +278,18 @@ export async function POST(req: Request) {
     .select('id')
     .single();
   if (insErr) {
+    await logIngest(admin, {
+      outcome: 'rejected', reason: `insert_failed: ${insErr.message}`.slice(0, 300),
+      workspace_id: ws.id, ms: Date.now() - t0,
+      full_name: fullName, phone, email, payload: intake,
+    });
     return NextResponse.json({ ok: false, reason: insErr.message }, { status: 500 });
   }
+
+  await logIngest(admin, {
+    outcome: 'created', workspace_id: ws.id, lead_id: lead.id, ms: Date.now() - t0,
+    full_name: fullName, phone, email, payload: intake,
+  });
 
   await admin.from('form_submissions')
     .upsert({ ...submissionBase, lead_id: lead.id, is_new_lead: true },

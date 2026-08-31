@@ -1,92 +1,67 @@
-# Multiple booking pages — one per person
+# Stop guessing — make the CRM answer this itself
 
-Type-check and build both green. **One code file changed.**
+## Run `DIAGNOSE-NOW.sql` first. No deploy needed.
 
----
+Query 1 is the fork in the road:
 
-## What you can now do
-
-Meetings → **Booking settings**. At the top there's a row of booking pages with
-a **+ Add a person** button beside them.
-
-| Action | Where |
+| Result | Meaning |
 |---|---|
-| Create a page for Mansi | Booking settings → **+ Add a person** |
-| Switch between pages | Click a name in that row |
-| Pause just Mansi's page | Team booking pages list → **Pause** |
-| Edit Mansi's hours, slots, days off | Pick her name, then edit as normal |
-| See only Mansi's calls | Meetings → the **Everyone's calls** dropdown |
+| **11** | The CRM genuinely has 11 leads. Submissions are being lost before they reach it |
+| **31** | The leads exist and the Daily Tracker is hiding them. Completely different fix |
 
-Each page keeps its own link, hours, slot length, notice, daily cap, days off,
-reminders and live/paused state. Nothing is shared between them.
+Query 3 is the one I most expect to explain it. It shows today **and yesterday**
+side by side. Add the two together and compare against Meta's two-day total.
 
----
+## Why a single day can never match
 
-## Setting Mansi up — two minutes
+Your ad account is not on IST. We proved it from your own export: the file named
+`20260830` contained rows timestamped **31 Aug IST, 00:16 to 17:19**.
 
-1. Meetings → **Booking settings** → **+ Add a person**
-2. **Whose calendar is this?** — pick Mansi if she has a CRM login.
-   If she doesn't, choose *"Someone without a CRM login — I'll manage it"*.
-   A booking page does not require a login; you just manage it from your account.
-3. **Booking link** → `mansi` → the page becomes `crm.migrizo.com/book/mansi`
-4. **Name shown to the client** → `Mansi Behal` — this is what appears on the
-   booking page, in the confirmation email and in every reminder
-5. **Meeting title** → e.g. `GTV Consultation`
-6. **Meeting link** → her Google Meet or Zoom room
-7. Set her hours, slot length and notice — they are hers alone
-8. **Create booking page**
+So Meta's "today" and the CRM's "today" are different windows that only partly
+overlap. Comparing them on one day is comparing two different sets of people. The
+answer is not to compare single days at all — use 7-day ranges on both sides,
+where the edges cancel out.
 
-Copy her link from the Team booking pages list at the bottom.
+I said this before and it was not concrete enough. Query 3 makes it visible.
 
 ---
 
-## What the client sees
+## Then deploy 085 — so this question never needs asking again
 
-Whichever link you send decides everything. Send `/book/mansi` and the page says
-**Mansi Behal**, offers her hours, and every email — confirmation, reminders,
-reschedule, cancel — carries her name and her meeting link. Nothing says Shailen.
+**What is still blind:** migration 083 records submissions that SUCCEED. A POST
+that is *rejected* — bad token, missing name, a database error — leaves no trace
+anywhere in Postgres. That is why I cannot tell you from here which side is losing
+them, and why you have had to open Make.com by hand.
 
----
+**After 085,** every POST to the ingest endpoint is logged before anything can go
+wrong, with its outcome and, when it fails, the reason.
 
-## Whose calls are whose
+```sql
+select public.ingest_health(1);
+```
 
-The Meetings page gets an **Everyone's calls** dropdown next to the status filters.
-It applies to the calendar, the upcoming list and the history at once, so you can
-check Mansi's week without reading past your own.
+Returns `arrived / created / returning / rejected` plus a breakdown of rejection
+reasons.
 
-Every meeting is already tagged to the person who was booked — that has always been
-stored, it just had no filter until now.
+- `arrived` = 11 while Meta says 31 → the gap is **Meta → Make**. Nothing in the
+  CRM can fix it, and you will know that in one query instead of an afternoon
+- `arrived` = 31 with 20 rejected → the **reason column names the bug**
 
----
+The most likely rejection reason is `missing_name` — Make's field mapping breaking
+after a form rename, which has happened to you before. The full payload is stored,
+so you can see exactly what arrived without opening Make.
 
 ## Install
 
-1. **If you have not yet run `084_scheduler_flexible.sql`, run it first.** It is
-   included here again and is safe to run twice. The new fields depend on it.
-2. Upload `app/(app)/meetings/page.tsx`.
-3. Netlify redeploys.
+1. Supabase SQL editor → `supabase/migrations/085_ingest_log.sql`. Idempotent
+2. Upload `app/api/ingest/meta-lead/route.ts`
+3. Netlify redeploys
 
----
+Logging is fire-and-forget and fully guarded — if the table is missing or the
+insert fails, lead creation carries on exactly as before. It can never be the
+reason a lead is lost.
 
-## Verify
+## Send me
 
-- [ ] Booking settings shows a **+ Add a person** button
-- [ ] Create Mansi's page and open `/book/mansi` in a private window
-- [ ] It shows her name, her hours, her meeting title
-- [ ] Book a test slot — the confirmation email says Mansi
-- [ ] Pause her page from the team list → the link shows your paused message
-- [ ] Meetings → **Everyone's calls** → pick Mansi → only her calls remain
-
----
-
-## Two things worth knowing
-
-**Only admins see other people's pages.** A non-admin opening Booking settings sees
-only their own, exactly as before. Bear in mind the underlying database rule is
-workspace-wide, so this is a UI boundary rather than a hard lock — fine for a team
-of six, worth tightening if you ever hire beyond people you fully trust.
-
-**Round-robin is the natural next step.** Right now you choose who gets the call by
-choosing which link you send. If you'd rather have one link that hands the call to
-whoever is free — or splits them evenly between you and Mansi — say the word. It
-builds on exactly this structure.
+The output of queries 1, 3 and 4. That is enough for me to tell you precisely
+what is happening instead of narrowing it one theory at a time.
