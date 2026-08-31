@@ -96,6 +96,9 @@ export interface Lead {
   eligibility_source?: 'manual' | 'derived' | 'ai' | null;
   // CV on record: the extracted profile text behind the
   // drawer's "View profile" button.
+  /** When this person most recently filled the ad form (083). */
+  last_form_submitted_at?: string | null;
+  form_submission_count?: number | null;
   profile_text?: string | null;
   profile_ai?: Record<string, unknown> | null;
   // CV on record (079): permanent archived copy of the CV they sent,

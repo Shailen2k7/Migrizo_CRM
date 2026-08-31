@@ -1,67 +1,55 @@
-# Stop guessing — make the CRM answer this itself
+# Every submission now shows in Daily tracker
 
-## Run `DIAGNOSE-NOW.sql` first. No deploy needed.
+You said it plainly, so here it is with no argument: **every person who fills the
+form appears in Daily tracker, whether they are new or already in the CRM.**
 
-Query 1 is the fork in the road:
+## What changes
 
-| Result | Meaning |
-|---|---|
-| **11** | The CRM genuinely has 11 leads. Submissions are being lost before they reach it |
-| **31** | The leads exist and the Daily Tracker is hiding them. Completely different fix |
+The **LEADS ADDED** list now includes returning submitters alongside new leads.
+Anyone already in your database who filled the form again in that window shows up
+as a row, tagged **FILLED AGAIN** in purple, with the time they re-submitted.
 
-Query 3 is the one I most expect to explain it. It shows today **and yesterday**
-side by side. Add the two together and compare against Meta's two-day total.
+The count above the list counts them too. Nothing is hidden any more.
 
-## Why a single day can never match
+**One person is still one row.** A returning submitter appears once, on their
+existing record, rather than creating a second copy — otherwise they would get a
+second welcome email, sit twice in your pipeline, and be counted twice in every
+report. You see the event; the pipeline stays clean.
 
-Your ad account is not on IST. We proved it from your own export: the file named
-`20260830` contained rows timestamped **31 Aug IST, 00:16 to 17:19**.
+## Also in this pack — 085, the ingest log
 
-So Meta's "today" and the CRM's "today" are different windows that only partly
-overlap. Comparing them on one day is comparing two different sets of people. The
-answer is not to compare single days at all — use 7-day ranges on both sides,
-where the edges cancel out.
+Right now a POST that is *rejected* (bad token, missing name, database error)
+leaves **no trace anywhere in the database**. That is exactly why I have not been
+able to tell you which side is losing leads, and why you have had to open Make by
+hand three times.
 
-I said this before and it was not concrete enough. Query 3 makes it visible.
-
----
-
-## Then deploy 085 — so this question never needs asking again
-
-**What is still blind:** migration 083 records submissions that SUCCEED. A POST
-that is *rejected* — bad token, missing name, a database error — leaves no trace
-anywhere in Postgres. That is why I cannot tell you from here which side is losing
-them, and why you have had to open Make.com by hand.
-
-**After 085,** every POST to the ingest endpoint is logged before anything can go
-wrong, with its outcome and, when it fails, the reason.
+After 085, every POST is logged with its outcome:
 
 ```sql
 select public.ingest_health(1);
 ```
 
-Returns `arrived / created / returning / rejected` plus a breakdown of rejection
-reasons.
+Gives `arrived / created / returning / rejected` plus the reason for each
+rejection. And to see them in full:
 
-- `arrived` = 11 while Meta says 31 → the gap is **Meta → Make**. Nothing in the
-  CRM can fix it, and you will know that in one query instead of an afternoon
-- `arrived` = 31 with 20 rejected → the **reason column names the bug**
-
-The most likely rejection reason is `missing_name` — Make's field mapping breaking
-after a form rename, which has happened to you before. The full payload is stored,
-so you can see exactly what arrived without opening Make.
+```sql
+select received_at at time zone 'Asia/Kolkata' as at_ist,
+       reason, full_name, phone, email, payload
+  from public.ingest_log
+ where outcome = 'rejected'
+ order by received_at desc limit 50;
+```
 
 ## Install
 
-1. Supabase SQL editor → `supabase/migrations/085_ingest_log.sql`. Idempotent
-2. Upload `app/api/ingest/meta-lead/route.ts`
+1. Supabase SQL editor → `supabase/migrations/085_ingest_log.sql` (idempotent)
+2. Upload the 3 code files
 3. Netlify redeploys
 
 Logging is fire-and-forget and fully guarded — if the table is missing or the
-insert fails, lead creation carries on exactly as before. It can never be the
-reason a lead is lost.
+insert fails, lead creation carries on untouched. It can never be why a lead is lost.
 
-## Send me
+## But read CHECK-MAKE-FIRST.md before you do any of this
 
-The output of queries 1, 3 and 4. That is enough for me to tell you precisely
-what is happening instead of narrowing it one theory at a time.
+Your newest lead is 11:52 AM. That is a hard stop, and no CRM change fixes a
+hard stop. The 30-second check is in that file.

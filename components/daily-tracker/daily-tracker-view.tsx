@@ -163,8 +163,19 @@ export function DailyTrackerView() {
   }, [leads]);
 
   // ------- Filtered list based on active card -------
+  // Everyone who filled the form in this range — the people added AND the
+  // people already in the CRM who came back. Founder's rule: every submission
+  // shows up here, duplicate or not. Deduped by lead so one person is one row.
+  const everyoneInRange = useMemo(() => {
+    const seen = new Set(leadsInRange.map((l) => l.id));
+    return [...leadsInRange, ...returningLeads.filter((l) => !seen.has(l.id))];
+  }, [leadsInRange, returningLeads]);
+
+  const returningIds = useMemo(
+    () => new Set(returningLeads.map((l) => l.id)), [returningLeads]);
+
   const filteredList = useMemo(() => {
-    let list = leadsInRange;
+    let list = everyoneInRange;
     // "Returning" is not a stage — it is the set of people already in the CRM
     // who filled the ad form again inside this range.
     if (activeCard === 'returning') list = returningLeads;
@@ -175,7 +186,7 @@ export function DailyTrackerView() {
       if (b.stage === 'won' && a.stage !== 'won') return 1;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [leadsInRange, activeCard, returningLeads]);
+  }, [everyoneInRange, activeCard, returningLeads]);
 
   // ------- Other stages with non-zero counts (for the "Also on this day" row) -------
   const otherStages: { stage: LeadStage; count: number }[] = useMemo(() => {
@@ -438,7 +449,7 @@ export function DailyTrackerView() {
           {filteredList.length === 0
             ? 'No leads to show'
             : `${filteredList.length} lead${filteredList.length === 1 ? '' : 's'} ${
-                activeCard === 'all' ? 'added'
+                activeCard === 'all' ? (returningLeads.length ? 'in this window' : 'added')
                 : activeCard === 'returning' ? '· filled the form again'
                 : `· filtered to ${getStageMeta(activeCard).label}`}`}
         </div>
@@ -463,7 +474,7 @@ export function DailyTrackerView() {
         ) : (
           <div className="divide-y divide-border">
             {filteredList.map((lead) => (
-              <LeadRow key={lead.id} lead={lead} onClick={() => setSelectedLeadId(lead.id)} memberName={lead.created_by ? memberNameById(lead.created_by) : null} />
+              <LeadRow key={lead.id} lead={lead} onClick={() => setSelectedLeadId(lead.id)} memberName={lead.created_by ? memberNameById(lead.created_by) : null} returning={returningIds.has(lead.id)} />
             ))}
           </div>
         )}
@@ -525,7 +536,7 @@ function ComparisonBadge({ pct }: { pct: number }) {
 // =========================================
 // LEAD ROW
 // =========================================
-function LeadRow({ lead, onClick, memberName }: { lead: Lead; onClick: () => void; memberName: string | null }) {
+function LeadRow({ lead, onClick, memberName, returning }: { lead: Lead; onClick: () => void; memberName: string | null; returning?: boolean }) {
   const meta = getStageMeta(lead.stage);
   const isWon = lead.stage === 'won';
   const created = new Date(lead.created_at);
@@ -541,6 +552,13 @@ function LeadRow({ lead, onClick, memberName }: { lead: Lead; onClick: () => voi
           <div className="flex items-center gap-2">
             <span className="font-semibold text-[13.5px] text-ink">{lead.full_name}</span>
             <IndustryChip industry={lead.industry} size="xs" />
+            {returning && (
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={{ background: '#EDE9FE', color: '#5B21B6' }}
+                title="Already in the CRM — filled the ad form again in this window">
+                FILLED AGAIN
+              </span>
+            )}
             {isWon && lead.amount_paid > 0 && (
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: '#E1F5EE', color: '#0F6E56' }}>
                 {formatMoney(lead.amount_paid, lead.currency)} closed
@@ -551,6 +569,11 @@ function LeadRow({ lead, onClick, memberName }: { lead: Lead; onClick: () => voi
         </div>
         <div className="text-[12px] font-semibold mt-0.5" style={{ color: meta.fg }}>
           → Currently in {meta.label} {lead.stage === 'won' ? 'pipeline' : 'lead pipeline'}
+          {returning && lead.last_form_submitted_at && (
+            <span className="ml-1.5 font-normal text-muted">
+              · re-submitted {new Date(lead.last_form_submitted_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })}
+            </span>
+          )}
         </div>
         {(lead.email || lead.phone) && (
           <div className="text-[11.5px] text-muted mt-1">
