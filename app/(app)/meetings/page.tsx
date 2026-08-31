@@ -19,7 +19,10 @@ interface Meeting {
   starts_at: string; ends_at: string; status: string; notes: string | null;
   meet_link: string | null; manage_token: string; created_at: string;
 }
-interface Member { id: string; user_id: string; slug: string; display_name: string; title: string; meeting_link: string | null; timezone: string; slot_minutes: number; slot_step_minutes: number; buffer_minutes: number; working_hours: Record<string, [string, string][]>; active: boolean; }
+interface Member { id: string; user_id: string; slug: string; display_name: string; title: string; meeting_link: string | null; timezone: string; slot_minutes: number; slot_step_minutes: number; buffer_minutes: number; working_hours: Record<string, [string, string][]>; active: boolean;
+  min_notice_minutes: number; max_days_ahead: number; daily_meeting_cap: number | null;
+  reminder_kinds: string[]; paused_message: string | null; }
+interface DateOverride { id: string; on_date: string; windows: [string, string][]; note: string | null; }
 interface Reminder { id: string; kind: string; send_at: string; status: string; attempts: number; error: string | null; sent_at: string | null; }
 interface Activity { id: string; event: string; meta: Record<string, unknown>; created_at: string; }
 
@@ -606,18 +609,90 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
   const [m, setM] = useState<Partial<Member>>(myMember || {
     slug: '', display_name: '', title: 'GTV Consultation', meeting_link: '', timezone: 'Asia/Kolkata',
     slot_minutes: 30, slot_step_minutes: 30, buffer_minutes: 0, active: true,
+    min_notice_minutes: 60, max_days_ahead: 30, daily_meeting_cap: null,
+    reminder_kinds: ['h24', 'h3', 'h1', 'm15', 'start'], paused_message: null,
     working_hours: { mon: [['10:00', '22:00']], tue: [['10:00', '22:00']], wed: [['10:00', '22:00']], thu: [['10:00', '22:00']], fri: [['10:00', '22:00']], sat: [], sun: [['10:00', '22:00']] },
   });
   const [saving, setSaving] = useState(false);
   const wh = (m.working_hours || {}) as Record<string, [string, string][]>;
 
-  function setDay(key: string, open: boolean, from = '10:00', to = '22:00') {
-    setM({ ...m, working_hours: { ...wh, [key]: open ? [[from, to]] : [] } });
+  // ── one-off exceptions (084) ───────────────────────────────────────────────
+  // A holiday, a flight, a conference. Previously this meant editing the weekly
+  // pattern and remembering to put it back — which nobody ever does.
+  const [overrides, setOverrides] = useState<DateOverride[]>([]);
+  const [ovDate, setOvDate] = useState('');
+  const [ovNote, setOvNote] = useState('');
+  const [ovFrom, setOvFrom] = useState('');
+  const [ovTo, setOvTo] = useState('');
+
+  const loadOverrides = useCallback(async () => {
+    if (!myMember?.id) return;
+    const { data } = await supabase.from('scheduler_date_overrides')
+      .select('id, on_date, windows, note')
+      .eq('member_id', myMember.id)
+      .gte('on_date', new Date().toISOString().slice(0, 10))
+      .order('on_date');
+    setOverrides((data || []) as DateOverride[]);
+  }, [supabase, myMember?.id]);
+
+  useEffect(() => { void loadOverrides(); }, [loadOverrides]);
+
+  async function addOverride() {
+    if (!myMember?.id) { toast.error('Save your booking page first'); return; }
+    if (!ovDate) { toast.error('Pick a date'); return; }
+    // Both times given → different hours that day. Neither → the day is off.
+    const windows = ovFrom && ovTo ? [[ovFrom, ovTo]] : [];
+    const { error } = await supabase.from('scheduler_date_overrides').upsert({
+      workspace_id: workspaceId, member_id: myMember.id,
+      on_date: ovDate, windows, note: ovNote.trim() || null, created_by: userId,
+    }, { onConflict: 'member_id,on_date' });
+    if (error) { toast.error(error.message); return; }
+    toast.success(windows.length ? 'Custom hours saved' : 'Day blocked');
+    setOvDate(''); setOvNote(''); setOvFrom(''); setOvTo('');
+    void loadOverrides();
   }
-  function setRange(key: string, idx: 0 | 1, val: string) {
-    const cur = wh[key]?.[0] || ['10:00', '22:00'];
-    const next: [string, string] = idx === 0 ? [val, cur[1]] : [cur[0], val];
-    setM({ ...m, working_hours: { ...wh, [key]: [next] } });
+
+  async function removeOverride(id: string) {
+    const { error } = await supabase.from('scheduler_date_overrides').delete().eq('id', id);
+    if (error) { toast.error(error.message); return; }
+    void loadOverrides();
+  }
+
+  // A day is a LIST of windows, not one. That is what makes a lunch break
+  // possible — 10:00–13:00 and 15:00–19:00 on the same Tuesday. The slot engine
+  // always supported it; only this editor did not.
+  function setDay(key: string, open: boolean) {
+    setM({ ...m, working_hours: { ...wh, [key]: open ? [['10:00', '18:00']] : [] } });
+  }
+  function setRange(key: string, i: number, idx: 0 | 1, val: string) {
+    const list = [...(wh[key] || [])];
+    const cur = list[i] || ['10:00', '18:00'];
+    list[i] = (idx === 0 ? [val, cur[1]] : [cur[0], val]) as [string, string];
+    setM({ ...m, working_hours: { ...wh, [key]: list } });
+  }
+  function addWindow(key: string) {
+    const list = [...(wh[key] || [])];
+    const last = list[list.length - 1];
+    // Start the new window after the previous one ends, so the common case
+    // (add a break) needs one click and no typing.
+    const start = last ? last[1] : '15:00';
+    list.push([start, '19:00']);
+    setM({ ...m, working_hours: { ...wh, [key]: list } });
+  }
+  function removeWindow(key: string, i: number) {
+    const list = (wh[key] || []).filter((_, x) => x !== i);
+    setM({ ...m, working_hours: { ...wh, [key]: list } });
+  }
+  function copyToWeekdays(key: string) {
+    const src = wh[key] || [];
+    const next = { ...wh };
+    ['mon', 'tue', 'wed', 'thu', 'fri'].forEach((d) => { next[d] = src.map((w) => [...w] as [string, string]); });
+    setM({ ...m, working_hours: next });
+    toast.success('Copied to Monday–Friday');
+  }
+  function toggleReminder(kind: string) {
+    const cur = (m.reminder_kinds as string[]) || [];
+    setM({ ...m, reminder_kinds: cur.includes(kind) ? cur.filter((k) => k !== kind) : [...cur, kind] });
   }
 
   async function save() {
@@ -634,7 +709,13 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
       // here (it is what makes back-to-back slots possible), so an empty field
       // must read as zero, not silently become 10 again.
       buffer_minutes: Math.max(0, Number(m.buffer_minutes) || 0),
-      working_hours: m.working_hours, active: m.active !== false, updated_at: new Date().toISOString(),
+      working_hours: m.working_hours, active: m.active !== false,
+      min_notice_minutes: Math.max(0, Math.min(10080, Number(m.min_notice_minutes) ?? 60)),
+      max_days_ahead: Math.max(1, Math.min(180, Number(m.max_days_ahead) || 30)),
+      daily_meeting_cap: m.daily_meeting_cap ? Math.max(1, Math.min(50, Number(m.daily_meeting_cap))) : null,
+      reminder_kinds: (m.reminder_kinds as string[]) || ['h24', 'h3', 'h1', 'm15', 'start'],
+      paused_message: m.paused_message?.trim() || null,
+      updated_at: new Date().toISOString(),
     };
     const q = myMember
       ? supabase.from('scheduler_members').update(payload).eq('id', myMember.id)
@@ -690,33 +771,178 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
         <label className="block text-[12px] font-medium text-muted mb-1">Timezone</label>
         <input value={m.timezone || ''} onChange={(e) => setM({ ...m, timezone: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg text-[13px] mb-4 focus:border-indigo outline-none" />
 
-        <div className="text-[11px] font-bold uppercase tracking-wide text-muted mb-2">Working hours</div>
-        <div className="space-y-2 mb-5">
+        {/* ── Booking rules ──────────────────────────────────────────────
+            Three things that used to be constants in the code. Nobody should
+            need a deploy to say "no bookings inside two hours". */}
+        <div className="text-[11px] font-bold uppercase tracking-wide text-muted mb-2">Booking rules</div>
+        <div className="grid grid-cols-3 gap-2.5 mb-1">
+          <div>
+            <label className="block text-[12px] font-medium text-muted mb-1">Notice needed</label>
+            <select value={m.min_notice_minutes ?? 60} onChange={(e) => setM({ ...m, min_notice_minutes: Number(e.target.value) })}
+              className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none bg-surface">
+              {[0, 30, 60, 120, 240, 720, 1440, 2880].map((v) => (
+                <option key={v} value={v}>
+                  {v === 0 ? 'None' : v < 60 ? `${v} min` : v < 1440 ? `${v / 60} hour${v === 60 ? '' : 's'}` : `${v / 1440} day${v === 1440 ? '' : 's'}`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[12px] font-medium text-muted mb-1">Book up to</label>
+            <select value={m.max_days_ahead ?? 30} onChange={(e) => setM({ ...m, max_days_ahead: Number(e.target.value) })}
+              className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none bg-surface">
+              {[7, 14, 21, 30, 45, 60, 90].map((v) => <option key={v} value={v}>{v} days ahead</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[12px] font-medium text-muted mb-1">Max calls / day</label>
+            <input type="number" min={1} max={50} placeholder="No limit"
+              value={m.daily_meeting_cap ?? ''}
+              onChange={(e) => setM({ ...m, daily_meeting_cap: e.target.value ? Number(e.target.value) : null })}
+              className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none" />
+          </div>
+        </div>
+        <p className="text-[11px] text-faint mb-4 leading-[1.5]">
+          Once the day&apos;s cap is reached it shows as fully booked, however much free time is left.
+        </p>
+
+        {/* ── Working hours: a LIST of windows per day ─────────────────── */}
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-muted">Working hours</span>
+          <span className="text-[11px] text-faint">Add a second window for a lunch break</span>
+        </div>
+        <div className="space-y-2.5 mb-5">
           {DAYS.map(({ key, label }) => {
-            const open = (wh[key] || []).length > 0;
-            const range = wh[key]?.[0] || ['10:00', '22:00'];
+            const list = wh[key] || [];
+            const open = list.length > 0;
             return (
-              <div key={key} className="flex items-center gap-2.5">
-                <label className="flex items-center gap-2 w-[110px] cursor-pointer">
+              <div key={key} className="flex items-start gap-2.5">
+                <label className="flex w-[104px] flex-shrink-0 cursor-pointer items-center gap-2 pt-1.5">
                   <input type="checkbox" checked={open} onChange={(e) => setDay(key, e.target.checked)} className="accent-indigo w-4 h-4" />
                   <span className="text-[12.5px] text-ink">{label}</span>
                 </label>
                 {open ? (
-                  <div className="flex items-center gap-1.5">
-                    <input type="time" value={range[0]} onChange={(e) => setRange(key, 0, e.target.value)} className="px-2 py-1.5 border border-border rounded-md text-[12px]" />
-                    <span className="text-muted text-[12px]">to</span>
-                    <input type="time" value={range[1]} onChange={(e) => setRange(key, 1, e.target.value)} className="px-2 py-1.5 border border-border rounded-md text-[12px]" />
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    {list.map((range, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <input type="time" value={range[0]} onChange={(e) => setRange(key, i, 0, e.target.value)}
+                          className="px-2 py-1.5 border border-border rounded-md text-[12px]" />
+                        <span className="text-muted text-[12px]">to</span>
+                        <input type="time" value={range[1]} onChange={(e) => setRange(key, i, 1, e.target.value)}
+                          className="px-2 py-1.5 border border-border rounded-md text-[12px]" />
+                        {list.length > 1 && (
+                          <button onClick={() => removeWindow(key, i)} title="Remove this window"
+                            className="rounded-md p-1 text-muted transition hover:bg-surface-2 hover:text-danger">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => addWindow(key)} className="text-[11.5px] font-medium text-indigo hover:underline">+ Add window</button>
+                      <button onClick={() => copyToWeekdays(key)} className="text-[11.5px] text-muted hover:text-ink hover:underline">Copy to Mon–Fri</button>
+                    </div>
                   </div>
-                ) : <span className="text-[12px] text-faint">Unavailable</span>}
+                ) : <span className="pt-1.5 text-[12px] text-faint">Unavailable</span>}
               </div>
             );
           })}
         </div>
 
-        <label className="flex items-center gap-2 mb-5 cursor-pointer">
+        {/* ── Reminders ────────────────────────────────────────────────── */}
+        <div className="text-[11px] font-bold uppercase tracking-wide text-muted mb-2">Reminder emails</div>
+        <div className="mb-1 flex flex-wrap gap-1.5">
+          {([['h24', '24 hours before'], ['h3', '3 hours before'], ['h1', '1 hour before'], ['m15', '15 min before'], ['start', 'At start time']] as const).map(([k, lbl]) => {
+            const on = ((m.reminder_kinds as string[]) || []).includes(k);
+            return (
+              <button key={k} onClick={() => toggleReminder(k)}
+                className={cn('rounded-lg border px-2.5 py-1.5 text-[12px] font-medium transition',
+                  on ? 'border-transparent bg-[#EEF2FF] text-[#3730A3]' : 'border-border text-muted hover:bg-surface-2')}>
+                {lbl}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-faint mb-5">The booking confirmation always sends. These are the nudges after it.</p>
+
+        {/* ── Days off and one-off hours ───────────────────────────────── */}
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-muted">Days off &amp; one-off hours</span>
+          <span className="text-[11px] text-faint">Beats the weekly pattern</span>
+        </div>
+
+        <div className="mb-2 rounded-xl border border-border p-3">
+          <div className="mb-2 grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-[11.5px] font-medium text-muted">Date</label>
+              <input type="date" value={ovDate} onChange={(e) => setOvDate(e.target.value)}
+                min={new Date().toISOString().slice(0, 10)}
+                className="w-full rounded-lg border border-border px-2.5 py-1.5 text-[12.5px] outline-none focus:border-indigo" />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11.5px] font-medium text-muted">Note (optional)</label>
+              <input value={ovNote} onChange={(e) => setOvNote(e.target.value)} placeholder="Diwali"
+                className="w-full rounded-lg border border-border px-2.5 py-1.5 text-[12.5px] outline-none focus:border-indigo" />
+            </div>
+          </div>
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="w-[104px] text-[11.5px] text-muted">Hours that day</span>
+            <input type="time" value={ovFrom} onChange={(e) => setOvFrom(e.target.value)}
+              className="rounded-md border border-border px-2 py-1.5 text-[12px]" />
+            <span className="text-[12px] text-muted">to</span>
+            <input type="time" value={ovTo} onChange={(e) => setOvTo(e.target.value)}
+              className="rounded-md border border-border px-2 py-1.5 text-[12px]" />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <p className="m-0 text-[11px] leading-[1.5] text-faint">
+              Leave both times empty to block the whole day.
+            </p>
+            <button onClick={() => void addOverride()} className="btn btn-outline btn-sm flex-shrink-0">Add</button>
+          </div>
+        </div>
+
+        {overrides.length > 0 && (
+          <div className="panel mb-5 divide-y divide-border">
+            {overrides.map((o) => {
+              const blocked = !o.windows || o.windows.length === 0;
+              return (
+                <div key={o.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="text-[12.5px] font-medium text-ink">
+                      {new Date(o.on_date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+                      {o.note ? <span className="font-normal text-muted"> · {o.note}</span> : null}
+                    </div>
+                    <div className="text-[11.5px]" style={{ color: blocked ? '#B45309' : '#047857' }}>
+                      {blocked ? 'Fully blocked' : o.windows.map((w) => `${w[0]}–${w[1]}`).join(', ')}
+                    </div>
+                  </div>
+                  <button onClick={() => void removeOverride(o.id)} title="Remove"
+                    className="rounded-md p-1.5 text-muted transition hover:bg-surface-2 hover:text-danger">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {overrides.length === 0 && (
+          <p className="mb-5 text-[11.5px] text-faint">No exceptions coming up. Your weekly hours apply every day.</p>
+        )}
+
+        <label className="flex items-center gap-2 mb-2 cursor-pointer">
           <input type="checkbox" checked={m.active !== false} onChange={(e) => setM({ ...m, active: e.target.checked })} className="accent-indigo w-4 h-4" />
           <span className="text-[13px] text-ink">Booking page is live</span>
         </label>
+        {m.active === false && (
+          <input value={m.paused_message || ''} onChange={(e) => setM({ ...m, paused_message: e.target.value })}
+            placeholder="Away until 12 Sept — email info@migrizo.com and we'll sort a time"
+            className="mb-2 w-full rounded-lg border border-border px-3 py-2 text-[13px] outline-none focus:border-indigo" />
+        )}
+        <p className="text-[11px] text-faint mb-5">
+          {m.active === false
+            ? 'Visitors see this message instead of a 404. Leave it blank for the default.'
+            : 'Turn this off to pause bookings without deleting your link.'}
+        </p>
 
         <button onClick={save} disabled={saving} className="btn btn-primary w-full justify-center py-2.5">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Save settings

@@ -29,6 +29,13 @@ export function zonedToUtc(tz: string, y: number, m: number, d: number, hh: numb
   return off2 === off ? adjusted : new Date(guess.getTime() - off2 * 60000);
 }
 
+/** 'YYYY-MM-DD' of a UTC instant, as seen from timezone `tz`. */
+export function localDateKey(tz: string, at: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(at);
+}
+
 /** Day-of-week key ('mon'…) of a UTC instant, seen from timezone `tz`. */
 function dayKeyIn(tz: string, at: Date): string {
   const wd = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(at).toLowerCase().slice(0, 3);
@@ -53,6 +60,19 @@ export interface SlotQuery {
   toUtc: Date;                      // range end (exclusive)
   busy: { start: Date; end: Date }[]; // existing meetings (UTC)
   minNoticeMinutes?: number;        // default 60 — nobody can book 5 minutes ahead
+  /**
+   * One-off exceptions, keyed by local date 'YYYY-MM-DD' in the member's own
+   * timezone. An entry REPLACES that day's weekly windows entirely:
+   *   []                      → day off (holiday, flight, conference)
+   *   [["14:00","18:00"]]     → different hours, this date only
+   * Absent key → the weekly pattern applies as normal.
+   */
+  dateOverrides?: Record<string, [string, string][]>;
+  /**
+   * Most meetings to offer on any one day, counting what is already booked.
+   * Six discovery calls in a day is not a working day. Undefined = no cap.
+   */
+  dailyCap?: number;
 }
 
 /** All free slot start times (UTC) inside the range. */
@@ -67,14 +87,36 @@ export function computeSlots(q: SlotQuery): Date[] {
     end: new Date(b.end.getTime() + q.bufferMinutes * 60000),
   }));
 
+  // How many meetings are already booked on each local day — so the cap counts
+  // what exists, not only what this run adds.
+  const bookedPerDay = new Map<string, number>();
+  if (q.dailyCap) {
+    for (const b of q.busy) {
+      const k = localDateKey(q.tz, b.start);
+      bookedPerDay.set(k, (bookedPerDay.get(k) || 0) + 1);
+    }
+  }
+
   // Walk each calendar day of the range, in the MEMBER's timezone.
   const cursor = new Date(q.fromUtc);
-  for (let guard = 0; guard < 62 && cursor < q.toUtc; guard++) {
-    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: q.tz, year: 'numeric', month: '2-digit', day: '2-digit' })
-      .format(cursor).split('-').map(Number);
-    const [y, m, d] = parts;
-    const windows = q.workingHours[dayKeyIn(q.tz, cursor)] || [];
+  for (let guard = 0; guard < 200 && cursor < q.toUtc; guard++) {
+    const dateKey = localDateKey(q.tz, cursor);
+    const [y, m, d] = dateKey.split('-').map(Number);
+
+    // A date override REPLACES the weekly pattern for this one day, including
+    // replacing it with nothing at all.
+    const override = q.dateOverrides ? q.dateOverrides[dateKey] : undefined;
+    const windows = override !== undefined
+      ? override
+      : (q.workingHours[dayKeyIn(q.tz, cursor)] || []);
+
+    // Daily cap: how many more may be offered on this date.
+    let remaining = q.dailyCap
+      ? Math.max(0, q.dailyCap - (bookedPerDay.get(dateKey) || 0))
+      : Number.POSITIVE_INFINITY;
+
     for (const [open, close] of windows) {
+      if (remaining <= 0) break;
       const [oh, om] = open.split(':').map(Number);
       const [ch, cm] = close.split(':').map(Number);
       let t = zonedToUtc(q.tz, y, m, d, oh, om);
@@ -82,7 +124,11 @@ export function computeSlots(q: SlotQuery): Date[] {
       while (t.getTime() + q.slotMinutes * 60000 <= end.getTime()) {
         const slotEnd = new Date(t.getTime() + q.slotMinutes * 60000);
         const clash = buffered.some((b) => t < b.end && slotEnd > b.start);
-        if (!clash && t >= minStart && t >= q.fromUtc && t < q.toUtc) out.push(new Date(t));
+        if (!clash && t >= minStart && t >= q.fromUtc && t < q.toUtc) {
+          out.push(new Date(t));
+          remaining -= 1;
+          if (remaining <= 0) break;
+        }
         t = new Date(t.getTime() + step * 60000);
       }
     }

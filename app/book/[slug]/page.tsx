@@ -46,7 +46,12 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
     setLoading(true);
     fetch(`/api/booking/${slug}/slots?from=${from.toISOString()}&days=${days}`)
       .then((r) => r.json())
-      .then((d) => { if (d.ok) { setMember(d.member); setSlots(d.slots.map((s: string) => new Date(s))); } else setError('This booking page is not available.'); })
+      .then((d) => {
+        // A paused page is not a broken page. Show the founder's own words.
+        if (d.ok && d.paused) { setMember(d.member); setSlots([]); setError(d.message || 'Bookings are paused right now.'); return; }
+        if (d.ok) { setMember(d.member); setSlots(d.slots.map((s: string) => new Date(s))); setError(''); }
+        else setError('This booking page is not available.');
+      })
       .catch(() => setError('Could not load availability.'))
       .finally(() => setLoading(false));
   }, [slug, month]);

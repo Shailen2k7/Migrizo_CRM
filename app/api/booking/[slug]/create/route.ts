@@ -43,12 +43,32 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     .select('starts_at, ends_at').eq('member_id', member.id).eq('status', 'upcoming')
     .gte('starts_at', new Date(starts.getTime() - 24 * 3600 * 1000).toISOString())
     .lte('starts_at', new Date(starts.getTime() + 24 * 3600 * 1000).toISOString());
+  // The same settings the booking page used must be re-applied here, or a
+  // stale tab could post a slot that is no longer offered — past a day the
+  // founder has since blocked, inside the notice window, or over the daily cap.
+  const { data: ovRows } = await admin.from('scheduler_date_overrides')
+    .select('on_date, windows').eq('member_id', member.id)
+    .gte('on_date', new Date(starts.getTime() - 48 * 3600 * 1000).toISOString().slice(0, 10))
+    .lte('on_date', new Date(starts.getTime() + 48 * 3600 * 1000).toISOString().slice(0, 10));
+  const dateOverrides: Record<string, [string, string][]> = {};
+  for (const r of ovRows || []) {
+    dateOverrides[String(r.on_date).slice(0, 10)] = (r.windows || []) as [string, string][];
+  }
+
+  const horizonMs = (member.max_days_ahead ?? 30) * 24 * 3600 * 1000;
+  if (starts.getTime() > Date.now() + horizonMs) {
+    return NextResponse.json({ ok: false, reason: 'too_far_ahead' }, { status: 409 });
+  }
+
   const valid = computeSlots({
     tz: member.timezone, workingHours: member.working_hours as WorkingHours,
     slotMinutes: member.slot_minutes, stepMinutes: member.slot_step_minutes ?? 30,
     bufferMinutes: member.buffer_minutes,
     fromUtc: new Date(starts.getTime() - 1), toUtc: new Date(starts.getTime() + 1 + member.slot_minutes * 60000),
     busy: (busyRows || []).map((b) => ({ start: new Date(b.starts_at), end: new Date(b.ends_at) })),
+    minNoticeMinutes: member.min_notice_minutes ?? 60,
+    dateOverrides,
+    dailyCap: member.daily_meeting_cap ?? undefined,
   }).some((s) => s.getTime() === starts.getTime());
   if (!valid) return NextResponse.json({ ok: false, reason: 'slot_taken' }, { status: 409 });
 
@@ -74,7 +94,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
   // Queue the reminder schedule (skip offsets already in the past).
   const now = Date.now();
+  // Which reminders go out is a setting now. An empty list means none — some
+  // people want the confirmation only.
+  const wanted: string[] = Array.isArray(member.reminder_kinds)
+    ? (member.reminder_kinds as string[])
+    : ['h24', 'h3', 'h1', 'm15', 'start'];
   const rows = REMINDER_OFFSETS
+    .filter((o) => wanted.includes(o.kind))
     .map((o) => ({ meeting_id: meeting.id, workspace_id: member.workspace_id, kind: o.kind, send_at: new Date(starts.getTime() + o.minutes * 60000).toISOString() }))
     .filter((r) => new Date(r.send_at).getTime() > now - 60000);
   if (rows.length) await admin.from('meeting_reminders').insert(rows);
