@@ -36,14 +36,7 @@ const CORE_KEYS = new Set([
 /** Meta's CSV export prefixes phone with "p:" and form ids with "f:". Strip them. */
 const unprefix = (v: string) => v.replace(/^[a-z]:/i, '').trim();
 
-/** Last 10 digits — the only reliable way to match a phone across formats. */
-const last10 = (v: string | null): string | null => {
-  const d = (v || '').replace(/\D/g, '');
-  return d.length >= 10 ? d.slice(-10) : null;
-};
 
-/** % and _ are LIKE wildcards. An email containing them must not match others. */
-const escLike = (v: string) => v.replace(/[%_\\]/g, (m) => '\\' + m);
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -111,7 +104,6 @@ export async function POST(req: Request) {
   }
   const phone = unprefix(body.phone || '') || null;
   const email = (body.email || '').trim().toLowerCase() || null;
-  const phoneKey = last10(phone);
 
   // Optional attribution from Make. Absent on older scenarios; that is fine.
   const metaLeadId = unprefix(String(body.meta_lead_id || '')) || null;
@@ -184,28 +176,26 @@ export async function POST(req: Request) {
   };
 
   // ---- find an existing person ---------------------------------------------
-  // Matched on the LAST 10 DIGITS of the phone, not the raw string. Meta has
-  // sent "+919812345678", "919812345678" and "p:+91 98123 45678" for the same
-  // person; an exact-string match treated those as three different people.
-  // Email is the fallback for the phone-less.
+  // EXACT phone match, deliberately — this is what ran for a year.
+  //
+  // I briefly changed this to match on the last 10 digits, plus an email
+  // fallback. That was a mistake: leads stored WITHOUT a country code
+  // ("9812345678") suddenly matched Meta's "+919812345678", so people who used
+  // to arrive as new leads were silently folded into an old record and vanished
+  // from the Daily Tracker. Matching more loosely is only safe once returning
+  // submissions are reliably visible — and they were not.
+  //
+  // Exact match errs towards showing you a lead. That is the right way to be
+  // wrong: a visible duplicate can be merged, an invisible lead is lost.
   let prev: { id: string; industry: string | null; investment_readiness: string | null;
               intake: Record<string, unknown> | null; form_submission_count: number | null } | null = null;
 
-  if (phoneKey) {
+  if (phone) {
     const { data } = await admin
       .from('leads')
       .select('id, industry, investment_readiness, intake, form_submission_count')
       .eq('workspace_id', ws.id)
-      .ilike('phone', `%${phoneKey}`)
-      .limit(1);
-    if (data && data.length > 0) prev = data[0];
-  }
-  if (!prev && email) {
-    const { data } = await admin
-      .from('leads')
-      .select('id, industry, investment_readiness, intake, form_submission_count')
-      .eq('workspace_id', ws.id)
-      .ilike('email', escLike(email))
+      .eq('phone', phone)
       .limit(1);
     if (data && data.length > 0) prev = data[0];
   }
@@ -229,9 +219,12 @@ export async function POST(req: Request) {
 
     await admin.from('leads').update(patch).eq('id', prev.id);
 
-    await admin.from('form_submissions')
+    const { error: subErr } = await admin.from('form_submissions')
       .upsert({ ...submissionBase, lead_id: prev.id, is_new_lead: false },
               { onConflict: 'meta_lead_id', ignoreDuplicates: true });
+    // Never silent again. This exact call failed on every request for days
+    // because the index it conflicts on was partial, and nothing said so.
+    if (subErr) console.error('[ingest] form_submissions (returning) FAILED:', subErr.message);
 
     await admin.from('activity').insert({
       workspace_id: ws.id, user_id: null, lead_id: prev.id,
@@ -291,9 +284,10 @@ export async function POST(req: Request) {
     full_name: fullName, phone, email, payload: intake,
   });
 
-  await admin.from('form_submissions')
+  const { error: subErr } = await admin.from('form_submissions')
     .upsert({ ...submissionBase, lead_id: lead.id, is_new_lead: true },
             { onConflict: 'meta_lead_id', ignoreDuplicates: true });
+  if (subErr) console.error('[ingest] form_submissions (new) FAILED:', subErr.message);
 
   // ---------------------------------------------------------------------------
   // AUTO WELCOME: send the "How it works" (GTV process) email to every new lead
