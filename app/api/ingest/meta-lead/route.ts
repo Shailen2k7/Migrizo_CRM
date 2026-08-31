@@ -26,7 +26,24 @@ import { flattenAnswer, mapExpertise, mapReadiness, detectAnswers } from '@/lib/
 
 // Core fields the route understands. Anything else in the body is treated as an
 // extra ad-form answer and kept verbatim in leads.intake.
-const CORE_KEYS = new Set(['token', 'full_name', 'phone', 'email', 'visa_type', 'source']);
+const CORE_KEYS = new Set([
+  'token', 'full_name', 'phone', 'email', 'visa_type', 'source',
+  // Optional attribution Make can send from "Get Lead Details". All are
+  // optional — the endpoint works exactly as before when they are absent.
+  'meta_lead_id', 'created_time', 'ad_name', 'form_name', 'campaign_name', 'platform',
+]);
+
+/** Meta's CSV export prefixes phone with "p:" and form ids with "f:". Strip them. */
+const unprefix = (v: string) => v.replace(/^[a-z]:/i, '').trim();
+
+/** Last 10 digits — the only reliable way to match a phone across formats. */
+const last10 = (v: string | null): string | null => {
+  const d = (v || '').replace(/\D/g, '');
+  return d.length >= 10 ? d.slice(-10) : null;
+};
+
+/** % and _ are LIKE wildcards. An email containing them must not match others. */
+const escLike = (v: string) => v.replace(/[%_\\]/g, (m) => '\\' + m);
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,8 +74,18 @@ export async function POST(req: Request) {
   if (!fullName) {
     return NextResponse.json({ ok: false, reason: 'missing_name' }, { status: 400 });
   }
-  const phone = (body.phone || '').trim() || null;
-  const email = (body.email || '').trim() || null;
+  const phone = unprefix(body.phone || '') || null;
+  const email = (body.email || '').trim().toLowerCase() || null;
+  const phoneKey = last10(phone);
+
+  // Optional attribution from Make. Absent on older scenarios; that is fine.
+  const metaLeadId = unprefix(String(body.meta_lead_id || '')) || null;
+  const submittedAt = (() => {
+    const raw = String(body.created_time || '').trim();
+    if (!raw) return new Date().toISOString();
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  })();
 
   // ---- ad-form intake ------------------------------------------------------
   // Raw first: every non-core key is kept exactly as it arrived, flattened only
@@ -99,34 +126,89 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, reason: 'no_workspace' }, { status: 500 });
   }
 
-  // ---- dedupe by phone within the workspace --------------------------------
-  // A repeat submission is not nothing. The person filled the form a second
-  // time, possibly answering a question they skipped before, so the answers are
-  // folded into the lead we already have rather than thrown away with it. Only
-  // gaps are filled: a value a human has since corrected in the CRM is never
-  // overwritten by an old ad-form answer.
-  if (phone) {
-    const { data: existing } = await admin
+  // ---------------------------------------------------------------------------
+  // RECORD THE SUBMISSION — always, before anything else can go wrong.
+  // Meta counts submissions; we now count them too, so the two can be compared.
+  // ---------------------------------------------------------------------------
+  const submissionBase = {
+    workspace_id: ws.id,
+    meta_lead_id: metaLeadId,
+    submitted_at: submittedAt,
+    full_name: fullName,
+    phone,
+    email,
+    ad_name: (body.ad_name as string) || null,
+    form_name: (body.form_name as string) || null,
+    campaign_name: (body.campaign_name as string) || null,
+    platform: (body.platform as string) || null,
+    raw: intake,
+  };
+
+  // ---- find an existing person ---------------------------------------------
+  // Matched on the LAST 10 DIGITS of the phone, not the raw string. Meta has
+  // sent "+919812345678", "919812345678" and "p:+91 98123 45678" for the same
+  // person; an exact-string match treated those as three different people.
+  // Email is the fallback for the phone-less.
+  let prev: { id: string; industry: string | null; investment_readiness: string | null;
+              intake: Record<string, unknown> | null; form_submission_count: number | null } | null = null;
+
+  if (phoneKey) {
+    const { data } = await admin
       .from('leads')
-      .select('id, industry, investment_readiness, intake')
+      .select('id, industry, investment_readiness, intake, form_submission_count')
       .eq('workspace_id', ws.id)
-      .eq('phone', phone)
+      .ilike('phone', `%${phoneKey}`)
       .limit(1);
-    if (existing && existing.length > 0) {
-      const prev = existing[0];
-      const patch: Record<string, unknown> = {};
-      if (Object.keys(intake).length > 0) {
-        patch.intake = { ...(prev.intake as Record<string, unknown> || {}), ...intake };
-      }
-      if (industry && !prev.industry) patch.industry = industry;
-      if (readiness && !prev.investment_readiness) patch.investment_readiness = readiness;
-      if (Object.keys(patch).length > 0) {
-        await admin.from('leads').update(patch).eq('id', prev.id);
-      }
-      return NextResponse.json({
-        ok: true, duplicate: true, id: prev.id, enriched: Object.keys(patch).length > 0,
-      });
+    if (data && data.length > 0) prev = data[0];
+  }
+  if (!prev && email) {
+    const { data } = await admin
+      .from('leads')
+      .select('id, industry, investment_readiness, intake, form_submission_count')
+      .eq('workspace_id', ws.id)
+      .ilike('email', escLike(email))
+      .limit(1);
+    if (data && data.length > 0) prev = data[0];
+  }
+
+  // ---- returning person: enrich, stamp, and SAY SO -------------------------
+  // A repeat submission used to vanish silently. Now it writes a submission
+  // row, an activity entry and a timestamp, so it shows up in Daily Tracker
+  // and in the lead's own timeline.
+  if (prev) {
+    const patch: Record<string, unknown> = {
+      last_form_submitted_at: submittedAt,
+      form_submission_count: (prev.form_submission_count || 1) + 1,
+    };
+    if (Object.keys(intake).length > 0) {
+      patch.intake = { ...(prev.intake || {}), ...intake };
     }
+    // Only gaps are filled. A value a human corrected in the CRM is never
+    // overwritten by an old ad-form answer.
+    if (industry && !prev.industry) patch.industry = industry;
+    if (readiness && !prev.investment_readiness) patch.investment_readiness = readiness;
+
+    await admin.from('leads').update(patch).eq('id', prev.id);
+
+    await admin.from('form_submissions')
+      .upsert({ ...submissionBase, lead_id: prev.id, is_new_lead: false },
+              { onConflict: 'meta_lead_id', ignoreDuplicates: true });
+
+    await admin.from('activity').insert({
+      workspace_id: ws.id, user_id: null, lead_id: prev.id,
+      action: 'form_resubmitted',
+      meta: {
+        submitted_at: submittedAt,
+        ad_name: submissionBase.ad_name,
+        form_name: submissionBase.form_name,
+        count: patch.form_submission_count,
+      },
+    });
+
+    return NextResponse.json({
+      ok: true, duplicate: true, returning: true, id: prev.id,
+      submissions: patch.form_submission_count,
+    });
   }
 
   // ---- insert the lead -----------------------------------------------------
@@ -146,12 +228,18 @@ export async function POST(req: Request) {
       investment_readiness: readiness,
       // Raw — what the person actually typed, kept whatever the mappers make of it.
       intake,
+      last_form_submitted_at: submittedAt,
+      form_submission_count: 1,
     })
     .select('id')
     .single();
   if (insErr) {
     return NextResponse.json({ ok: false, reason: insErr.message }, { status: 500 });
   }
+
+  await admin.from('form_submissions')
+    .upsert({ ...submissionBase, lead_id: lead.id, is_new_lead: true },
+            { onConflict: 'meta_lead_id', ignoreDuplicates: true });
 
   // ---------------------------------------------------------------------------
   // AUTO WELCOME: send the "How it works" (GTV process) email to every new lead
@@ -191,7 +279,7 @@ export async function POST(req: Request) {
   // nobody mapped shows up as null there instead of being discovered weeks
   // later as a gap in a report.
   return NextResponse.json({
-    ok: true, id: lead.id, welcomed,
+    ok: true, id: lead.id, welcomed, duplicate: false, returning: false,
     industry, investment_readiness: readiness,
     // Where each answer was found — visible in Make's execution history, so a
     // remapped form shows up there instead of weeks later in a report.

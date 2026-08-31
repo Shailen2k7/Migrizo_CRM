@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useApp } from '@/components/shared/app-provider';
+import { createClient } from '@/lib/supabase/client';
 import type { Lead, LeadStage } from '@/lib/types';
 import { STAGE_META, getStageMeta, industryLabel, isFollowUpOverdue, isFollowUpToday } from '@/lib/types';
-import { Users, Flame, Snowflake, Trash2, Calendar, Download, AlertTriangle, ChevronRight, MessageCircle, Trophy, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Users, Flame, Snowflake, Trash2, Calendar, Download, AlertTriangle, ChevronRight, MessageCircle, Trophy, ArrowUpRight, ArrowDownRight, Repeat2, Inbox } from 'lucide-react';
 import { cn, initials, avatarColor, formatINRFull, formatMoney, toINR } from '@/lib/utils';
 import { IndustryChip } from '@/components/shared/industry-chip';
 import { LeadDrawer } from '@/components/leads/lead-drawer';
@@ -75,10 +76,10 @@ function isStaleHotLead(lead: Lead): boolean {
 // =========================================
 // COMPONENT
 // =========================================
-type StageFilter = 'all' | 'hot' | 'cold' | 'junk' | LeadStage;
+type StageFilter = 'all' | 'hot' | 'cold' | 'junk' | 'returning' | LeadStage;
 
 export function DailyTrackerView() {
-  const { leads, followUps, payments, memberNameById } = useApp();
+  const { leads, followUps, payments, memberNameById, workspace } = useApp();
   const today = useMemo(() => startOfDay(new Date()), []);
   const [from, setFrom] = useState<Date>(today);
   const [to, setTo] = useState<Date>(today);
@@ -87,6 +88,40 @@ export function DailyTrackerView() {
   const [paymentLeadId, setPaymentLeadId] = useState<string | null>(null);
 
   const isSingleDay = isSameDay(from, to);
+
+  // ---------------------------------------------------------------------------
+  // FORM SUBMISSIONS (083)
+  // Meta counts SUBMISSIONS; this page counts PEOPLE. They are different numbers
+  // and they never used to be shown together, so the page looked wrong every
+  // time someone filled the form twice. Now both are on screen and they add up:
+  //     submissions = new + returning
+  // A returning submission is a person already in the CRM filling the form
+  // again — one of the strongest buying signals we get, and previously invisible.
+  // ---------------------------------------------------------------------------
+  const supabase = createClient();
+  const [subStats, setSubStats] = useState<{
+    submissions: number; new_leads: number; returning: number; returning_lead_ids: string[];
+  } | null>(null);
+
+  const loadSubs = useCallback(async () => {
+    if (!workspace?.id) return;
+    const { data, error } = await supabase.rpc('form_submission_stats', {
+      p_workspace_id: workspace.id,
+      p_from: startOfDay(from).toISOString(),
+      p_to: addDays(startOfDay(to), 1).toISOString(),
+    });
+    // Migration 083 not applied yet — the page carries on exactly as before.
+    if (error || !data) { setSubStats(null); return; }
+    const d = data as { submissions: number; new_leads: number; returning: number; returning_lead_ids: string[] };
+    setSubStats({ ...d, returning_lead_ids: d.returning_lead_ids || [] });
+  }, [supabase, workspace?.id, from, to]);
+
+  useEffect(() => { void loadSubs(); }, [loadSubs]);
+
+  const returningLeads = useMemo(() => {
+    const ids = new Set(subStats?.returning_lead_ids || []);
+    return leads.filter((l) => ids.has(l.id));
+  }, [leads, subStats]);
 
   // ------- Leads added within the range -------
   const leadsInRange = useMemo(() => leads.filter((l) => inRange(l.created_at, from, to)), [leads, from, to]);
@@ -130,14 +165,17 @@ export function DailyTrackerView() {
   // ------- Filtered list based on active card -------
   const filteredList = useMemo(() => {
     let list = leadsInRange;
-    if (activeCard !== 'all') list = list.filter((l) => l.stage === activeCard);
+    // "Returning" is not a stage — it is the set of people already in the CRM
+    // who filled the ad form again inside this range.
+    if (activeCard === 'returning') list = returningLeads;
+    else if (activeCard !== 'all') list = list.filter((l) => l.stage === activeCard);
     // Sort: Won leads first (celebrate), then chronological
     return [...list].sort((a, b) => {
       if (a.stage === 'won' && b.stage !== 'won') return -1;
       if (b.stage === 'won' && a.stage !== 'won') return 1;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [leadsInRange, activeCard]);
+  }, [leadsInRange, activeCard, returningLeads]);
 
   // ------- Other stages with non-zero counts (for the "Also on this day" row) -------
   const otherStages: { stage: LeadStage; count: number }[] = useMemo(() => {
@@ -242,6 +280,47 @@ export function DailyTrackerView() {
         <button onClick={() => setQuickRange('week')} className={cn('px-3 py-1.5 rounded-full text-[12px] font-medium', activeQuick === 'week' ? 'bg-surface border border-border' : 'text-muted hover:bg-surface-2')}>Last 7 days</button>
         <button onClick={() => setQuickRange('month')} className={cn('px-3 py-1.5 rounded-full text-[12px] font-medium', activeQuick === 'month' ? 'bg-surface border border-border' : 'text-muted hover:bg-surface-2')}>Last 30 days</button>
       </div>
+
+      {/* ---------------------------------------------------------------
+          FORM SUBMISSIONS — the line that makes this page agree with Meta.
+          Meta's "Results (Form)" is SUBMISSIONS. "Total leads" below is
+          PEOPLE. They differ whenever someone fills the form twice, which is
+          often. Showing both, adding up, ends the daily "why don't these
+          match" question. Hidden entirely until migration 083 is applied.
+      ---------------------------------------------------------------- */}
+      {subStats && subStats.submissions > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-border bg-surface-2 px-3.5 py-2.5">
+          <Inbox className="h-[15px] w-[15px] flex-shrink-0 text-muted" />
+          <span className="text-[12.5px] text-ink-2">
+            <b className="text-ink num">{subStats.submissions}</b> form submission{subStats.submissions === 1 ? '' : 's'}
+          </span>
+          <span className="text-faint">=</span>
+          <span className="text-[12.5px] text-ink-2">
+            <b className="text-ink num">{subStats.new_leads}</b> new
+          </span>
+          <span className="text-faint">+</span>
+          {subStats.returning > 0 ? (
+            <button
+              onClick={() => setActiveCard(activeCard === 'returning' ? 'all' : 'returning')}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-[12.5px] font-medium transition-colors',
+                activeCard === 'returning'
+                  ? 'bg-[#EDE9FE] text-[#5B21B6]'
+                  : 'text-[#6D28D9] hover:bg-[#F3F0FF]'
+              )}
+              title="People already in the CRM who filled the form again"
+            >
+              <Repeat2 className="h-3.5 w-3.5" />
+              <b className="num">{subStats.returning}</b> returning
+            </button>
+          ) : (
+            <span className="text-[12.5px] text-ink-2"><b className="text-ink num">0</b> returning</span>
+          )}
+          <span className="ml-auto text-[11px] text-faint">
+            matches Meta&apos;s &ldquo;Results (Form)&rdquo; for the same window
+          </span>
+        </div>
+      )}
 
       {/* 4 STAT CARDS */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
@@ -358,7 +437,10 @@ export function DailyTrackerView() {
         <div className="px-4 py-2.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted bg-surface-2 border-b border-border">
           {filteredList.length === 0
             ? 'No leads to show'
-            : `${filteredList.length} lead${filteredList.length === 1 ? '' : 's'} ${activeCard === 'all' ? 'added' : `· filtered to ${getStageMeta(activeCard).label}`}`}
+            : `${filteredList.length} lead${filteredList.length === 1 ? '' : 's'} ${
+                activeCard === 'all' ? 'added'
+                : activeCard === 'returning' ? '· filled the form again'
+                : `· filtered to ${getStageMeta(activeCard).label}`}`}
         </div>
         {filteredList.length === 0 ? (
           <div className="py-12 text-center">
@@ -368,6 +450,8 @@ export function DailyTrackerView() {
             <p className="text-[12.5px] text-muted">
               {activeCard === 'all'
                 ? `No leads added in this ${isSingleDay ? 'day' : 'range'}`
+                : activeCard === 'returning'
+                ? `Nobody re-submitted the form in this ${isSingleDay ? 'day' : 'range'}`
                 : `No ${getStageMeta(activeCard).label.toLowerCase()} leads added in this ${isSingleDay ? 'day' : 'range'}`}
             </p>
             {activeCard !== 'all' && counts.total > 0 && (
