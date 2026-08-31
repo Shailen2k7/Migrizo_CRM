@@ -1,125 +1,92 @@
-# Flexible booking calendar
+# Multiple booking pages — one per person
 
-Type-check and build both green.
-
-**Where all of this lives:** Meetings page → **Booking settings** (top right).
-Not Settings → that's why it may have looked missing.
+Type-check and build both green. **One code file changed.**
 
 ---
 
-## First, the honest bit — two of your three asks already existed
+## What you can now do
 
-| You asked for | Status |
+Meetings → **Booking settings**. At the top there's a row of booking pages with
+a **+ Add a person** button beside them.
+
+| Action | Where |
 |---|---|
-| Choose the gap between slots — 15 / 30 / 45 min | **Already there.** "Slot every (min)" — 15, 20, 30, 45, 60 |
-| Day start and day end time | **Already there.** Per-day start/end under Working hours |
-| Put it in the meetings module settings | It always was — behind the **Booking settings** button on the Meetings page |
+| Create a page for Mansi | Booking settings → **+ Add a person** |
+| Switch between pages | Click a name in that row |
+| Pause just Mansi's page | Team booking pages list → **Pause** |
+| Edit Mansi's hours, slots, days off | Pick her name, then edit as normal |
+| See only Mansi's calls | Meetings → the **Everyone's calls** dropdown |
 
-So rather than rebuild those, I fixed the five things that genuinely forced you to
-come back to me, plus the one real bug in the hours editor.
-
----
-
-## What is new
-
-### 1. A lunch break — the actual bug
-
-`working_hours` has always been a **list** of windows per day. The editor only ever
-wrote **one**. So a Tuesday was 10:00–22:00 or nothing — you could not say
-"10:00–13:00 and 15:00–19:00".
-
-Now each day takes as many windows as you like. **+ Add window** on any day, and
-**Copy to Mon–Fri** so you set it once.
-
-### 2. Days off and one-off hours
-
-A date-by-date override that beats the weekly pattern.
-
-- Pick a date, leave both times empty → **the whole day is blocked**
-- Pick a date and give times → **those hours instead, that date only**
-- Add a note ("Diwali", "Flight to London") so you remember why
-
-No more editing your weekly hours for a holiday and forgetting to put them back.
-Past dates drop off the list automatically.
-
-### 3. Notice needed
-
-Was hardcoded at 60 minutes. Now: none, 30 min, 1 / 2 / 4 / 12 hours, 1 or 2 days.
-Stops someone booking a call that starts in nine minutes.
-
-### 4. How far ahead people can book
-
-Was hardcoded. Now 7 to 90 days. Shorter horizons create urgency and stop people
-parking a call six weeks out and forgetting.
-
-### 5. Max calls per day
-
-Set a number and once the day hits it, it shows as fully booked however much free
-time is left. Six discovery calls in one day is not a working day.
-
-### 6. Which reminders send
-
-24h / 3h / 1h / 15min / at start — each one a toggle. The booking confirmation
-always goes; these are the nudges after it.
-
-### 7. Pause with a message
-
-Turning the page off used to show visitors a dead end. Now you can leave a line —
-*"Away until 12 Sept, email us and we'll sort a time"* — and they see that instead.
+Each page keeps its own link, hours, slot length, notice, daily cap, days off,
+reminders and live/paused state. Nothing is shared between them.
 
 ---
 
-## Every rule is enforced on the server too
+## Setting Mansi up — two minutes
 
-The booking page and the booking endpoint apply the **same** settings. A stale
-browser tab cannot post a slot on a day you have since blocked, inside your notice
-window, past your horizon, or over your daily cap. It gets refused.
+1. Meetings → **Booking settings** → **+ Add a person**
+2. **Whose calendar is this?** — pick Mansi if she has a CRM login.
+   If she doesn't, choose *"Someone without a CRM login — I'll manage it"*.
+   A booking page does not require a login; you just manage it from your account.
+3. **Booking link** → `mansi` → the page becomes `crm.migrizo.com/book/mansi`
+4. **Name shown to the client** → `Mansi Behal` — this is what appears on the
+   booking page, in the confirmation email and in every reminder
+5. **Meeting title** → e.g. `GTV Consultation`
+6. **Meeting link** → her Google Meet or Zoom room
+7. Set her hours, slot length and notice — they are hers alone
+8. **Create booking page**
+
+Copy her link from the Team booking pages list at the bottom.
 
 ---
 
-## How to install
+## What the client sees
 
-1. **Supabase SQL editor** → run `supabase/migrations/084_scheduler_flexible.sql`.
-   Idempotent. Nothing about your current page changes until you edit the new
-   fields — the defaults are exactly what the code did before.
-2. **Upload the 5 code files**, same paths.
+Whichever link you send decides everything. Send `/book/mansi` and the page says
+**Mansi Behal**, offers her hours, and every email — confirmation, reminders,
+reschedule, cancel — carries her name and her meeting link. Nothing says Shailen.
+
+---
+
+## Whose calls are whose
+
+The Meetings page gets an **Everyone's calls** dropdown next to the status filters.
+It applies to the calendar, the upcoming list and the history at once, so you can
+check Mansi's week without reading past your own.
+
+Every meeting is already tagged to the person who was booked — that has always been
+stored, it just had no filter until now.
+
+---
+
+## Install
+
+1. **If you have not yet run `084_scheduler_flexible.sql`, run it first.** It is
+   included here again and is safe to run twice. The new fields depend on it.
+2. Upload `app/(app)/meetings/page.tsx`.
 3. Netlify redeploys.
 
 ---
 
-## Try it in two minutes
+## Verify
 
-- [ ] Meetings → Booking settings → pick a day → **+ Add window** → 10:00–13:00 and 15:00–19:00
-- [ ] **Copy to Mon–Fri**, Save
-- [ ] Open your public booking link — the 1–3pm gap is gone
-- [ ] Back in settings, block tomorrow with a note, Save
-- [ ] Refresh the booking page — tomorrow shows nothing
-- [ ] Set **Max calls / day** to 2 and confirm the third slot disappears once two are booked
-
----
-
-## Worth knowing
-
-**Slot every** and **Call length** are separate on purpose. `30 / 30` offers 10:00,
-10:30, 11:00 back to back. `30 / 60` offers a slot every 30 minutes for an hour-long
-call. Setting them equal is the normal case.
-
-**Gap after** applies on *both* sides of a booking, so any value above 0 removes the
-neighbouring slot. Leave it at 0 unless you genuinely need breathing room.
+- [ ] Booking settings shows a **+ Add a person** button
+- [ ] Create Mansi's page and open `/book/mansi` in a private window
+- [ ] It shows her name, her hours, her meeting title
+- [ ] Book a test slot — the confirmation email says Mansi
+- [ ] Pause her page from the team list → the link shows your paused message
+- [ ] Meetings → **Everyone's calls** → pick Mansi → only her calls remain
 
 ---
 
-## Other no-code levers worth adding later
+## Two things worth knowing
 
-Ranked by how often I'd expect you to want them:
+**Only admins see other people's pages.** A non-admin opening Booking settings sees
+only their own, exactly as before. Bear in mind the underlying database rule is
+workspace-wide, so this is a UI boundary rather than a hard lock — fine for a team
+of six, worth tightening if you ever hire beyond people you fully trust.
 
-1. **Different meeting types on one link** — "15-min intro" and "45-min strategy call",
-   each with its own length and hours. This is the biggest one.
-2. **Round-robin across the team** — one link, whoever is free takes it.
-3. **Questions on the booking form** — ask for their route or LinkedIn before the call,
-   answered straight onto the lead.
-4. **Editable reminder wording** — the copy is currently in code.
-5. **Auto no-show** — mark a meeting no-show 20 minutes after it ends if nobody
-   touched it, and fire a rebooking email.
-
-Say the word on any of them.
+**Round-robin is the natural next step.** Right now you choose who gets the call by
+choosing which link you send. If you'd rather have one link that hands the call to
+whoever is free — or splits them evenly between you and Mansi — say the word. It
+builds on exactly this structure.

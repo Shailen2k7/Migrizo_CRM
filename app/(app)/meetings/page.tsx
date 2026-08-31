@@ -38,7 +38,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 export default function MeetingsPage() {
-  const { user, workspace, role } = useApp();
+  const { user, workspace, role, members: wsMembers } = useApp();
   const supabase = useMemo(() => createClient(), []);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -47,6 +47,8 @@ export default function MeetingsPage() {
   const [anchor, setAnchor] = useState(() => new Date());
   const [selected, setSelected] = useState<Meeting | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Whose calls to show. With more than one bookable person, "all" is a mix.
+  const [whoFilter, setWhoFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // ── history list controls (the old page hard-capped Past at 40 rows) ──────
@@ -87,6 +89,12 @@ export default function MeetingsPage() {
 
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
   const myMember = members.find((m) => m.user_id === user.id) || null;
+  // Everyone in the workspace — so an admin can create a booking page FOR one
+  // of them rather than only for themselves.
+  const people = useMemo(
+    () => wsMembers.filter((p) => p.status === 'active')
+      .map((p) => ({ user_id: p.user_id, full_name: p.full_name || p.email, email: p.email })),
+    [wsMembers]);
 
   async function setStatus(m: Meeting, status: string) {
     await supabase.from('meetings').update({ status, updated_at: new Date().toISOString() }).eq('id', m.id);
@@ -114,8 +122,14 @@ export default function MeetingsPage() {
     return Array.from({ length: 42 }, (_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
   }, [view, anchor]);
 
-  const meetingsOn = (d: Date) => meetings.filter((m) => sameDay(new Date(m.starts_at), d));
-  const upcoming = meetings.filter((m) => m.status === 'upcoming' && new Date(m.starts_at) >= new Date(Date.now() - 30 * 60000));
+  // One filter, applied everywhere: the calendar, the upcoming list and the
+  // history all answer "whose calls?" the same way.
+  const visible = useMemo(
+    () => whoFilter === 'all' ? meetings : meetings.filter((m) => m.member_id === whoFilter),
+    [meetings, whoFilter]);
+
+  const meetingsOn = (d: Date) => visible.filter((m) => sameDay(new Date(m.starts_at), d));
+  const upcoming = visible.filter((m) => m.status === 'upcoming' && new Date(m.starts_at) >= new Date(Date.now() - 30 * 60000));
 
   // Full history — searchable, filterable, paginated. Every meeting ever
   // booked is reachable from here; nothing is silently truncated any more.
@@ -124,7 +138,7 @@ export default function MeetingsPage() {
     // A dashboard drill-in ("Booked in period") may legitimately include calls
     // that are still upcoming — when it is active the list covers everything,
     // otherwise upcoming rows stay in their own section above.
-    let list = (dashFilter ? meetings : meetings.filter((m) => !upcomingIds.has(m.id))).slice().reverse();
+    let list = (dashFilter ? visible : visible.filter((m) => !upcomingIds.has(m.id))).slice().reverse();
     if (dashFilter) list = list.filter((m) => dashFilter.ids.has(m.id));
     if (statusFilter !== 'all') list = list.filter((m) => m.status === statusFilter);
     const needle = q.trim().toLowerCase();
@@ -136,7 +150,7 @@ export default function MeetingsPage() {
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meetings, dashFilter, statusFilter, q]);
+  }, [visible, dashFilter, statusFilter, q]);
   const pageCount = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pageRows = history.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
@@ -228,6 +242,14 @@ export default function MeetingsPage() {
               </span>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
+              {members.length > 1 && (
+                <select value={whoFilter} onChange={(e) => { setWhoFilter(e.target.value); setPage(0); }}
+                  className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[12px] outline-none focus:border-indigo"
+                  title="Whose calls to show">
+                  <option value="all">Everyone&apos;s calls</option>
+                  {members.map((tm) => <option key={tm.id} value={tm.id}>{tm.display_name}</option>)}
+                </select>
+              )}
               <div className="inline-flex items-center gap-1 rounded-lg bg-surface-2 p-1">
                 {([['all', 'All'], ['upcoming', 'Upcoming'], ['completed', 'Completed'], ['no_show', 'No show'], ['cancelled', 'Cancelled']] as const).map(([k, label]) => (
                   <button key={k} onClick={() => { setStatusFilter(k); setPage(0); }}
@@ -297,7 +319,7 @@ export default function MeetingsPage() {
         onNotes={(notes) => { setMeetings((prev) => prev.map((x) => x.id === selected.id ? { ...x, notes } : x)); }}
         onUpdated={(patch) => { setMeetings((prev) => prev.map((x) => x.id === selected.id ? { ...x, ...patch } : x)); setSelected((cur) => cur ? { ...cur, ...patch } : cur); }}
         onDeleted={() => { setMeetings((prev) => prev.filter((x) => x.id !== selected.id)); setSelected(null); }} />}
-      {settingsOpen && <SettingsDrawer myMember={myMember} members={members} isAdmin={role === 'admin'} userId={user.id} workspaceId={workspace.id} onClose={() => { setSettingsOpen(false); void load(); }} />}
+      {settingsOpen && <SettingsDrawer myMember={myMember} members={members} people={people} isAdmin={role === 'admin'} userId={user.id} workspaceId={workspace.id} onClose={() => { setSettingsOpen(false); void load(); }} />}
     </div>
   );
 }
@@ -602,11 +624,32 @@ const DAYS: { key: string; label: string }[] = [
   { key: 'thu', label: 'Thursday' }, { key: 'fri', label: 'Friday' }, { key: 'sat', label: 'Saturday' }, { key: 'sun', label: 'Sunday' },
 ];
 
-function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClose }: {
-  myMember: Member | null; members: Member[]; isAdmin: boolean; userId: string; workspaceId: string; onClose: () => void;
+const BLANK_PAGE: Partial<Member> = {
+  slug: '', display_name: '', title: 'GTV Consultation', meeting_link: '', timezone: 'Asia/Kolkata',
+  slot_minutes: 30, slot_step_minutes: 30, buffer_minutes: 0, active: true,
+  min_notice_minutes: 60, max_days_ahead: 30, daily_meeting_cap: null,
+  reminder_kinds: ['h24', 'h3', 'h1', 'm15', 'start'], paused_message: null,
+  working_hours: { mon: [['10:00', '18:00']], tue: [['10:00', '18:00']], wed: [['10:00', '18:00']], thu: [['10:00', '18:00']], fri: [['10:00', '18:00']], sat: [], sun: [] },
+};
+
+function SettingsDrawer({ myMember, members, people, isAdmin, userId, workspaceId, onClose }: {
+  myMember: Member | null; members: Member[]; people: { user_id: string; full_name: string; email: string }[];
+  isAdmin: boolean; userId: string; workspaceId: string; onClose: () => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
-  const [m, setM] = useState<Partial<Member>>(myMember || {
+
+  // ── WHICH PAGE AM I EDITING? (085) ────────────────────────────────────────
+  // The drawer used to edit one page — your own. Now every booking page in the
+  // workspace is listed at the top and an admin can create, edit or pause any
+  // of them, including one for a person who never signs in.
+  const [pageId, setPageId] = useState<string | null>(myMember?.id ?? null);
+  const [creating, setCreating] = useState(false);
+  const [newOwner, setNewOwner] = useState<string>(userId);
+
+  const editable = isAdmin ? members : members.filter((x) => x.user_id === userId);
+  const current = creating ? null : (members.find((x) => x.id === pageId) || myMember || null);
+
+  const [m, setM] = useState<Partial<Member>>(current || {
     slug: '', display_name: '', title: 'GTV Consultation', meeting_link: '', timezone: 'Asia/Kolkata',
     slot_minutes: 30, slot_step_minutes: 30, buffer_minutes: 0, active: true,
     min_notice_minutes: 60, max_days_ahead: 30, daily_meeting_cap: null,
@@ -615,6 +658,13 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
   });
   const [saving, setSaving] = useState(false);
   const wh = (m.working_hours || {}) as Record<string, [string, string][]>;
+
+  // Switching page (or starting a new one) reloads the editor.
+  useEffect(() => {
+    if (creating) { setM({ ...BLANK_PAGE }); return; }
+    const found = members.find((x) => x.id === pageId) || myMember;
+    if (found) setM(found);
+  }, [pageId, creating, members, myMember]);
 
   // ── one-off exceptions (084) ───────────────────────────────────────────────
   // A holiday, a flight, a conference. Previously this meant editing the weekly
@@ -626,24 +676,24 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
   const [ovTo, setOvTo] = useState('');
 
   const loadOverrides = useCallback(async () => {
-    if (!myMember?.id) return;
+    if (!pageId || creating) { setOverrides([]); return; }
     const { data } = await supabase.from('scheduler_date_overrides')
       .select('id, on_date, windows, note')
-      .eq('member_id', myMember.id)
+      .eq('member_id', pageId)
       .gte('on_date', new Date().toISOString().slice(0, 10))
       .order('on_date');
     setOverrides((data || []) as DateOverride[]);
-  }, [supabase, myMember?.id]);
+  }, [supabase, pageId, creating]);
 
   useEffect(() => { void loadOverrides(); }, [loadOverrides]);
 
   async function addOverride() {
-    if (!myMember?.id) { toast.error('Save your booking page first'); return; }
+    if (!pageId || creating) { toast.error('Save this booking page first'); return; }
     if (!ovDate) { toast.error('Pick a date'); return; }
     // Both times given → different hours that day. Neither → the day is off.
     const windows = ovFrom && ovTo ? [[ovFrom, ovTo]] : [];
     const { error } = await supabase.from('scheduler_date_overrides').upsert({
-      workspace_id: workspaceId, member_id: myMember.id,
+      workspace_id: workspaceId, member_id: pageId,
       on_date: ovDate, windows, note: ovNote.trim() || null, created_by: userId,
     }, { onConflict: 'member_id,on_date' });
     if (error) { toast.error(error.message); return; }
@@ -699,7 +749,7 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
     if (!m.slug?.trim() || !m.display_name?.trim()) { toast.error('Slug and display name are required'); return; }
     setSaving(true);
     const payload = {
-      workspace_id: workspaceId, user_id: myMember?.user_id || userId,
+      workspace_id: workspaceId, user_id: creating ? newOwner : (current?.user_id || userId),
       slug: m.slug!.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
       display_name: m.display_name!.trim(), title: m.title || 'Consultation', bio: null,
       meeting_link: m.meeting_link || null, timezone: m.timezone || 'Asia/Kolkata',
@@ -717,13 +767,17 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
       paused_message: m.paused_message?.trim() || null,
       updated_at: new Date().toISOString(),
     };
-    const q = myMember
-      ? supabase.from('scheduler_members').update(payload).eq('id', myMember.id)
-      : supabase.from('scheduler_members').insert(payload);
-    const { error } = await q;
+    const q = (!creating && current?.id)
+      ? supabase.from('scheduler_members').update(payload).eq('id', current.id)
+      : supabase.from('scheduler_members').insert(payload).select('id').single();
+    const { data, error } = await q;
     setSaving(false);
-    if (error) { toast.error(error.message.includes('unique') ? 'That slug is already taken' : error.message); return; }
-    toast.success('Booking settings saved');
+    if (error) { toast.error(error.message.includes('unique') ? 'That link is already taken' : error.message); return; }
+    toast.success(creating ? `Booking page created for ${payload.display_name}` : 'Booking settings saved');
+    if (creating && data && typeof data === 'object' && 'id' in data) {
+      setCreating(false);
+      setPageId((data as { id: string }).id);
+    }
     onClose();
   }
 
@@ -735,17 +789,69 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
           <button onClick={onClose} className="p-1.5 rounded-md hover:bg-surface-2 text-muted"><X className="w-4 h-4" /></button>
         </div>
 
-        <label className="block text-[12px] font-medium text-muted mb-1">Your booking link</label>
+        {/* ── WHICH PAGE (085) ────────────────────────────────────────────
+            One booking page per person. Switch between them here; an admin can
+            add one for anybody on the team, live or paused independently. */}
+        {(editable.length > 1 || isAdmin) && (
+          <div className="mb-4">
+            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-muted">Booking page</div>
+            <div className="flex flex-wrap gap-1.5">
+              {editable.map((pg) => (
+                <button key={pg.id}
+                  onClick={() => { setCreating(false); setPageId(pg.id); }}
+                  className={cn('inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12.5px] font-medium transition',
+                    !creating && (pageId === pg.id || (!pageId && myMember?.id === pg.id))
+                      ? 'border-transparent bg-[#EEF2FF] text-[#3730A3]'
+                      : 'border-border text-muted hover:bg-surface-2')}>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: pg.active ? '#25A25A' : '#B4B2A9' }} />
+                  {pg.display_name}
+                  {pg.user_id === userId && <span className="text-[10px] opacity-60">you</span>}
+                </button>
+              ))}
+              {isAdmin && (
+                <button onClick={() => { setCreating(true); setNewOwner(userId); }}
+                  className={cn('rounded-lg border border-dashed px-2.5 py-1.5 text-[12.5px] font-medium transition',
+                    creating ? 'border-indigo bg-[#EEF2FF] text-[#3730A3]' : 'border-border text-muted hover:bg-surface-2')}>
+                  + Add a person
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Who the new page belongs to. A booking page does NOT require a CRM
+            login — pick "someone without a login" and you manage it yourself. */}
+        {creating && (
+          <div className="mb-4 rounded-xl border border-border bg-surface-2 p-3">
+            <label className="mb-1 block text-[12px] font-medium text-muted">Whose calendar is this?</label>
+            <select value={newOwner} onChange={(e) => setNewOwner(e.target.value)}
+              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-[13px] outline-none focus:border-indigo">
+              {people.map((p) => (
+                <option key={p.user_id} value={p.user_id}>
+                  {p.full_name}{p.user_id === userId ? ' (you)' : ''}
+                </option>
+              ))}
+              <option value={userId}>Someone without a CRM login — I&apos;ll manage it</option>
+            </select>
+            <p className="m-0 mt-1.5 text-[11px] leading-[1.5] text-faint">
+              Their name below is what the client sees on the booking page and in every email.
+            </p>
+          </div>
+        )}
+
+        <label className="block text-[12px] font-medium text-muted mb-1">
+          {creating ? 'Booking link' : 'Booking link'}
+        </label>
         <div className="flex items-center gap-2 mb-3">
           <span className="text-[12.5px] text-muted whitespace-nowrap">crm.migrizo.com/book/</span>
           <input value={m.slug || ''} onChange={(e) => setM({ ...m, slug: e.target.value })} placeholder="shailen"
             className="flex-1 px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none" />
         </div>
-        <label className="block text-[12px] font-medium text-muted mb-1">Display name</label>
+        <label className="block text-[12px] font-medium text-muted mb-1">Name shown to the client</label>
         <input value={m.display_name || ''} onChange={(e) => setM({ ...m, display_name: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg text-[13px] mb-3 focus:border-indigo outline-none" />
         <label className="block text-[12px] font-medium text-muted mb-1">Meeting title</label>
         <input value={m.title || ''} onChange={(e) => setM({ ...m, title: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg text-[13px] mb-3 focus:border-indigo outline-none" />
-        <label className="block text-[12px] font-medium text-muted mb-1">Your meeting link (Google Meet / Zoom)</label>
+        <label className="block text-[12px] font-medium text-muted mb-1">Meeting link (Google Meet / Zoom)</label>
         <input value={m.meeting_link || ''} onChange={(e) => setM({ ...m, meeting_link: e.target.value })} placeholder="https://meet.google.com/xxx-xxxx-xxx"
           className="w-full px-3 py-2 border border-border rounded-lg text-[13px] mb-1 focus:border-indigo outline-none" />
         <p className="text-[11px] text-faint mb-3">Sent on every confirmation and reminder. (Auto-created Meet links arrive with the Google Calendar phase.)</p>
@@ -945,7 +1051,7 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
         </p>
 
         <button onClick={save} disabled={saving} className="btn btn-primary w-full justify-center py-2.5">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Save settings
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} {creating ? 'Create booking page' : 'Save settings'}
         </button>
 
         {isAdmin && members.length > 0 && (
@@ -958,7 +1064,25 @@ function SettingsDrawer({ myMember, members, isAdmin, userId, workspaceId, onClo
                     <div className="text-[12.5px] font-semibold text-ink truncate">{tm.display_name}</div>
                     <div className="text-[11px] text-muted truncate">/book/{tm.slug} · {tm.active ? 'live' : 'off'}</div>
                   </div>
-                  <button onClick={() => { navigator.clipboard.writeText(`https://crm.migrizo.com/book/${tm.slug}`); toast.success('Copied'); }} className="p-1.5 rounded-md hover:bg-surface-2 text-muted" title="Copy link"><Copy className="w-3.5 h-3.5" /></button>
+                  <div className="flex flex-shrink-0 items-center gap-1">
+                    <button
+                      onClick={async () => {
+                        const { error } = await supabase.from('scheduler_members')
+                          .update({ active: !tm.active, updated_at: new Date().toISOString() }).eq('id', tm.id);
+                        if (error) { toast.error(error.message); return; }
+                        toast.success(tm.active ? `${tm.display_name}'s page paused` : `${tm.display_name}'s page is live`);
+                        onClose();
+                      }}
+                      className="rounded-md px-2 py-1 text-[11.5px] font-medium text-muted transition hover:bg-surface-2 hover:text-ink"
+                      title={tm.active ? 'Pause this page' : 'Make this page live'}>
+                      {tm.active ? 'Pause' : 'Go live'}
+                    </button>
+                    <button onClick={() => { setCreating(false); setPageId(tm.id); }}
+                      className="rounded-md p-1.5 text-muted transition hover:bg-surface-2" title="Edit this page">
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button onClick={() => { navigator.clipboard.writeText(`https://crm.migrizo.com/book/${tm.slug}`); toast.success('Copied'); }} className="p-1.5 rounded-md hover:bg-surface-2 text-muted" title="Copy link"><Copy className="w-3.5 h-3.5" /></button>
+                  </div>
                 </div>
               ))}
             </div>
