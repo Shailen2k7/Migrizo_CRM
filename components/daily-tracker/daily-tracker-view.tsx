@@ -275,7 +275,7 @@ export function DailyTrackerView() {
           </div>
           <p className="text-[13.5px] text-muted mt-1">{subtitle}</p>
         </div>
-        <button onClick={handleExport} className="btn btn-secondary"><Download className="w-4 h-4" /> Export CSV</button>
+        <button onClick={handleExport} className="btn btn-outline"><Download className="w-4 h-4" /> Export CSV</button>
       </div>
 
       {/* DATE RANGE PICKER */}

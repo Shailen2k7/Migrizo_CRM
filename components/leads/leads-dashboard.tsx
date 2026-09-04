@@ -1,8 +1,7 @@
 'use client';
 
 // ============================================================================
-// LEADS DASHBOARD — the approved design: six stat cards, the year-by-month
-// strip, and the funnel with the biggest-leak callout, one panel each.
+// LEADS DASHBOARD — six cards, the year-by-month strip, and the funnel.
 //
 // Everything is computed CLIENT-SIDE from the leads the provider already
 // holds (all of them — range 0..9999), so this adds zero queries: the page
@@ -11,29 +10,48 @@
 // Clicking a card filters the leads table BELOW to exactly the leads that card
 // counts — same period, same definition — via a Set of ids. One list, not a
 // second weaker copy of the table.
+//
+// WHY COUNTS, NOT RATES
+// These six are answered in a Monday review by pointing at a number and saying
+// it out loud: "sixty-two leads, nine hot, four eligible". A percentage makes
+// you do the arithmetic backwards to get there. So the headline is the count
+// and the share sits underneath it, where it supports the number instead of
+// replacing it.
 // ============================================================================
 
 import { useMemo, useState } from 'react';
 import { useApp } from '@/components/shared/app-provider';
 import { Select } from '@/components/shared/select';
-import { StatCard, MonthStrip, Funnel, PanelTitle } from '@/components/shared/dash-ui';
+import { StatCard, MonthStrip, Funnel, PanelTitle, CollapsiblePanel } from '@/components/shared/dash-ui';
 import {
   buildPeriods, primaryOptions, compareOptions, resolveCompare,
-  inPeriod, pctOf, fmtPct, deltaOf, countDelta, type Period,
+  inPeriod, pctOf, fmtPct, countDelta, type Period,
 } from '@/lib/dashboard';
 import type { Lead } from '@/lib/types';
 
 export interface DashFilter { label: string; ids: Set<string> }
 
-/** The one funnel definition both the cards and the chart read. */
+/**
+ * The one cohort definition every card and the funnel read.
+ *
+ * Everything is cohorted by created_at: "of the leads that arrived in this
+ * period, how many are hot / cold / starred / eligible". That keeps all six
+ * cards answering the same question about the same set of people, so they can
+ * be read across without a mental gear change.
+ */
 function cohortOf(leads: Lead[], p: Period) {
   const created = leads.filter((l) => inPeriod(l.created_at, p));
-  const responded = created.filter((l) => !!l.first_response_at);
-  const profiled = responded.filter((l) => !!l.profile_received);
-  const reviewed = created.filter((l) => !!l.eligibility);
-  const eligible = created.filter((l) => l.eligibility === 'eligible');
-  const hot = eligible.filter((l) => l.stage === 'hot');
-  return { created, responded, profiled, reviewed, eligible, hot };
+  return {
+    created,
+    hot: created.filter((l) => l.stage === 'hot'),
+    cold: created.filter((l) => l.stage === 'cold'),
+    spotlight: created.filter((l) => l.is_spotlight),
+    workable: created.filter((l) => l.stage !== 'junk'),
+    reviewed: created.filter((l) => !!l.eligibility),
+    eligible: created.filter((l) => l.eligibility === 'eligible'),
+    notEligible: created.filter((l) => l.eligibility === 'not_eligible'),
+    won: created.filter((l) => l.stage === 'won'),
+  };
 }
 
 export function LeadsDashboard({ onFilter, activeFilter }: {
@@ -55,38 +73,86 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
   const cur = useMemo(() => cohortOf(real, period), [real, period]);
   const cmp = useMemo(() => (compare ? cohortOf(real, compare) : null), [real, compare]);
 
-  // Has anyone started recording the new fields? Until then the dependent
-  // cards say so plainly instead of showing a fake 0%.
-  const recording = useMemo(() => real.some((l) => l.eligibility || l.profile_received), [real]);
+  // Starring is a live working set, not a property of a month's intake. The
+  // card still counts this period's leads so it reads across with the other
+  // five, but the foot carries the number people actually act on.
+  const spotlightAll = useMemo(() => real.filter((l) => l.is_spotlight).length, [real]);
 
-  const rate = (c: ReturnType<typeof cohortOf>) => ({
-    resp: pctOf(c.responded.length, c.created.length),
-    prof: pctOf(c.profiled.length, c.responded.length),
-    elig: pctOf(c.eligible.length, c.reviewed.length),
-    hot:  pctOf(c.hot.length, c.eligible.length),
-    nel:  pctOf(c.reviewed.length - c.eligible.length, c.reviewed.length),
-  });
-  const v = rate(cur);
-  const p = cmp ? rate(cmp) : null;
+  /**
+   * ELIGIBILITY IS A STANDING LEDGER, NOT A PERIOD COHORT — and that is a
+   * decision forced by the data, not a preference.
+   *
+   * Nearly every verdict on record was written by migration 074's backfill,
+   * which derived it from the lead's stage and stamped eligibility_at with the
+   * moment the migration ran. So cohorting by verdict date would drop ~968
+   * decisions into one artificial spike, and cohorting by lead-creation date
+   * reports almost nothing, because a lead created this month is usually
+   * reviewed later.
+   *
+   * Either way a per-period eligibility number would be fiction. The honest
+   * figure is the running total, so that is what these two cards show, and
+   * their foot says "all leads" so nobody reads them as period numbers.
+   * Dated per-period eligibility needs verdicts captured at the moment they
+   * are sent — the WhatsApp detection that is not wired up yet.
+   */
+  const ledger = useMemo(() => {
+    const reviewed = real.filter((l) => !!l.eligibility);
+    return {
+      reviewed,
+      eligible: real.filter((l) => l.eligibility === 'eligible'),
+      notEligible: real.filter((l) => l.eligibility === 'not_eligible'),
+    };
+  }, [real]);
+  const recording = ledger.reviewed.length > 0;
 
-  // Each month bar stacks responded (indigo) over silent (grey) — the strip
-  // answers "is our response rate improving month over month?" at a glance,
-  // in the same footprint a flat bar wasted.
+  /**
+   * The half of the ledger that IS honestly dated.
+   *
+   * Migration 087 stamps eligibility_at from the WhatsApp message we actually
+   * sent, so a 'whatsapp' verdict has a real moment attached — unlike the 968
+   * backfilled ones. Those, and only those, can be counted per period, so the
+   * foot of each card carries "N told this period" beside the running total.
+   * Before 087 runs this is simply zero and the foot says nothing extra, which
+   * is why it degrades cleanly rather than needing a feature flag.
+   */
+  const told = useMemo(() => {
+    const dated = real.filter(
+      (l) => l.eligibility_source === 'whatsapp' && l.eligibility_at && inPeriod(l.eligibility_at, period),
+    );
+    return {
+      eligible: dated.filter((l) => l.eligibility === 'eligible').length,
+      notEligible: dated.filter((l) => l.eligibility === 'not_eligible').length,
+      any: dated.length,
+    };
+  }, [real, period]);
+
+  const verdictFoot = (allTime: number, thisPeriod: number) => {
+    const pct = fmtPct(pctOf(allTime, ledger.reviewed.length));
+    return told.any > 0
+      ? `${thisPeriod} told this period · ${pct} of ${ledger.reviewed.length}`
+      : `${pct} of ${ledger.reviewed.length} reviewed · all leads`;
+  };
+
+  // Each month bar stacks hot over cold over everything else, so the strip
+  // answers "is the quality of what we're buying improving?" at a glance.
   const STRIP_LEGEND = [
-    { label: 'Responded', color: '#4F46E5', value: 0 },
-    { label: 'No reply yet', color: '#D6D9E3', value: 0 },
+    { label: 'Hot', color: '#EF4444', value: 0 },
+    { label: 'Cold', color: '#4F46E5', value: 0 },
+    { label: 'Other', color: '#D6D9E3', value: 0 },
   ];
   const monthItems = useMemo(() => {
     const out: { key: string; label: string; value: number; segments: { value: number; color: string; label: string }[] }[] = [];
     for (let m = 0; m <= now.getMonth(); m++) {
       const mp = periods.get(`m${m}`)!;
       const created = real.filter((l) => inPeriod(l.created_at, mp));
-      const responded = created.filter((l) => !!l.first_response_at).length;
+      const hot = created.filter((l) => l.stage === 'hot').length;
+      const cold = created.filter((l) => l.stage === 'cold').length;
       out.push({
         key: mp.key, label: mp.short, value: created.length,
         segments: [
-          { label: 'Responded', color: '#4F46E5', value: responded },
-          { label: 'No reply yet', color: '#D6D9E3', value: created.length - responded },
+          { label: 'Hot', color: '#EF4444', value: hot },
+          { label: 'Cold', color: '#4F46E5', value: cold },
+          { label: 'Other', color: '#D6D9E3', value: created.length - hot - cold },
         ],
       });
     }
@@ -98,26 +164,21 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
     // Clicking the active card again clears the filter — a toggle, not a trap.
     onFilter(activeFilter?.label === label ? null : f);
   };
-  const nel = cur.reviewed.filter((l) => l.eligibility === 'not_eligible');
-  const notReplied = cur.created.filter((l) => !l.first_response_at);
-  const awaitingProfile = cur.responded.filter((l) => !l.profile_received);
 
-  const funnelSteps = recording
-    ? [
-        { label: 'All leads',  value: cur.created.length },
-        { label: 'Responded',  value: cur.responded.length },
-        { label: 'Profile in', value: cur.profiled.length },
-        { label: 'Reviewed',   value: cur.reviewed.length },
-        { label: 'Eligible',   value: cur.eligible.length },
-        { label: 'Hot',        value: cur.hot.length },
-      ]
-    : [
-        { label: 'All leads', value: cur.created.length },
-        { label: 'Responded', value: cur.responded.length },
-        { label: 'Hot',       value: cur.created.filter((l) => l.stage === 'hot').length },
-      ];
+  const share = (n: number) => (cur.created.length > 0 ? `${Math.round((n / cur.created.length) * 100)}% of this period` : 'nothing yet');
 
-  const notYet = 'field not in use yet';
+  // Eligibility is deliberately NOT a funnel step: the cards report it as an
+  // all-time ledger, and a funnel step reading 1 beside a card reading 130
+  // would be the first thing questioned in a review. The funnel stays a pure
+  // period story — what arrived, and how far it got.
+  const funnelSteps = [
+    { label: 'All leads', value: cur.created.length },
+    { label: 'Workable', value: cur.workable.length },
+    { label: 'Hot',      value: cur.hot.length },
+    { label: 'Won',      value: cur.won.length },
+  ];
+
+  const notYet = 'not recorded yet';
 
   return (
     <div className="mb-5 animate-pageIn">
@@ -133,11 +194,17 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
             <Select<string> size="sm" value={periodKey} onChange={setPeriodKey}
               options={primaryOptions(periods, now).map((k) => ({ value: k, label: periods.get(k)!.label }))} />
           </div>
-          <span className="text-[10px] font-extrabold uppercase tracking-[0.07em] text-faint">compare with</span>
-          <div className="w-[168px]">
-            <Select<string> size="sm" value={effCmp} onChange={setCmpKey}
-              options={cmpOpts.map((k) => ({ value: k, label: k === 'prev' ? 'Previous period' : periods.get(k)!.label }))} />
-          </div>
+          {/* All time has nothing to compare against, so the control goes
+              rather than offering a choice that resolves to nothing. */}
+          {cmpOpts.length > 0 && (
+            <>
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.07em] text-faint">compare with</span>
+              <div className="w-[168px]">
+                <Select<string> size="sm" value={effCmp} onChange={setCmpKey}
+                  options={cmpOpts.map((k) => ({ value: k, label: k === 'prev' ? 'Previous period' : periods.get(k)!.label }))} />
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -148,37 +215,48 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
           delta={countDelta(cur.created.length, cmp ? cmp.created.length : null)}
           accent="#16294E" active={activeFilter?.label === 'All leads in period'}
           onClick={() => pick('All leads in period', cur.created)} />
-        <StatCard label="Response" value={fmtPct(v.resp)}
-          foot={`${cur.responded.length} of ${cur.created.length} replied`}
-          delta={deltaOf(v.resp, p?.resp)} accent="#4F46E5"
-          active={activeFilter?.label === 'Never replied'}
-          onClick={() => pick('Never replied', notReplied)} />
-        <StatCard label="Profile submission" value={recording ? fmtPct(v.prof) : '—'}
-          foot={recording ? `${cur.profiled.length} of ${cur.responded.length} responded` : notYet}
-          delta={recording ? deltaOf(v.prof, p?.prof) : deltaOf(null, null)} accent="#7C3AED"
-          active={activeFilter?.label === 'Awaiting profile'}
-          onClick={() => pick('Awaiting profile', awaitingProfile)} />
-        <StatCard label="Eligibility" value={recording ? fmtPct(v.elig) : '—'}
-          foot={recording ? `${cur.eligible.length} of ${cur.reviewed.length} reviewed` : notYet}
-          delta={recording ? deltaOf(v.elig, p?.elig) : deltaOf(null, null)} accent="#047857"
-          active={activeFilter?.label === 'Eligible'}
-          onClick={() => pick('Eligible', cur.eligible)} />
-        <StatCard label="HOT" value={recording ? fmtPct(v.hot) : '—'}
-          foot={recording ? `${cur.hot.length} of ${cur.eligible.length} eligible` : 'needs eligibility'}
-          delta={recording ? deltaOf(v.hot, p?.hot) : deltaOf(null, null)} accent="#EF4444"
-          active={activeFilter?.label === 'Hot leads'}
-          onClick={() => pick('Hot leads', recording ? cur.hot : cur.created.filter((l) => l.stage === 'hot'))} />
-        <StatCard label="Non-eligible" value={recording ? fmtPct(v.nel) : '—'}
-          foot={recording ? `${nel.length} of ${cur.reviewed.length} reviewed` : notYet}
-          delta={recording ? deltaOf(v.nel, p?.nel, true) : deltaOf(null, null)} accent="#B45309"
-          active={activeFilter?.label === 'Not eligible'}
-          onClick={() => pick('Not eligible', nel)} />
+
+        <StatCard label="Hot leads" value={String(cur.hot.length)}
+          foot={share(cur.hot.length)}
+          delta={countDelta(cur.hot.length, cmp ? cmp.hot.length : null)}
+          accent="#EF4444" active={activeFilter?.label === 'Hot leads'}
+          onClick={() => pick('Hot leads', cur.hot)} />
+
+        <StatCard label="Cold leads" value={String(cur.cold.length)}
+          foot={share(cur.cold.length)}
+          delta={countDelta(cur.cold.length, cmp ? cmp.cold.length : null)}
+          accent="#4F46E5" active={activeFilter?.label === 'Cold leads'}
+          onClick={() => pick('Cold leads', cur.cold)} />
+
+        <StatCard label="Spotlight" value={String(cur.spotlight.length)}
+          foot={`${spotlightAll} starred across all leads`}
+          delta={countDelta(cur.spotlight.length, cmp ? cmp.spotlight.length : null)}
+          accent="#F59E0B" active={activeFilter?.label === 'Spotlight leads'}
+          onClick={() => pick('Spotlight leads', cur.spotlight)} />
+
+        {/* The two below are all-time, not period — see the `ledger` comment. */}
+        <StatCard label="Eligible" value={recording ? String(ledger.eligible.length) : '—'}
+          foot={recording ? verdictFoot(ledger.eligible.length, told.eligible) : notYet}
+          delta={countDelta(0, null)}
+          accent="#047857" active={activeFilter?.label === 'Eligible'}
+          onClick={() => pick('Eligible', ledger.eligible)} />
+
+        <StatCard label="Not eligible" value={recording ? String(ledger.notEligible.length) : '—'}
+          foot={recording ? verdictFoot(ledger.notEligible.length, told.notEligible) : notYet}
+          delta={countDelta(0, null)}
+          accent="#B45309" active={activeFilter?.label === 'Not eligible'}
+          onClick={() => pick('Not eligible', ledger.notEligible)} />
       </div>
 
       {/* Lead flow: the year strip and the funnel are one story at two zoom
           levels, so they share one panel — side by side, half each, divided by
           a hairline. Stacked again only when the screen is too narrow. */}
-      <div className="panel p-5">
+      <CollapsiblePanel
+        storageKey="leads.flow"
+        title={<>Lead flow — {period.short}</>}
+        sub="The year at a glance on the left, this period's funnel on the right."
+        right={<span className="num text-[11.5px] text-faint">{cur.created.length} in {period.short}</span>}
+      >
         <div className="grid gap-5 lg:grid-cols-2 lg:divide-x lg:divide-border">
           {/* flex column so the strip can stretch to the height the right
               column sets — the chart always fills its card. */}
@@ -203,12 +281,12 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
             <Funnel steps={funnelSteps} leakNoun="leads" />
             {!recording && (
               <div className="mt-3 text-[11.5px] text-muted">
-                Profile and eligibility are not being recorded yet — set them in the lead drawer and this funnel gains its Profile, Reviewed and Eligible stages automatically.
+                Eligibility is not being recorded yet — set it in the lead drawer and the Eligible step fills in automatically.
               </div>
             )}
           </div>
         </div>
-      </div>
+      </CollapsiblePanel>
     </div>
   );
 }

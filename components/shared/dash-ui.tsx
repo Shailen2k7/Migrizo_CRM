@@ -8,7 +8,9 @@
 // drift apart visually.
 // ============================================================================
 
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { TrendingUp, TrendingDown, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { deltaOf } from '@/lib/dashboard';
 
@@ -210,6 +212,94 @@ export function PanelTitle({ children, sub }: { children: React.ReactNode; sub?:
     <div className="mb-3.5">
       <h2 className="text-[11px] font-extrabold uppercase tracking-[0.07em] text-muted">{children}</h2>
       {sub && <div className="mt-0.5 text-[11.5px] text-faint">{sub}</div>}
+    </div>
+  );
+}
+
+// ============================================================================
+// COLLAPSIBLE PANEL
+//
+// A dashboard section that can be folded away. Three deliberate choices:
+//
+//  * The whole header is the control. A 16px chevron is a small target for
+//    something you do every time you open the page, so the title, the subtitle
+//    and the chevron are all one button.
+//  * The choice is REMEMBERED, per panel, in localStorage. A section you
+//    collapse that springs open again on the next visit is worse than not
+//    having the control at all.
+//  * It reads from localStorage in an effect, not in useState's initialiser,
+//    so the server and the first client render agree and React never reports a
+//    hydration mismatch. The cost is one frame in the default state, which is
+//    invisible; the alternative is a console full of warnings.
+// ============================================================================
+export function CollapsiblePanel({
+  title, sub, storageKey, defaultOpen = true, right, children, className,
+}: {
+  title: React.ReactNode;
+  sub?: string;
+  /** Where the open/closed choice is remembered. Omit to make it session-only. */
+  storageKey?: string;
+  defaultOpen?: boolean;
+  /** Optional controls pinned to the right of the header, e.g. a total. */
+  right?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      const v = localStorage.getItem(`migrizo.panel.${storageKey}`);
+      if (v === '0') setOpen(false);
+      else if (v === '1') setOpen(true);
+    } catch { /* private mode — keep the default */ }
+  }, [storageKey]);
+
+  const toggle = () => {
+    setOpen((v) => {
+      const next = !v;
+      if (storageKey) {
+        try { localStorage.setItem(`migrizo.panel.${storageKey}`, next ? '1' : '0'); } catch { /* ignore */ }
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className={cn('panel', className)}>
+      <div className="flex items-start gap-3 px-5 pt-4 pb-3">
+        <button
+          onClick={toggle}
+          aria-expanded={open}
+          className="group flex min-w-0 flex-1 items-start gap-2.5 text-left"
+        >
+          <ChevronDown
+            className={cn('mt-[1px] h-4 w-4 flex-shrink-0 text-faint transition-transform duration-200 group-hover:text-ink-2',
+              !open && '-rotate-90')}
+          />
+          <span className="min-w-0">
+            <span className="block text-[11px] font-extrabold uppercase tracking-[0.07em] text-muted group-hover:text-ink-2">
+              {title}
+            </span>
+            {sub && <span className="mt-0.5 block text-[11.5px] text-faint">{sub}</span>}
+          </span>
+        </button>
+        {right && <div className="flex-shrink-0">{right}</div>}
+      </div>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 pb-5">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -86,7 +86,7 @@ Return ONLY a JSON array like [{"id":"...","score":72,"brief":"..."}]. No markdo
       method: 'POST',
       headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
         max_tokens: 4000,
         system,
         messages: [{ role: 'user', content: JSON.stringify(payload) }],

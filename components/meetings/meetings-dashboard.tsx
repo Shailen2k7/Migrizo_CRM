@@ -177,11 +177,17 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
             <Select<string> size="sm" value={periodKey} onChange={setPeriodKey}
               options={primaryOptions(periods, now).map((k) => ({ value: k, label: periods.get(k)!.label }))} />
           </div>
-          <span className="text-[10px] font-extrabold uppercase tracking-[0.07em] text-faint">compare with</span>
-          <div className="w-[168px]">
-            <Select<string> size="sm" value={effCmp} onChange={setCmpKey}
-              options={cmpOpts.map((k) => ({ value: k, label: k === 'prev' ? 'Previous period' : periods.get(k)!.label }))} />
-          </div>
+          {/* All time has nothing to compare against, so the control goes
+              rather than offering a choice that resolves to nothing. */}
+          {cmpOpts.length > 0 && (
+            <>
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.07em] text-faint">compare with</span>
+              <div className="w-[168px]">
+                <Select<string> size="sm" value={effCmp} onChange={setCmpKey}
+                  options={cmpOpts.map((k) => ({ value: k, label: k === 'prev' ? 'Previous period' : periods.get(k)!.label }))} />
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -274,7 +280,7 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
                 Booking settings this afternoon. */}
             <div className="mt-4">
               <div className="mb-1.5 text-[10px] font-extrabold uppercase tracking-[0.07em] text-muted">
-                Where calls get lost <span className="font-bold text-faint normal-case tracking-normal">\u00b7 last 90 days, slots with 4+ calls</span>
+                Where calls get lost <span className="font-bold text-faint normal-case tracking-normal">· last 90 days, slots with 4+ calls</span>
               </div>
               {lostSlots.length === 0 ? (
                 <div className="rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-[12px] text-muted">
@@ -314,7 +320,7 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
             {attention.noCall.length > 0 && (
               <div className="rounded-xl border border-[#F3D9A4] bg-[#FEF6E7] px-3.5 py-2.5">
                 <div className="text-[13px] font-bold text-[#854F0B]">
-                  {attention.noCall.length} eligible lead{attention.noCall.length === 1 ? '' : 's'} \u00b7 no call booked
+                  {attention.noCall.length} eligible lead{attention.noCall.length === 1 ? '' : 's'} · no call booked
                 </div>
                 <div className="mt-0.5 truncate text-[11px] text-[#A16207]">
                   {attention.noCall.slice(0, 3).map((l) => l.full_name).join(' \u00b7 ')}
@@ -328,7 +334,7 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[12.5px] font-semibold">{m.client_name}</div>
                   <div className="text-[11px] text-muted">
-                    {new Date(m.starts_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} \u00b7 not rebooked yet
+                    {new Date(m.starts_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · not rebooked yet
                   </div>
                 </div>
                 <span className="chip whitespace-nowrap"

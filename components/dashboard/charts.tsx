@@ -2,26 +2,30 @@
 
 import { useMemo } from 'react';
 import type { Lead, Payment } from '@/lib/types';
-import { STAGE_META } from '@/lib/types';
+import { STAGE_META, STAGE_ORDER } from '@/lib/types';
 import { formatINR, toINR } from '@/lib/utils';
 
 // =========================================
 // Lead Funnel — horizontal stacked bars by stage
 // =========================================
 export function FunnelChart({ leads }: { leads: Lead[] }) {
+  // Driven by STAGE_ORDER, not a hand-written list. The old hard-coded six
+  // silently dropped every Not Responding lead — and every legacy stage such
+  // as 'lost' — so the chart never added up to the lead count beside it.
   const data = useMemo(() => {
-    const stages: { key: string; label: string; color: string }[] = [
-      { key: 'hot',            label: 'Hot',             color: '#EF4444' },
-      { key: 'cold',           label: 'Cold',            color: '#3B82F6' },
-      { key: 'mr_coming_soon', label: 'Mr. Coming Soon', color: '#F59E0B' },
-      { key: 'invoice_sent',   label: 'Invoice Sent',    color: '#7C3AED' },
-      { key: 'won',            label: 'Won',             color: '#10B981' },
-      { key: 'junk',           label: 'Junk',            color: '#9CA3AF' },
-    ];
     const counts: Record<string, number> = {};
     leads.forEach((l) => { counts[l.stage] = (counts[l.stage] || 0) + 1; });
-    const max = Math.max(1, ...stages.map((s) => counts[s.key] || 0));
-    return stages.map((s) => ({ ...s, count: counts[s.key] || 0, max }));
+    const known = new Set<string>(STAGE_ORDER);
+    const other = Object.entries(counts)
+      .filter(([k]) => !known.has(k))
+      .reduce((s, [, n]) => s + n, 0);
+    const rows: { key: string; label: string; color: string; count: number }[] =
+      STAGE_ORDER.map((k) => ({
+        key: k as string, label: STAGE_META[k].label, color: STAGE_META[k].dot, count: counts[k] || 0,
+      }));
+    if (other > 0) rows.push({ key: '__other', label: 'Other', color: '#9CA3AF', count: other });
+    const max = Math.max(1, ...rows.map((r) => r.count));
+    return rows.map((r) => ({ ...r, max }));
   }, [leads]);
 
   if (leads.length === 0) return <EmptyChart label="No leads yet" />;
@@ -48,20 +52,23 @@ export function FunnelChart({ leads }: { leads: Lead[] }) {
 // Lead Temperature — donut by score buckets
 // =========================================
 export function TemperatureDonut({ leads }: { leads: Lead[] }) {
+  // Every lead lands in exactly one slice, so the ring is always a whole
+  // circle and the percentages always sum to 100. Anything on a stage this
+  // build does not know about (legacy 'lost', say) goes to Other rather than
+  // vanishing from a chart whose centre still claims the full lead count.
   const data = useMemo(() => {
-    const buckets: Record<string, number> = { hot: 0, cold: 0, mr_coming_soon: 0, invoice_sent: 0, won: 0, junk: 0 };
-    leads.forEach((l) => {
-      if (l.stage in buckets) buckets[l.stage]++;
-    });
+    const counts: Record<string, number> = {};
+    leads.forEach((l) => { counts[l.stage] = (counts[l.stage] || 0) + 1; });
+    const known = new Set<string>(STAGE_ORDER);
+    const other = Object.entries(counts)
+      .filter(([k]) => !known.has(k))
+      .reduce((s, [, n]) => s + n, 0);
     const total = leads.length || 1;
-    return [
-      { label: 'Hot',             value: buckets.hot,            color: '#EF4444' },
-      { label: 'Cold',            value: buckets.cold,           color: '#3B82F6' },
-      { label: 'Mr. Coming Soon', value: buckets.mr_coming_soon, color: '#F59E0B' },
-      { label: 'Invoice Sent',    value: buckets.invoice_sent,   color: '#7C3AED' },
-      { label: 'Won',             value: buckets.won,            color: '#10B981' },
-      { label: 'Junk',            value: buckets.junk,           color: '#9CA3AF' },
-    ].map((d) => ({ ...d, pct: (d.value / total) * 100 }));
+    const rows = STAGE_ORDER.map((k) => ({
+      label: STAGE_META[k].label, value: counts[k] || 0, color: STAGE_META[k].dot,
+    }));
+    if (other > 0) rows.push({ label: 'Other', value: other, color: '#9CA3AF' });
+    return rows.map((d) => ({ ...d, pct: (d.value / total) * 100 }));
   }, [leads]);
 
   if (leads.length === 0) return <EmptyChart label="No leads yet" />;
@@ -156,9 +163,15 @@ export function RevenueChart({ payments, leads }: { payments: Payment[]; leads: 
     }
     payments.forEach((p) => {
       if (p.status !== 'paid' || !p.paid_at) return;
+      const leadCcy = ccyByLead[p.lead_id] || 'INR';
+      // A payment recorded in a different currency from its client is a typo in
+      // one of the two, and there is no way to tell which. Converting it anyway
+      // is how a single ₹72,500 row on a GBP client put ₹92 lakh into this
+      // chart. Skip it here; the Payments tab lists these by name to be fixed.
+      if (p.currency && p.currency !== leadCcy) return;
       const pd = new Date(p.paid_at);
       const idx = months.findIndex((m) => m.date.getMonth() === pd.getMonth() && m.date.getFullYear() === pd.getFullYear());
-      if (idx >= 0) months[idx].total += toINR(p.amount, ccyByLead[p.lead_id] || 'INR');
+      if (idx >= 0) months[idx].total += toINR(p.amount, leadCcy);
     });
     return months;
   }, [payments, leads]);

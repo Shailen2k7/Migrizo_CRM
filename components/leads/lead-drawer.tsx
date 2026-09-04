@@ -509,6 +509,11 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                               ? 'Derived from stage history — one click above confirms it'
                               : effectiveLead.eligibility_source === 'ai'
                               ? 'AI verdict from the CV they sent — one click above confirms or overrides it'
+                              : effectiveLead.eligibility_source === 'whatsapp'
+                              // Set by migration 087 from the verdict message actually sent on
+                              // WhatsApp. Saying so matters: this is the only source the client
+                              // has also seen, so the CRM and the customer cannot disagree.
+                              ? `Told on WhatsApp ${new Date(effectiveLead.eligibility_at).toLocaleDateString('en-IN')} — a click above overrides it`
                               : `${new Date(effectiveLead.eligibility_at).toLocaleDateString('en-IN')}${effectiveLead.eligibility_by ? ` · ${memberNameById(effectiveLead.eligibility_by)}` : ''}`}
                           </div>
                         )}

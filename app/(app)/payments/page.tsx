@@ -5,10 +5,11 @@ import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
 import { MILESTONE_META, PAYMENT_META } from '@/lib/types';
 import type { Milestone, Payment, Lead } from '@/lib/types';
-import { formatINR, formatMoney, toINR, initials, avatarColor, cn } from '@/lib/utils';
-import { Plus, Download, Search, IndianRupee, Check, Clock, AlertTriangle, TrendingUp, EyeOff, Eye, MoreVertical } from 'lucide-react';
+import { formatMoney, initials, avatarColor, cn } from '@/lib/utils';
+import { Plus, Download, Search, IndianRupee, Check, EyeOff, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { PaymentsDashboard } from '@/components/payments/payments-dashboard';
 
 type PaySegment = 'all' | 'active' | 'overdue' | 'completed';
 
@@ -18,6 +19,9 @@ export default function PaymentsPage() {
   const [seg, setSeg] = useState<PaySegment>('all');
   const [search, setSearch] = useState('');
   const [confirmHide, setConfirmHide] = useState<Lead | null>(null);
+  // Set by a dashboard card or a milestone-ladder number: restricts the client
+  // list below to exactly the clients that number counted.
+  const [dashFilter, setDashFilter] = useState<{ label: string; ids: Set<string> } | null>(null);
   const [showHiddenList, setShowHiddenList] = useState(false);
 
   // Build per-client payment summary
@@ -46,16 +50,45 @@ export default function PaymentsPage() {
 
   const hiddenClients = useMemo(() => leads.filter((l) => l.hidden_from_payments), [leads]);
 
+  // A dashboard drill-in may point at clients who have no payment row yet (a
+  // fee was quoted, nothing paid). Those are missing from clientRows, so the
+  // filter builds its own rows rather than silently showing fewer people than
+  // the number that was clicked.
+  const dashRows = useMemo(() => {
+    if (!dashFilter) return null;
+    const byId = new Map(clientRows.map((r) => [r.lead.id, r]));
+    return [...dashFilter.ids]
+      .map((id) => {
+        const existing = byId.get(id);
+        if (existing) return existing;
+        const lead = leads.find((l) => l.id === id);
+        if (!lead || lead.hidden_from_payments) return null;
+        const pays = payments.filter((p) => p.lead_id === lead.id);
+        const collected = lead.amount_paid || 0;
+        const pendingAmount = Math.max(0, (lead.amount_total || 0) - collected);
+        const overdueAmount = lead.amount_overdue || 0;
+        const completed = lead.amount_total > 0 && collected >= lead.amount_total;
+        return {
+          lead, payments: pays, collected, pending: pendingAmount, overdue: overdueAmount,
+          status: (completed ? 'completed' : overdueAmount > 0 ? 'overdue' : 'active') as 'active' | 'overdue' | 'completed',
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => !!r);
+  }, [dashFilter, clientRows, leads, payments]);
+
   const filtered = useMemo(() => {
-    return clientRows.filter((r) => {
-      if (seg !== 'all' && r.status !== seg) return false;
+    const base = dashRows ?? clientRows;
+    return base.filter((r) => {
+      // A drill-in already picked the exact people; the segment chips would
+      // only ever subtract from an answer the user just asked for.
+      if (!dashFilter && seg !== 'all' && r.status !== seg) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
         if (!r.lead.full_name.toLowerCase().includes(q) && !(r.lead.phone || '').toLowerCase().includes(q)) return false;
       }
       return true;
     });
-  }, [clientRows, seg, search]);
+  }, [clientRows, dashRows, dashFilter, seg, search]);
 
   const counts = useMemo(() => ({
     all: clientRows.length,
@@ -63,43 +96,6 @@ export default function PaymentsPage() {
     overdue: clientRows.filter((r) => r.status === 'overdue').length,
     completed: clientRows.filter((r) => r.status === 'completed').length,
   }), [clientRows]);
-
-  const totals = useMemo(() => {
-    const visibleLeads = leads.filter((l) => !l.hidden_from_payments);
-    let collected = 0, pending = 0, overdue = 0;
-    for (const l of visibleLeads) {
-      const ccy = l.currency || 'INR';
-      collected += toINR(l.amount_paid || 0, ccy);
-      pending += toINR(Math.max(0, (l.amount_total || 0) - (l.amount_paid || 0)), ccy);
-      overdue += toINR(l.amount_overdue || 0, ccy);
-    }
-    return {
-      collected: Math.round(collected),
-      pending: Math.round(pending),
-      overdue: Math.round(overdue),
-      forecast: Math.round(pending),
-    };
-  }, [leads]);
-
-  // Milestone pipeline: count clients whose most recent milestone is X
-  const milestoneCards = useMemo(() => {
-    const out: Record<Milestone, { count: number; amount: number }> = {
-      kickstart: { count: 0, amount: 0 },
-      profile_building: { count: 0, amount: 0 },
-      endorsement: { count: 0, amount: 0 },
-      post_approval: { count: 0, amount: 0 },
-    };
-    clientRows.forEach((r) => {
-      if (r.payments.length === 0) {
-        out.kickstart.count += 1;
-        return;
-      }
-      const latest = r.payments.sort((a, b) => (b.paid_at || '').localeCompare(a.paid_at || ''))[0];
-      out[latest.milestone].count += 1;
-      out[latest.milestone].amount += latest.amount;
-    });
-    return out;
-  }, [clientRows]);
 
   const exportCsv = () => {
     if (payments.length === 0) { toast.error('No payments to export'); return; }
@@ -141,37 +137,28 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* Payment KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-        <KPI label="Collected" value={formatINR(totals.collected)} color="#10B981" icon={Check} />
-        <KPI label="Pending" value={formatINR(totals.pending)} color="#F59E0B" icon={Clock} />
-        <KPI label="Overdue" value={formatINR(totals.overdue)} color="#EF4444" icon={AlertTriangle} />
-        <KPI label="Forecast (30d)" value={formatINR(totals.forecast)} color="#6366F1" icon={TrendingUp} />
-      </div>
+      <PaymentsDashboard onFilter={setDashFilter} activeFilter={dashFilter} onOpenLead={ui.openLeadDrawer} />
 
-      {/* Milestone Pipeline */}
-      <div className="panel panel-pad mb-3">
-        <div className="section-h mb-4"><div><h2>Milestone Pipeline</h2><div className="sub">Active clients by current payment stage</div></div></div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {(Object.keys(MILESTONE_META) as Milestone[]).map((m) => {
-            const meta = MILESTONE_META[m];
-            const stats = milestoneCards[m];
-            return (
-              <div key={m} className="rounded-xl border border-border p-4">
-                <div className="text-[11px] uppercase tracking-wider text-muted font-semibold">{meta.label}</div>
-                <div className="flex items-baseline gap-1.5 mt-2"><span className="text-[24px] font-bold num">{stats.count}</span><span className="text-[12px] text-muted">clients</span></div>
-                <div className="text-[12px] text-muted mt-1">{meta.pct}% of total fee</div>
-                <div className="pbar mt-3"><span style={{ width: `${meta.pct}%` }} /></div>
-              </div>
-            );
-          })}
+      {/* Drill-in banner: says exactly what restricted the list and how to get
+          out of it. A filter you cannot see is a bug report. */}
+      {dashFilter && (
+        <div className="mb-3 flex items-center gap-2.5 rounded-xl border border-[hsl(var(--indigo-soft-2))] bg-[hsl(var(--indigo-soft))] px-3.5 py-2">
+          <span className="text-[12.5px] font-semibold text-[#3730A3]">
+            Showing <b>{dashFilter.label}</b> · {dashFilter.ids.size} client{dashFilter.ids.size === 1 ? '' : 's'}
+          </span>
+          <button
+            onClick={() => setDashFilter(null)}
+            className="ml-auto rounded-lg border border-[hsl(var(--indigo-soft-2))] bg-surface px-2.5 py-1 text-[11.5px] font-semibold text-ink-2 transition hover:text-ink"
+          >
+            Show all clients
+          </button>
         </div>
-      </div>
+      )}
 
       {/* Filters */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         {(['all', 'active', 'overdue', 'completed'] as PaySegment[]).map((s) => (
-          <button key={s} onClick={() => setSeg(s)} className={cn('filter-chip', seg === s && 'active')}>
+          <button key={s} onClick={() => { setSeg(s); setDashFilter(null); }} className={cn('filter-chip', !dashFilter && seg === s && 'active')}>
             {s.charAt(0).toUpperCase() + s.slice(1)} <span className="count" style={s === 'overdue' ? { background: 'hsl(var(--rose-soft))', color: '#B91C1C' } : {}}>{counts[s]}</span>
           </button>
         ))}
@@ -238,18 +225,6 @@ export default function PaymentsPage() {
         cancelLabel="Keep here"
         variant="warning"
       />
-    </div>
-  );
-}
-
-function KPI({ label, value, color, icon: Icon }: { label: string; value: string; color: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }) {
-  return (
-    <div className="kpi">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</span>
-        <Icon className="w-3.5 h-3.5" style={{ color }} />
-      </div>
-      <div className="text-[26px] font-bold tracking-tight leading-none mt-3.5 num" style={{ color }}>{value}</div>
     </div>
   );
 }
