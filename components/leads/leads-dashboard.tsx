@@ -25,19 +25,30 @@ import { Select } from '@/components/shared/select';
 import { StatCard, MonthStrip, Funnel, PanelTitle, CollapsiblePanel } from '@/components/shared/dash-ui';
 import {
   buildPeriods, primaryOptions, compareOptions, resolveCompare,
-  inPeriod, pctOf, fmtPct, countDelta, type Period,
+  inPeriod, countDelta, type Period,
 } from '@/lib/dashboard';
 import type { Lead } from '@/lib/types';
 
 export interface DashFilter { label: string; ids: Set<string> }
 
 /**
+ * Stages that mean a lead got past qualification — it was assessed, quoted, or
+ * closed. `stage` holds ONE current value, so a lead that progressed from hot
+ * to invoice_sent no longer reads as 'hot'. Any funnel step that tests
+ * `stage === 'hot'` therefore reports progress as loss. This set is what
+ * "reached hot" actually means, and it is deliberately the same list migration
+ * 074 used to decide who had been assessed.
+ */
+const HOT_OR_BEYOND = ['hot', 'mr_coming_soon', 'invoice_sent', 'won'];
+
+/**
  * The one cohort definition every card and the funnel read.
  *
  * Everything is cohorted by created_at: "of the leads that arrived in this
- * period, how many are hot / cold / starred / eligible". That keeps all six
- * cards answering the same question about the same set of people, so they can
- * be read across without a mental gear change.
+ * period, how many are hot / cold / starred". That keeps the cards answering
+ * the same question about the same set of people, so they can be read across
+ * without a mental gear change. Eligibility is the deliberate exception — it
+ * is cohorted by when the verdict was reached, not when the lead arrived.
  */
 function cohortOf(leads: Lead[], p: Period) {
   const created = leads.filter((l) => inPeriod(l.created_at, p));
@@ -47,10 +58,25 @@ function cohortOf(leads: Lead[], p: Period) {
     cold: created.filter((l) => l.stage === 'cold'),
     spotlight: created.filter((l) => l.is_spotlight),
     workable: created.filter((l) => l.stage !== 'junk'),
+    // Cumulative, not "currently sitting at hot" — see HOT_OR_BEYOND.
+    reachedHot: created.filter((l) => HOT_OR_BEYOND.includes(l.stage)),
     reviewed: created.filter((l) => !!l.eligibility),
     eligible: created.filter((l) => l.eligibility === 'eligible'),
     notEligible: created.filter((l) => l.eligibility === 'not_eligible'),
     won: created.filter((l) => l.stage === 'won'),
+  };
+}
+
+/**
+ * The verdicts genuinely reached inside a period. Only rows with a real
+ * timestamp reach here — see the `verdicts` comment below for why that
+ * exclusion matters.
+ */
+function pickTold(dated: Lead[], p: Period | null) {
+  const inside = p ? dated.filter((l) => inPeriod(l.eligibility_at!, p)) : [];
+  return {
+    eligible: inside.filter((l) => l.eligibility === 'eligible'),
+    notEligible: inside.filter((l) => l.eligibility === 'not_eligible'),
   };
 }
 
@@ -79,59 +105,45 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
   const spotlightAll = useMemo(() => real.filter((l) => l.is_spotlight).length, [real]);
 
   /**
-   * ELIGIBILITY IS A STANDING LEDGER, NOT A PERIOD COHORT — and that is a
-   * decision forced by the data, not a preference.
+   * TWO DIFFERENT THINGS LIVE IN leads.eligibility, AND CONFLATING THEM LIES.
    *
-   * Nearly every verdict on record was written by migration 074's backfill,
-   * which derived it from the lead's stage and stamped eligibility_at with the
-   * moment the migration ran. So cohorting by verdict date would drop ~968
-   * decisions into one artificial spike, and cohorting by lead-creation date
-   * reports almost nothing, because a lead created this month is usually
-   * reviewed later.
+   * 'derived' — migration 074 stamped a verdict on the whole back catalogue by
+   *   reading the lead's stage: anyone at hot-or-beyond became 'eligible',
+   *   anyone at junk became 'not_eligible'. That is a relabelling of the
+   *   pipeline, not a decision anybody reached or communicated, and
+   *   eligibility_at holds the moment the migration ran rather than the moment
+   *   anyone was told. It cannot be cohorted by date. It is also why the
+   *   not-eligible total reads in the hundreds: that number is overwhelmingly
+   *   the junk pile wearing a different name.
    *
-   * Either way a per-period eligibility number would be fiction. The honest
-   * figure is the running total, so that is what these two cards show, and
-   * their foot says "all leads" so nobody reads them as period numbers.
-   * Dated per-period eligibility needs verdicts captured at the moment they
-   * are sent — the WhatsApp detection that is not wired up yet.
+   * 'whatsapp' / 'manual' — a verdict somebody actually reached and sent, with
+   *   a real timestamp behind it. These are the only rows that can honestly
+   *   answer "how many did we assess this period".
+   *
+   * So the headline is the DATED count for the selected period — which makes
+   * all six cards read across as one period's story instead of four being
+   * September and two being all of history — and the foot carries the all-time
+   * total plus how much of it is inherited, so the big number is still there
+   * and is labelled for what it is.
    */
-  const ledger = useMemo(() => {
-    const reviewed = real.filter((l) => !!l.eligibility);
-    return {
-      reviewed,
-      eligible: real.filter((l) => l.eligibility === 'eligible'),
-      notEligible: real.filter((l) => l.eligibility === 'not_eligible'),
-    };
-  }, [real]);
-  const recording = ledger.reviewed.length > 0;
+  const verdicts = useMemo(() => ({
+    allEligible:    real.filter((l) => l.eligibility === 'eligible'),
+    allNotEligible: real.filter((l) => l.eligibility === 'not_eligible'),
+    inheritedEligible:    real.filter((l) => l.eligibility === 'eligible' && l.eligibility_source === 'derived').length,
+    inheritedNotEligible: real.filter((l) => l.eligibility === 'not_eligible' && l.eligibility_source === 'derived').length,
+    dated: real.filter(
+      (l) => (l.eligibility_source === 'whatsapp' || l.eligibility_source === 'manual') && !!l.eligibility_at,
+    ),
+  }), [real]);
 
-  /**
-   * The half of the ledger that IS honestly dated.
-   *
-   * Migration 087 stamps eligibility_at from the WhatsApp message we actually
-   * sent, so a 'whatsapp' verdict has a real moment attached — unlike the 968
-   * backfilled ones. Those, and only those, can be counted per period, so the
-   * foot of each card carries "N told this period" beside the running total.
-   * Before 087 runs this is simply zero and the foot says nothing extra, which
-   * is why it degrades cleanly rather than needing a feature flag.
-   */
-  const told = useMemo(() => {
-    const dated = real.filter(
-      (l) => l.eligibility_source === 'whatsapp' && l.eligibility_at && inPeriod(l.eligibility_at, period),
-    );
-    return {
-      eligible: dated.filter((l) => l.eligibility === 'eligible').length,
-      notEligible: dated.filter((l) => l.eligibility === 'not_eligible').length,
-      any: dated.length,
-    };
-  }, [real, period]);
+  const told = useMemo(() => pickTold(verdicts.dated, period), [verdicts.dated, period]);
+  const cmpTold = useMemo(() => pickTold(verdicts.dated, compare), [verdicts.dated, compare]);
 
-  const verdictFoot = (allTime: number, thisPeriod: number) => {
-    const pct = fmtPct(pctOf(allTime, ledger.reviewed.length));
-    return told.any > 0
-      ? `${thisPeriod} told this period · ${pct} of ${ledger.reviewed.length}`
-      : `${pct} of ${ledger.reviewed.length} reviewed · all leads`;
-  };
+  const recording = verdicts.allEligible.length + verdicts.allNotEligible.length > 0;
+  const inheritedTotal = verdicts.inheritedEligible + verdicts.inheritedNotEligible;
+
+  const verdictFoot = (allTime: number, inherited: number) =>
+    inherited > 0 ? `${allTime} all-time · ${inherited} inherited` : `${allTime} all-time`;
 
   // Each month bar stacks hot over cold over everything else, so the strip
   // answers "is the quality of what we're buying improving?" at a glance.
@@ -167,15 +179,24 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
 
   const share = (n: number) => (cur.created.length > 0 ? `${Math.round((n / cur.created.length) * 100)}% of this period` : 'nothing yet');
 
-  // Eligibility is deliberately NOT a funnel step: the cards report it as an
-  // all-time ledger, and a funnel step reading 1 beside a card reading 130
-  // would be the first thing questioned in a review. The funnel stays a pure
-  // period story — what arrived, and how far it got.
+  /**
+   * Every step is CUMULATIVE: "how many of this period's leads reached at
+   * least this far". That is the only way a funnel can be read as a funnel.
+   *
+   * The previous version used `stage === 'hot'` for the third step, which
+   * silently counted progress as loss — a lead that moved on to invoice_sent
+   * left the Hot bar and was reported as a drop-out, and every cold lead still
+   * in play was labelled "lost". Reading "70 leads lost" in a Monday review
+   * when those 70 are working cold leads is worse than showing nothing.
+   *
+   * Eligibility is deliberately not a step: it is a verdict about a person,
+   * not a stage they pass through.
+   */
   const funnelSteps = [
-    { label: 'All leads', value: cur.created.length },
-    { label: 'Workable', value: cur.workable.length },
-    { label: 'Hot',      value: cur.hot.length },
-    { label: 'Won',      value: cur.won.length },
+    { label: 'All leads',     value: cur.created.length },
+    { label: 'Workable',      value: cur.workable.length },
+    { label: 'Hot or beyond', value: cur.reachedHot.length },
+    { label: 'Won',           value: cur.won.length },
   ];
 
   const notYet = 'not recorded yet';
@@ -234,19 +255,33 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
           accent="#F59E0B" active={activeFilter?.label === 'Spotlight leads'}
           onClick={() => pick('Spotlight leads', cur.spotlight)} />
 
-        {/* The two below are all-time, not period — see the `ledger` comment. */}
-        <StatCard label="Eligible" value={recording ? String(ledger.eligible.length) : '—'}
-          foot={recording ? verdictFoot(ledger.eligible.length, told.eligible) : notYet}
-          delta={countDelta(0, null)}
-          accent="#047857" active={activeFilter?.label === 'Eligible'}
-          onClick={() => pick('Eligible', ledger.eligible)} />
+        {/* Headline = told in this period; foot = the all-time ledger. Both
+            scales are on the card, and neither pretends to be the other. */}
+        <StatCard label="Eligible" value={recording ? String(told.eligible.length) : '—'}
+          foot={recording ? verdictFoot(verdicts.allEligible.length, verdicts.inheritedEligible) : notYet}
+          delta={countDelta(told.eligible.length, compare ? cmpTold.eligible.length : null)}
+          accent="#047857" active={activeFilter?.label === 'Told eligible'}
+          onClick={told.eligible.length > 0 ? () => pick('Told eligible', told.eligible) : undefined} />
 
-        <StatCard label="Not eligible" value={recording ? String(ledger.notEligible.length) : '—'}
-          foot={recording ? verdictFoot(ledger.notEligible.length, told.notEligible) : notYet}
-          delta={countDelta(0, null)}
-          accent="#B45309" active={activeFilter?.label === 'Not eligible'}
-          onClick={() => pick('Not eligible', ledger.notEligible)} />
+        <StatCard label="Not eligible" value={recording ? String(told.notEligible.length) : '—'}
+          foot={recording ? verdictFoot(verdicts.allNotEligible.length, verdicts.inheritedNotEligible) : notYet}
+          delta={countDelta(told.notEligible.length, compare ? cmpTold.notEligible.length : null)}
+          accent="#B45309" active={activeFilter?.label === 'Told not eligible'}
+          onClick={told.notEligible.length > 0 ? () => pick('Told not eligible', told.notEligible) : undefined} />
       </div>
+
+      {/* The one sentence that stops somebody reading the all-time figure as a
+          verdict we actually delivered. It disappears once the backfill is no
+          longer the majority of the ledger. */}
+      {inheritedTotal > 0 && (
+        <div className="mb-4 -mt-1 text-[11.5px] leading-relaxed text-faint">
+          <b className="text-muted">Eligible / Not eligible</b> count verdicts sent in {period.short}.
+          The all-time totals include <b className="text-muted">{inheritedTotal}</b> inherited from the
+          2024 backfill, which inferred a verdict from the lead&apos;s stage — junk became
+          &ldquo;not eligible&rdquo;, hot-or-beyond became &ldquo;eligible&rdquo;. Those were never
+          communicated to anyone; only the {verdicts.dated.length} dated verdicts were.
+        </div>
+      )}
 
       {/* Lead flow: the year strip and the funnel are one story at two zoom
           levels, so they share one panel — side by side, half each, divided by

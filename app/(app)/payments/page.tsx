@@ -10,6 +10,7 @@ import { Plus, Download, Search, IndianRupee, Check, EyeOff, Eye } from 'lucide-
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { PaymentsDashboard } from '@/components/payments/payments-dashboard';
+import { PaymentRegister } from '@/components/payments/payment-register';
 
 type PaySegment = 'all' | 'active' | 'overdue' | 'completed';
 
@@ -138,6 +139,11 @@ export default function PaymentsPage() {
       </div>
 
       <PaymentsDashboard onFilter={setDashFilter} activeFilter={dashFilter} onOpenLead={ui.openLeadDrawer} />
+
+      {/* The named, dated ledger behind the dashboard's aggregates. */}
+      <div className="mb-5">
+        <PaymentRegister onOpenLead={ui.openLeadDrawer} />
+      </div>
 
       {/* Drill-in banner: says exactly what restricted the list and how to get
           out of it. A filter you cannot see is a bug report. */}

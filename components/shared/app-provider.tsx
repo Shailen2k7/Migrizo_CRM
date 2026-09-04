@@ -510,7 +510,9 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
       currency: input.currency || 'INR',
       status: input.status || 'paid',
       due_date: input.due_date || null,
-      paid_at: input.status === 'paid' || !input.status ? new Date().toISOString() : null,
+      // An explicit paid_at wins: a payment entered late still belongs to the
+      // month the money arrived, not the month it was typed in.
+      paid_at: input.status === 'paid' || !input.status ? (input.paid_at || new Date().toISOString()) : null,
       note: input.note || null,
       created_by: user.id,
     };

@@ -13,6 +13,13 @@ interface Props { open: boolean; onClose: () => void; presetLeadId?: string | nu
 
 type RecordMode = 'received' | 'scheduled';
 
+/** Today as YYYY-MM-DD in LOCAL time. toISOString() would return yesterday
+ *  for any IST moment before 05:30, which would quietly misfile payments. */
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
   const { leads, recordPayment, updateLead } = useApp();
   const [leadId, setLeadId] = useState<string>('');
@@ -23,6 +30,10 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<RecordMode>('received');
   const [dueDate, setDueDate] = useState<string>(''); // YYYY-MM-DD format
+  // The day the money actually arrived. Defaults to today, but a payment
+  // being entered late must be filed under the month it was received, not the
+  // month somebody got round to typing it in.
+  const [paidDate, setPaidDate] = useState<string>('');
   const [currency, setCurrency] = useState<Currency>('INR');
 
   const selectedLead = useMemo(() => leads.find((l) => l.id === leadId) || null, [leads, leadId]);
@@ -44,6 +55,7 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
       setAmount('');
       setNote('');
       setMode('received');
+      setPaidDate(localToday());
       // Default due date to 7 days from now
       const defaultDue = new Date();
       defaultDue.setDate(defaultDue.getDate() + 7);
@@ -83,6 +95,7 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
       currency,
       status,
       due_date: mode === 'scheduled' ? dueDate : null,
+      paid_at: mode === 'received' && paidDate ? new Date(`${paidDate}T12:00:00`).toISOString() : undefined,
       note: note.trim() || null,
     });
     setBusy(false);
@@ -199,6 +212,28 @@ export function RecordPaymentDialog({ open, onClose, presetLeadId }: Props) {
             {amount && Number(amount) > 0 && <div className="text-[11px] text-muted mt-1">{formatMoney(Math.round(Number(amount)), currency)}</div>}
           </div>
         </div>
+
+        {/* Date received — only in received mode. Without this every payment
+            lands on today's date, which is how historical payments all end up
+            stacked under the month the CRM was populated. */}
+        {mode === 'received' && (
+          <div>
+            <label className="input-label">Date received <span className="text-faint">· change it if the money came in earlier</span></label>
+            <input
+              type="date"
+              className="input"
+              max={localToday()}
+              value={paidDate}
+              onChange={(e) => setPaidDate(e.target.value)}
+            />
+            {paidDate && paidDate !== localToday() && (
+              <div className="text-[11.5px] mt-1.5 text-muted">
+                This payment will be counted in{' '}
+                <b className="text-ink-2">{new Date(`${paidDate}T12:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</b>.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Due date — only shown in scheduled mode */}
         {mode === 'scheduled' && (

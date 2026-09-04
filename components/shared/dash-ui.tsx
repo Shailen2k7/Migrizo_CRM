@@ -150,8 +150,13 @@ export interface FunnelStep { label: string; value: number }
 
 /**
  * The funnel: bar heights relative to the first step, per-step conversion and
- * loss underneath, the single biggest drop badged in the gutter where it
- * happens, and the leak sentence spelled out below.
+ * shortfall underneath, the single biggest gap badged in the gutter where it
+ * happens, and that gap spelled out below.
+ *
+ * The wording is deliberately "has not reached", never "lost". A lead sitting
+ * at Cold in the current month has not been lost — it arrived days ago and is
+ * still being worked. Calling that a loss in a Monday review turns an ordinary
+ * pipeline into a crisis that isn't happening.
  */
 export function Funnel({ steps, leakNoun }: { steps: FunnelStep[]; leakNoun: string }) {
   if (!steps.length || steps[0].value === 0) {
@@ -190,7 +195,7 @@ export function Funnel({ steps, leakNoun }: { steps: FunnelStep[]; leakNoun: str
                 <div className="num text-[18px] font-extrabold leading-none tracking-tight">{s.value}</div>
                 <div className="mt-0.5 text-[11px] text-muted">{s.label}</div>
                 {share !== null
-                  ? <div className="mt-0.5 text-[10.5px] font-bold text-indigo">{share}%{lost > 0 && <span className="font-semibold text-faint"> · lost {lost}</span>}</div>
+                  ? <div className="mt-0.5 text-[10.5px] font-bold text-indigo">{share}%{lost > 0 && <span className="font-semibold text-faint"> · {lost} not yet</span>}</div>
                   : <div className="mt-0.5 text-[10.5px] font-bold text-faint">start</div>}
               </div>
             </div>
@@ -199,8 +204,8 @@ export function Funnel({ steps, leakNoun }: { steps: FunnelStep[]; leakNoun: str
       </div>
       {biggest.lost > 0 && (
         <div className="mt-3.5 rounded-xl border border-[#F3E0B8] bg-[#FFF7E6] px-3.5 py-2.5 text-[12.5px] text-[#7A5406]">
-          <b className="text-[#5C3F04]">Biggest leak:</b> {biggest.lost} {leakNoun} drop out between{' '}
-          <b className="text-[#5C3F04]">{biggest.from}</b> and <b className="text-[#5C3F04]">{biggest.to}</b>.
+          <b className="text-[#5C3F04]">Biggest gap:</b> {biggest.lost} {leakNoun} reached{' '}
+          <b className="text-[#5C3F04]">{biggest.from}</b> but not <b className="text-[#5C3F04]">{biggest.to}</b>.
         </div>
       )}
     </>
