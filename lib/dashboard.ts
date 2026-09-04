@@ -14,7 +14,7 @@
 //      looks like a collapse and means nothing.
 // ============================================================================
 
-export type Grain = 'week' | 'month' | 'd30';
+export type Grain = 'week' | 'month' | 'd30' | 'all';
 
 export interface Period {
   key: string;
@@ -58,6 +58,15 @@ export function buildPeriods(now = new Date()): Map<string, Period> {
     from: new Date(today.getTime() - 60 * MS_DAY), to: new Date(today.getTime() - 30 * MS_DAY),
     prevKey: null });
 
+  // All time. `to` is pushed a day past midnight tonight so anything stamped
+  // later today still lands inside it, and `from` predates any record this
+  // system could hold. prevKey is null on purpose: there is nothing before
+  // all time to compare against, and the pickers key off that.
+  map.set('all', {
+    key: 'all', label: 'All time', short: 'All time', grain: 'all',
+    from: new Date(0), to: new Date(today.getTime() + MS_DAY), prevKey: null,
+  });
+
   const y = now.getFullYear();
   for (let m = 0; m <= now.getMonth(); m++) {
     const key = `m${m}`;
@@ -75,17 +84,21 @@ export function buildPeriods(now = new Date()): Map<string, Period> {
   return map;
 }
 
-/** Picker order: the working periods first, then the year's months. */
+/** Picker order: the working periods, then all time, then the year's months. */
 export function primaryOptions(periods: Map<string, Period>, now = new Date()): string[] {
   const months: string[] = [];
   for (let m = 0; m < now.getMonth(); m++) months.push(`m${m}`);
-  return ['w0', 'w1', `m${now.getMonth()}`, 'd30', ...months.reverse()];
+  return ['w0', 'w1', `m${now.getMonth()}`, 'd30', 'all', ...months.reverse()];
 }
 
 /** Rule 3: only same-grain comparisons are ever offered. */
 export function compareOptions(periods: Map<string, Period>, periodKey: string): string[] {
   const p = periods.get(periodKey);
   if (!p) return ['prev'];
+  // All time has no peer and no predecessor. Returning nothing is the signal
+  // the dashboards read to hide their comparison control entirely, rather than
+  // offering a choice that could only ever resolve to null.
+  if (p.grain === 'all') return [];
   const same = [...periods.values()]
     .filter((x) => x.grain === p.grain && x.key !== periodKey && x.key !== 'd30p')
     .map((x) => x.key);
