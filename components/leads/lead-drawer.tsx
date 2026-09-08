@@ -582,6 +582,11 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                             AD FORM
                           </span>
                         )}
+                        {(effectiveLead.tags || []).includes('website-popup') && (
+                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: '#DFF3EB', color: '#006B47' }}>
+                            WEBSITE
+                          </span>
+                        )}
                       </div>
                     </Row>
                     <Row label="Phone">

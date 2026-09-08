@@ -31,6 +31,8 @@ const CORE_KEYS = new Set([
   // Optional attribution Make can send from "Get Lead Details". All are
   // optional — the endpoint works exactly as before when they are absent.
   'meta_lead_id', 'created_time', 'ad_name', 'form_name', 'campaign_name', 'platform',
+  // Lets a non-Meta caller (the website popup) label itself. Absent = Meta.
+  'tags',
 ]);
 
 /** Meta's CSV export prefixes phone with "p:" and form ids with "f:". Strip them. */
@@ -259,7 +261,12 @@ export async function POST(req: Request) {
       source: body.source || 'Meta Ads',
       stage: 'cold',
       visa_type: body.visa_type || null,
-      tags: ['meta-lead'],
+      // Defaults to ['meta-lead'] so the Make.com scenario is unchanged. The
+      // website popup sends ['website-popup'] so the two channels stay
+      // distinguishable in the drawer and in any per-source reporting.
+      tags: Array.isArray(body.tags) && body.tags.length > 0
+        ? (body.tags as unknown[]).map(String).filter(Boolean)
+        : ['meta-lead'],
       // Derived — what automation reads.
       industry,
       investment_readiness: readiness,
