@@ -286,6 +286,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, reason: insErr.message }, { status: 500 });
   }
 
+  // ---------------------------------------------------------------------------
+  // INTO TODAY'S QUEUE, NOW (088). The nightly generate_daily_queue() refuses
+  // to add to a list it has already built, so without this an inbound lead who
+  // filled the form this morning would not be callable until tomorrow. Never
+  // blocks lead creation: if the queue insert fails the lead still exists and
+  // is visible in the Leads list.
+  // ---------------------------------------------------------------------------
+  let queued = false;
+  try {
+    const { data: qId, error: qErr } = await admin.rpc('enqueue_lead_now', {
+      p_workspace_id: ws.id,
+      p_lead_id: lead.id,
+    });
+    if (qErr) console.error('[ingest] enqueue_lead_now failed (lead still created)', qErr);
+    queued = !!qId;
+  } catch (e) {
+    console.error('[ingest] enqueue_lead_now threw (lead still created)', e);
+  }
+
   await logIngest(admin, {
     outcome: 'created', workspace_id: ws.id, lead_id: lead.id, ms: Date.now() - t0,
     full_name: fullName, phone, email, payload: intake,
@@ -334,7 +353,7 @@ export async function POST(req: Request) {
   // nobody mapped shows up as null there instead of being discovered weeks
   // later as a gap in a report.
   return NextResponse.json({
-    ok: true, id: lead.id, welcomed, duplicate: false, returning: false,
+    ok: true, id: lead.id, welcomed, queued, duplicate: false, returning: false,
     industry, investment_readiness: readiness,
     // Where each answer was found — visible in Make's execution history, so a
     // remapped form shows up there instead of weeks later in a report.
