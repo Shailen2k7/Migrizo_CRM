@@ -8,6 +8,7 @@ import { Topbar } from '@/components/topbar';
 import { LeadsTable } from '@/components/leads/leads-table';
 import { LeadsDashboard, type DashFilter } from '@/components/leads/leads-dashboard';
 import { industryLabel } from '@/lib/types';
+import { READINESS_META, type Readiness } from '@/lib/intake';
 import { toast } from 'sonner';
 
 function LeadsPageInner() {
@@ -25,10 +26,15 @@ function LeadsPageInner() {
 
   const exportCsv = () => {
     if (leads.length === 0) { toast.error('No leads to export'); return; }
-    const headers = ['Full Name', 'Phone', 'Email', 'Industry', 'Tags', 'Visa Type', 'Stage', 'Score', 'Next Follow-up', 'Payment Status', 'Amount Paid', 'Last Note'];
+    const headers = ['Full Name', 'Phone', 'Email', 'Industry', 'Willing to Pay', 'Tags', 'Visa Type', 'Stage', 'Score', 'Next Follow-up', 'Payment Status', 'Amount Paid', 'Last Note'];
     const rows = leads.map((l) => [
       l.full_name, l.phone || '', l.email || '',
-      industryLabel(l.industry), (l.tags || []).join(', '),
+      industryLabel(l.industry),
+      // Straight from the Meta ad form. Blank readiness means the question was
+      // never asked, which is NOT the same as "No" — writing No there would
+      // invent a refusal nobody made, so it stays explicitly "Not asked".
+      READINESS_META[l.investment_readiness as Readiness]?.short ?? 'Not asked',
+      (l.tags || []).join(', '),
       l.visa_type || '', l.stage, l.score, l.next_follow_up || '',
       l.payment_status, l.amount_paid, l.last_note || '',
     ]);
