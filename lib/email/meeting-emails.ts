@@ -13,7 +13,7 @@ const MUTED = '#6B7280';
 const LOGO = 'https://crm.migrizo.com/migrizo-email-logo.png';
 const SITE = 'https://crm.migrizo.com';
 
-export type ReminderKind = 'confirm' | 'h24' | 'h3' | 'h1' | 'm15' | 'start' | 'followup';
+export type ReminderKind = 'confirm' | 'h24' | 'h3' | 'h1' | 'm15' | 'start' | 'followup' | 'thanks';
 
 export interface MeetingEmailInput {
   kind: ReminderKind;
@@ -48,9 +48,40 @@ const COPY: Record<ReminderKind, { subject: (s: string) => string; headline: str
   m15:      { subject: (s) => `Starting soon: your Migrizo consultation`, headline: 'Starting in 15 minutes', line: 'Your consultation begins in 15 minutes. Click below when you\'re ready to join.' },
   start:    { subject: (s) => `We\'re live: join your Migrizo consultation`, headline: 'Your meeting is starting now', line: 'We\'re ready for you — join with the button below.' },
   followup: { subject: (s) => `We missed you — shall we reschedule?`, headline: 'We couldn\'t see you in the meeting', line: 'It looks like you weren\'t able to join. No problem at all — you can pick a new time in one click below, and we\'ll be happy to speak then.' },
+  // PC2 — the same words as the WhatsApp template, so a client who gets both
+  // reads one message twice rather than two different ones.
+  thanks:   { subject: () => `Thank you for speaking with Migrizo today`, headline: 'Thank you for your time today', line: 'It was great speaking with you. We look forward to staying connected and taking this discussion forward.' },
 };
 
+const LINKEDIN = 'https://www.linkedin.com/in/shailendra-pathak/';
+const CHANNEL = 'https://whatsapp.com/channel/0029Vb8ysOpAInPkWlJUxv0Z';
+const WA_GREEN = '#25D366';
+
+/**
+ * The WhatsApp channel invitation, on every meeting email — before the call and
+ * after it. Deliberately quiet: a bordered row rather than a second big button,
+ * so it never competes with Join / Reschedule on a reminder, or with the
+ * LinkedIn button on the thank-you.
+ *
+ * A plain <a> in a table cell, no flexbox and no background image, because
+ * Outlook renders neither.
+ */
+const channelRow = (marginTop: number) => `
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:${marginTop}px 0 0;"><tr>
+          <td style="background:#F2FBF5;border:1px solid #CFEFDC;border-radius:12px;padding:14px 18px;">
+            <div style="font-size:13px;font-weight:800;color:${NAVY};margin-bottom:3px;">&#128241;&nbsp; Join our WhatsApp channel</div>
+            <div style="font-size:12.5px;color:${INK};line-height:1.65;">
+              UK Global Talent Visa updates, policy changes and endorsement tips &mdash; straight to your phone.
+            </div>
+            <a href="${CHANNEL}" target="_blank" style="display:inline-block;margin-top:10px;padding:10px 16px;font-size:12.5px;font-weight:800;color:#ffffff;background:${WA_GREEN};border-radius:9px;text-decoration:none;">Follow the channel</a>
+          </td>
+        </tr></table>`;
+
+const channelText = `Join our WhatsApp channel for UK Global Talent Visa updates:
+${CHANNEL}`;
+
 export function renderMeetingEmail(m: MeetingEmailInput): { subject: string; html: string; text: string } {
+  if (m.kind === 'thanks') return renderThanks(m);
   const c = COPY[m.kind];
   const when = fmtWhen(m.startsAt, m.clientTz || 'Asia/Kolkata');
   const dateShort = new Intl.DateTimeFormat('en-GB', { timeZone: m.clientTz || 'Asia/Kolkata', day: 'numeric', month: 'short' }).format(m.startsAt);
@@ -105,6 +136,7 @@ export function renderMeetingEmail(m: MeetingEmailInput): { subject: string; htm
           <a href="${manage}" target="_blank" style="display:inline-block;margin:4px 6px;padding:11px 16px;font-size:12.5px;font-weight:700;color:${INK};border:1.5px solid #D9DFF0;border-radius:9px;text-decoration:none;">&#128260;&nbsp;Reschedule</a>
           <a href="${manage}?intent=cancel" target="_blank" style="display:inline-block;margin:4px 6px;padding:11px 16px;font-size:12.5px;font-weight:700;color:#B91C1C;border:1.5px solid #F2C6C6;border-radius:9px;text-decoration:none;">&#10060;&nbsp;Cancel</a>
         </td></tr></table>
+        ${channelRow(18)}
       </td></tr>
       <tr><td style="background:${NAVY};padding:22px 34px;" align="left">
         <div style="font-size:14px;font-weight:800;color:#ffffff;">Migrizo</div>
@@ -126,7 +158,61 @@ ${m.meetLink ? `Join: ${m.meetLink}\n` : ''}Add to Google Calendar: ${gcal}
 Reschedule: ${manage}
 Cancel: ${manage}?intent=cancel
 
+${channelText}
+
 Migrizo · www.migrizo.com · info@migrizo.com`;
 
   return { subject: c.subject(dateShort), html, text };
+}
+
+/**
+ * The post-call thank-you. Deliberately NOT the meeting layout: no join button,
+ * no reschedule, no cancel — the call has happened. Just the note and one
+ * link, exactly like the WhatsApp version.
+ */
+function renderThanks(m: MeetingEmailInput): { subject: string; html: string; text: string } {
+  const c = COPY.thanks;
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/></head>
+<body style="margin:0;padding:0;background:#EEF1F8;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+  <span style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(c.line)}</span>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EEF1F8;padding:28px 12px;"><tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;box-shadow:0 6px 26px rgba(22,41,78,0.10);border-radius:16px;overflow:hidden;">
+      <tr><td style="background:#ffffff;padding:26px 34px 0;" align="left">
+        <img src="${LOGO}" alt="Migrizo" width="176" style="display:block;max-width:176px;height:auto;"/>
+      </td></tr>
+      <tr><td style="background:#ffffff;padding:14px 34px 0;"><div style="height:3px;width:100%;background:linear-gradient(90deg,${GOLD} 0%,${BLUE} 55%,${NAVY} 100%);border-radius:3px;"></div></td></tr>
+      <tr><td style="background:#ffffff;padding:28px 34px 34px;">
+        <h1 style="margin:0 0 14px;font-size:24px;line-height:1.3;color:${NAVY};font-weight:800;">${c.headline}</h1>
+        <p style="margin:0 0 18px;font-size:14.5px;line-height:1.75;color:${INK};">Hi ${esc(m.clientName)},<br/><br/>${c.line}</p>
+        <p style="margin:0 0 6px;font-size:14.5px;line-height:1.75;color:${INK};">This is my LinkedIn profile:</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:10px 0 4px;"><tr><td bgcolor="${GOLD}" style="border-radius:12px;">
+          <a href="${LINKEDIN}" target="_blank" style="display:block;padding:14px 22px;font-size:14.5px;font-weight:800;color:${NAVY};border-radius:12px;text-decoration:none;">Connect on LinkedIn</a>
+        </td></tr></table>
+        <p style="margin:10px 0 0;font-size:12.5px;line-height:1.7;color:${MUTED};"><a href="${LINKEDIN}" style="color:${BLUE};">${LINKEDIN}</a></p>
+        ${channelRow(20)}
+        <p style="margin:22px 0 0;font-size:14.5px;line-height:1.75;color:${INK};">Regards,<br/><b>${esc(m.memberName)}</b><br/>Migrizo</p>
+      </td></tr>
+      <tr><td style="background:${NAVY};padding:22px 34px;" align="left">
+        <div style="font-size:14px;font-weight:800;color:#ffffff;">Migrizo</div>
+        <div style="font-size:11.5px;color:#C7D0E4;margin-top:5px;line-height:1.7;">Smart. Fast. Reliable Visas &middot; <a href="https://www.migrizo.com" style="color:${GOLD};text-decoration:none;">www.migrizo.com</a> &middot; <a href="mailto:info@migrizo.com" style="color:${GOLD};text-decoration:none;">info@migrizo.com</a></div>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`;
+  const text = `${c.headline}
+
+Hi ${m.clientName},
+
+${c.line}
+
+This is my LinkedIn profile:
+${LINKEDIN}
+
+${channelText}
+
+Regards,
+${m.memberName}
+Migrizo · www.migrizo.com · info@migrizo.com`;
+  return { subject: c.subject(''), html, text };
 }

@@ -98,7 +98,9 @@ export default function MeetingsPage() {
 
   async function setStatus(m: Meeting, status: string) {
     await supabase.from('meetings').update({ status, updated_at: new Date().toISOString() }).eq('id', m.id);
-    if (status !== 'upcoming') await supabase.from('meeting_reminders').update({ status: 'skipped' }).eq('meeting_id', m.id).eq('status', 'queued');
+    // Leaving 'upcoming' cancels the pending reminders — but never the thank-you
+    // that the database just queued for a completed call (migration 119).
+    if (status !== 'upcoming') await supabase.from('meeting_reminders').update({ status: 'skipped' }).eq('meeting_id', m.id).eq('status', 'queued').neq('kind', 'thanks');
     await supabase.from('meeting_activity').insert({ meeting_id: m.id, workspace_id: workspace.id, event: 'status_changed', meta: { to: status } });
     setMeetings((prev) => prev.map((x) => (x.id === m.id ? { ...x, status } : x)));
     if (selected?.id === m.id) setSelected({ ...m, status });

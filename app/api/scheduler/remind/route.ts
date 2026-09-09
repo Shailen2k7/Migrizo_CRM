@@ -43,7 +43,10 @@ export async function POST(req: Request) {
       await admin.from('meeting_reminders').update({ status: 'skipped' }).eq('id', r.id);
       skipped++; continue;
     }
-    if (!m || !member || m.status !== 'upcoming') {
+    // Reminders only make sense for a meeting still ahead; the thank-you only
+    // for one that happened. Anything else is skipped, never sent by mistake.
+    const wantStatus = r.kind === 'thanks' ? 'completed' : 'upcoming';
+    if (!m || !member || m.status !== wantStatus || !m.client_email) {
       await admin.from('meeting_reminders').update({ status: 'skipped' }).eq('id', r.id);
       skipped++; continue;
     }
