@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Megaphone, ListChecks, PanelLeftClose, PanelLeftOpen, FileUp } from 'lucide-react';
+import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Megaphone, ListChecks, PanelLeftClose, PanelLeftOpen, FileUp, MoreHorizontal, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
@@ -10,6 +10,8 @@ import { toast } from 'sonner';
 
 import { useApp } from '@/components/shared/app-provider';
 import { isFollowUpOverdue, isFollowUpToday } from '@/lib/types';
+import { applyNavPrefs, clearNavPrefs, loadNavPrefs, saveNavPrefs, EMPTY_PREFS, type NavPrefs } from '@/lib/nav-prefs';
+import { NavCustomiser } from '@/components/nav-customiser';
 
 // `newUntil`: show the NEW pill only until this date (YYYY-MM-DD), then it
 // disappears automatically. Set it ~4 days ahead whenever a feature ships.
@@ -59,6 +61,18 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
   const router = useRouter();
   const supabase = createClient();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [prefs, setPrefs] = useState<NavPrefs>(EMPTY_PREFS);
+  const [customising, setCustomising] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  // Read in an effect, not in useState's initialiser: the server renders this
+  // too, and localStorage does not exist there. Reading it during the first
+  // render would make the server and client disagree and React would throw
+  // away the markup.
+  useEffect(() => { setPrefs(loadNavPrefs()); }, []);
+
+  const updatePrefs = (next: NavPrefs) => { setPrefs(next); saveNavPrefs(next); };
+  const resetPrefs = () => { setPrefs(EMPTY_PREFS); clearNavPrefs(); };
 
 
   // Hide the Payments item for team members the admin hasn't granted access to.
@@ -69,6 +83,21 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
     if (item.adminOnly && role !== 'admin') return false;
     return true;
   });
+
+  const { main: mainNav, more: moreNav } = applyNavPrefs(nav, prefs);
+  // The same list the sidebar shows, in one flat run — what the customiser
+  // edits, so the two can never disagree about the order.
+  const orderRank = new Map(prefs.order.map((h, i) => [h, i]));
+  const orderedNav = [...mainNav, ...moreNav].sort((a, b) => {
+    const ra = orderRank.has(a.href) ? orderRank.get(a.href)! : Number.MAX_SAFE_INTEGER;
+    const rb = orderRank.has(b.href) ? orderRank.get(b.href)! : Number.MAX_SAFE_INTEGER;
+    return ra !== rb ? ra - rb : nav.indexOf(a) - nav.indexOf(b);
+  });
+
+  // Keep "More" open while you are inside one of its pages, so the menu never
+  // looks as though the page you are on is not in it.
+  const activeInMore = moreNav.some((i) => path === i.href || path.startsWith(i.href + '/'));
+  useEffect(() => { if (activeInMore) setMoreOpen(true); }, [activeInMore]);
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -116,7 +145,9 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
       )}
 
       <nav className="px-3 flex-1 overflow-y-auto space-y-0.5">
-        {nav.map((item) => {
+        {/* Collapsed to a 68px rail there are only icons, so a "More" group
+            would hide things behind a second click for no gain in space. */}
+        {(collapsed ? nav : mainNav).map((item) => {
           const Icon = item.icon;
           const active = path === item.href || path.startsWith(item.href + '/');
           return (
@@ -144,6 +175,58 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
             </Link>
           );
         })}
+
+        {/* ── More ─────────────────────────────────────────────────────── */}
+        {!collapsed && moreNav.length > 0 && (
+          <>
+            <button
+              onClick={() => setMoreOpen((v) => !v)}
+              aria-expanded={moreOpen}
+              className={`nav-item w-full ${activeInMore && !moreOpen ? 'active' : ''}`}
+            >
+              <span className="relative flex-shrink-0"><MoreHorizontal className="h-[17px] w-[17px]" /></span>
+              <span>More</span>
+              <ChevronDown className={`ml-auto h-3.5 w-3.5 text-faint transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            <div
+              className="overflow-hidden transition-[max-height,opacity] duration-250 ease-out"
+              style={{ maxHeight: moreOpen ? moreNav.length * 40 + 8 : 0, opacity: moreOpen ? 1 : 0 }}
+            >
+              <div className="space-y-0.5 border-l border-border pl-2 ml-3.5 mt-0.5">
+                {moreNav.map((item) => {
+                  const Icon = item.icon;
+                  const active = path === item.href || path.startsWith(item.href + '/');
+                  return (
+                    <Link key={item.href} href={item.href} onClick={onClose}
+                      className={`nav-item relative ${active ? 'active' : ''}`}>
+                      <span className="relative flex-shrink-0"><Icon className="h-[17px] w-[17px]" /></span>
+                      <span>{item.label}</span>
+                      {item.href === '/leads' && leadsCount > 0 && <span className="ml-auto count">{leadsCount}</span>}
+                      {item.href === '/cases' && casesCount > 0 && <span className="ml-auto count">{casesCount}</span>}
+                      {item.href === '/daily-tracker' && urgentFollowUps > 0 && (
+                        <span className="ml-auto count" style={{ background: '#FEE2E2', color: '#B91C1C' }}>{urgentFollowUps}</span>
+                      )}
+                      {isNew(item.newUntil) && (
+                        <span className="ml-auto chip" style={{ background: 'hsl(var(--indigo-soft))', color: '#4338CA', border: 'none', fontSize: '9px', padding: '1px 5px' }}>NEW</span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Quiet until you go looking for it. */}
+        {!collapsed && (
+          <button
+            onClick={() => setCustomising(true)}
+            className="mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-[12.2px] text-faint opacity-0 transition hover:bg-surface-2 hover:text-ink group-hover/side:opacity-100 focus:opacity-100"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" /> Customise menu
+          </button>
+        )}
       </nav>
 
       <div className="px-3 py-3 relative">
@@ -166,6 +249,16 @@ export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, o
       </div>
 
     </aside>
+
+    {customising && (
+      <NavCustomiser
+        items={orderedNav}
+        prefs={prefs}
+        onChange={updatePrefs}
+        onReset={resetPrefs}
+        onClose={() => setCustomising(false)}
+      />
+    )}
     </>
   );
 }
