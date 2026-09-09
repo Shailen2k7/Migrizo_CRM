@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Megaphone, ListChecks, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, Users, IndianRupee, Settings, LogOut, ChevronsUpDown, Briefcase, Activity, SquareKanban, CalendarDays, BookOpen, Megaphone, ListChecks, PanelLeftClose, PanelLeftOpen, FileUp } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { initials } from '@/lib/utils';
@@ -23,6 +23,7 @@ function isNew(newUntil?: string): boolean {
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/leads', label: 'Leads', icon: Users },
+  { href: '/cv-import', label: 'Import CVs', icon: FileUp, newUntil: '2026-09-14' },
   { href: '/pipeline', label: 'Pipeline', icon: SquareKanban },
   { href: '/cases', label: 'Cases', icon: Briefcase },
   { href: '/daily-tracker', label: 'Daily tracker', icon: Activity },
