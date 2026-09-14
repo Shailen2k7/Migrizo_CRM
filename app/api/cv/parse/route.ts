@@ -12,7 +12,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { extractCv } from '@/lib/cv/extract';
-import { matchLead, type LeadLite } from '@/lib/cv/match';
+import { matchLead, fingerprint, type LeadLite } from '@/lib/cv/match';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,6 +51,30 @@ export async function POST(req: NextRequest) {
     if (data.length < 1000) break;
   }
 
+  // WHAT IS ALREADY ON RECORD.
+  //
+  // Only leads that actually have a profile are read — a few dozen rows, not
+  // the whole table — and only their FINGERPRINT travels back to the browser,
+  // never the stored text. That is enough for the review table to say "already
+  // saved" about any lead the person picks, including one they choose by hand
+  // from the dropdown after the match was made.
+  const profiles: Record<string, { hash: string; cvName: string | null; savedAt: string | null }> = {};
+  for (let page = 0; page < 10; page++) {
+    const { data } = await supabase
+      .from('leads').select('id, cv_name, profile_received_at, profile_text')
+      .eq('workspace_id', ws).eq('is_sample', false).not('profile_text', 'is', null)
+      .range(page * 500, page * 500 + 499);
+    if (!data?.length) break;
+    for (const l of data) {
+      profiles[l.id as string] = {
+        hash: fingerprint(l.profile_text as string),
+        cvName: (l.cv_name as string) || null,
+        savedAt: (l.profile_received_at as string) || null,
+      };
+    }
+    if (data.length < 500) break;
+  }
+
   const results = [];
   for (const f of files) {
     if (f.size > MAX_FILE_BYTES) {
@@ -66,11 +90,12 @@ export async function POST(req: NextRequest) {
         kind: x.kind, text: x.text, bytes: Buffer.byteLength(x.text, 'utf8'),
         rawBytes: x.rawBytes, condensed: x.condensed, cvScore: x.cvScore,
         contacts: x.contacts, match,
+        textHash: fingerprint(x.text),
       });
     } catch (e) {
       results.push({ filename: f.name, ok: false, error: e instanceof Error ? e.message : 'Could not read this file.' });
     }
   }
 
-  return NextResponse.json({ ok: true, results });
+  return NextResponse.json({ ok: true, results, profiles });
 }

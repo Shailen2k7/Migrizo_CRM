@@ -34,9 +34,27 @@ interface Row {
   text?: string; bytes?: number; rawBytes?: number; condensed?: boolean; cvScore?: number;
   contacts?: { emails: string[]; phones: string[]; nameGuess: string | null };
   match?: Match;
+  /** Fingerprint of THIS file's text, compared against what the lead already has. */
+  textHash?: string;
   // review state
   leadId: string | null; include: boolean; open: boolean;
 }
+
+/** What the chosen lead already has on record, if anything. */
+interface Existing { hash: string; cvName: string | null; savedAt: string | null }
+
+/**
+ * Three answers, and the difference between the last two matters:
+ *
+ *   'same'     byte-for-byte the profile already saved. Saving changes nothing
+ *              except the timestamp, so the row is switched off and says so.
+ *   'replaces' the lead has a CV, but a DIFFERENT one. Could be a genuine
+ *              update, could be the wrong person — so it is switched off and
+ *              names the date of what it would overwrite. Ticking it is a
+ *              decision somebody makes, not a default.
+ *   null       nothing there. Normal.
+ */
+type DupState = 'same' | 'replaces' | null;
 
 const fmtKB = (b?: number) => (b == null ? '—' : `${(b / 1024).toFixed(1)} KB`);
 
@@ -47,6 +65,7 @@ export default function CvImportPage() {
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [drag, setDrag] = useState(false);
+  const [profiles, setProfiles] = useState<Record<string, Existing>>({});
   const inputRef = useRef<HTMLInputElement>(null);
 
   const leadOptions = useMemo(
@@ -69,20 +88,32 @@ export default function CvImportPage() {
       const r = await fetch('/api/cv/parse', { method: 'POST', body: fd });
       const j = await r.json();
       if (!j.ok) { toast.error(j.error || 'Could not read the files.'); setBusy(false); return; }
+      const map: Record<string, Existing> = j.profiles || {};
+      setProfiles((prev) => ({ ...prev, ...map }));
+
       const next: Row[] = (j.results as Omit<Row, 'key' | 'leadId' | 'include' | 'open'>[]).map((res, i) => {
         const exact = res.ok && res.match?.confidence === 'exact';
         const looksLikeCv = (res.cvScore ?? 0) >= 0.4;
+        const leadId = res.match?.leadId ?? null;
+        const have = leadId ? map[leadId] : undefined;
+        // Anything already on record starts switched OFF — a duplicate must
+        // never arrive pre-armed to overwrite.
+        const fresh = !have;
         return {
           ...res,
           key: `${Date.now()}-${i}-${res.filename}`,
-          leadId: res.match?.leadId ?? null,
-          include: !!(exact && looksLikeCv),
+          leadId,
+          include: !!(exact && looksLikeCv && fresh),
           open: false,
         };
       });
       setRows((prev) => [...next, ...prev]);
+
+      const dupes = next.filter((r) => r.leadId && map[r.leadId] && map[r.leadId].hash === r.textHash).length;
       const exact = next.filter((r) => r.match?.confidence === 'exact').length;
-      toast.success(`${next.length} read · ${exact} matched exactly`);
+      toast.success(
+        `${next.length} read · ${exact} matched exactly` + (dupes ? ` · ${dupes} already saved` : ''),
+      );
     } catch {
       toast.error('Upload failed.');
     }
@@ -93,6 +124,17 @@ export default function CvImportPage() {
     e.preventDefault(); setDrag(false);
     parse(Array.from(e.dataTransfer.files));
   };
+
+  /** Re-evaluated against whatever lead is selected right now, not just the match. */
+  const dupOf = useCallback((r: Row): DupState => {
+    if (!r.ok || !r.leadId) return null;
+    const have = profiles[r.leadId];
+    if (!have) return null;
+    return have.hash === r.textHash ? 'same' : 'replaces';
+  }, [profiles]);
+
+  const whenSaved = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'earlier';
 
   // ── save ──────────────────────────────────────────────────────────────
   const toSave = rows.filter((r) => r.include && r.ok && r.leadId && r.text);
@@ -161,6 +203,12 @@ export default function CvImportPage() {
               <b className="text-ink">{rows.filter((r) => r.match?.confidence === 'exact').length}</b> exact ·{' '}
               <b className="text-ink">{rows.filter((r) => r.match?.confidence === 'fuzzy').length}</b> need a look ·{' '}
               <b className="text-ink">{rows.filter((r) => r.ok && (r.match?.confidence === 'none')).length}</b> unmatched
+              {rows.filter((r) => dupOf(r) === 'same').length > 0 && (
+                <> · <b className="text-[#047857]">{rows.filter((r) => dupOf(r) === 'same').length}</b> already saved</>
+              )}
+              {rows.filter((r) => dupOf(r) === 'replaces').length > 0 && (
+                <> · <b className="text-[#B45309]">{rows.filter((r) => dupOf(r) === 'replaces').length}</b> would replace</>
+              )}
             </div>
             <div className="ml-auto flex items-center gap-2">
               <button onClick={() => setRows([])} className="btn btn-outline"><X className="h-4 w-4" /> Clear</button>
@@ -176,10 +224,17 @@ export default function CvImportPage() {
             {rows.map((r) => {
               const conf = r.match?.confidence ?? 'none';
               const looksLikeCv = (r.cvScore ?? 0) >= 0.4;
-              const Icon = !r.ok ? AlertTriangle : conf === 'exact' ? CheckCircle2 : conf === 'fuzzy' ? HelpCircle : Search;
-              const iconColor = !r.ok ? 'text-[#B91C1C]' : conf === 'exact' ? 'text-[#047857]' : conf === 'fuzzy' ? 'text-[#B45309]' : 'text-faint';
+              const dup = dupOf(r);
+              const have = r.leadId ? profiles[r.leadId] : undefined;
+              const Icon = !r.ok ? AlertTriangle : dup === 'same' ? CheckCircle2 : conf === 'exact' ? CheckCircle2 : conf === 'fuzzy' ? HelpCircle : Search;
+              const iconColor = !r.ok ? 'text-[#B91C1C]' : dup === 'same' ? 'text-faint' : conf === 'exact' ? 'text-[#047857]' : conf === 'fuzzy' ? 'text-[#B45309]' : 'text-faint';
               return (
-                <div key={r.key} className={cn('panel p-3.5', r.include && 'border-[#A7F3D0]')}>
+                <div key={r.key} className={cn(
+                  'panel p-3.5',
+                  r.include && 'border-[#A7F3D0]',
+                  !r.include && dup === 'same' && 'border-border bg-surface-2/40',
+                  !r.include && dup === 'replaces' && 'border-[#FDE68A]',
+                )}>
                   <div className="flex items-start gap-3">
                     <input type="checkbox" checked={r.include} disabled={!r.ok || !r.leadId}
                       onChange={(e) => set(r.key, { include: e.target.checked })}
@@ -199,6 +254,16 @@ export default function CvImportPage() {
                             doesn&apos;t look like a CV
                           </span>
                         )}
+                        {dup === 'same' && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-[#D1FAE5] px-1.5 py-0.5 text-[10.5px] font-bold text-[#065F46]">
+                            <CheckCircle2 className="h-3 w-3" /> already saved
+                          </span>
+                        )}
+                        {dup === 'replaces' && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-[hsl(var(--amber-soft))] px-1.5 py-0.5 text-[10.5px] font-bold text-[#92400E]">
+                            <AlertTriangle className="h-3 w-3" /> would replace a CV
+                          </span>
+                        )}
                       </div>
 
                       {!r.ok ? (
@@ -212,7 +277,12 @@ export default function CvImportPage() {
                           </span>
                           <select
                             value={r.leadId ?? ''}
-                            onChange={(e) => set(r.key, { leadId: e.target.value || null, include: !!e.target.value })}
+                            onChange={(e) => {
+                              const id = e.target.value || null;
+                              // Choosing someone who already has a CV must not
+                              // arm the row either — the same rule as the match.
+                              set(r.key, { leadId: id, include: !!id && !profiles[id] });
+                            }}
                             className="rounded-md border border-border bg-surface px-2 py-1 text-[12px] text-ink focus:outline-none focus:border-indigo"
                           >
                             <option value="">— choose —</option>
@@ -229,6 +299,22 @@ export default function CvImportPage() {
                               open {nameOf(r.leadId)}
                             </button>
                           )}
+                        </div>
+                      )}
+
+                      {dup === 'same' && (
+                        <div className="mt-1.5 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-[11.8px] leading-relaxed text-muted">
+                          This exact CV is already on <b className="text-ink-2">{nameOf(r.leadId)}</b>, saved{' '}
+                          {whenSaved(have?.savedAt ?? null)}
+                          {have?.cvName ? <> as <span className="text-ink-2">{have.cvName}</span></> : null}.
+                          Nothing to do — tick it only if you want to re-save it.
+                        </div>
+                      )}
+                      {dup === 'replaces' && (
+                        <div className="mt-1.5 rounded-lg border border-[#FDE68A] bg-[hsl(var(--amber-soft))] px-2.5 py-1.5 text-[11.8px] leading-relaxed text-[#92400E]">
+                          <b>{nameOf(r.leadId)}</b> already has a different CV, saved {whenSaved(have?.savedAt ?? null)}
+                          {have?.cvName ? <> as <span className="font-semibold">{have.cvName}</span></> : null}.
+                          Ticking this replaces it. The old text is kept in the lead&apos;s activity log.
                         </div>
                       )}
 

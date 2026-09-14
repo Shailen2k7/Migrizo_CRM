@@ -111,3 +111,27 @@ export function matchLead(
     })),
   };
 }
+
+// =============================================================================
+// FINGERPRINT — "have we already got this exact CV?"
+// -----------------------------------------------------------------------------
+// Compares MEANING, not bytes. The same PDF dropped twice can extract with
+// different whitespace depending on how the page broke, and re-exporting a CV
+// from Word changes the file without changing a word of it. So the text is
+// flattened — whitespace collapsed, case dropped — before hashing.
+//
+// The length is carried alongside the hash. A 32-bit hash alone collides once
+// in a few billion; pinning the length too makes a false "already saved" on a
+// CV that is actually different effectively impossible, and that is the one
+// mistake this must never make — it would hide a real update.
+// =============================================================================
+export function fingerprint(text: string | null | undefined): string {
+  const flat = (text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!flat) return '0-0';
+  let h = 0x811c9dc5;
+  for (let i = 0; i < flat.length; i++) {
+    h ^= flat.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `${flat.length}-${h.toString(36)}`;
+}
