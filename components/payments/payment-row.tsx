@@ -8,7 +8,7 @@ import { useApp } from '@/components/shared/app-provider';
 import type { Payment, Milestone } from '@/lib/types';
 import { MILESTONE_META } from '@/lib/types';
 import { formatMoney, moneySymbol, cn } from '@/lib/utils';
-import { FileText, Pencil, Trash2, Send, Download, X, Percent } from 'lucide-react';
+import { FileText, Pencil, Trash2, Send, Download, X, Percent, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Props {
@@ -17,7 +17,7 @@ interface Props {
 }
 
 export function PaymentRow({ payment, currency = 'INR' }: Props) {
-  const { updatePayment, deletePayment, canSendEmails } = useApp();
+  const { updatePayment, deletePayment, canSendEmails, leads, updateLead } = useApp();
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -32,6 +32,21 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
   const [gstRate, setGstRate] = useState<string>(String(payment.gst_rate ?? 0));
   const [gstMode, setGstMode] = useState<'add' | 'inclusive'>((payment.gst_mode ?? 'add') as 'add' | 'inclusive');
   const [savingGst, setSavingGst] = useState(false);
+
+  // ── the client's GST number ───────────────────────────────────────────────
+  // It belongs to the CLIENT, so it is read from and written to the lead. Type
+  // it once here and every future invoice for this person already carries it.
+  const lead = leads.find((l) => l.id === payment.lead_id);
+  const [gstin, setGstin] = useState<string>(lead?.gstin || '');
+  const cleanGstin = gstin.replace(/\s+/g, '').toUpperCase();
+  const gstinValid = cleanGstin.length === 0 || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(cleanGstin);
+  const gstinLooksShort = cleanGstin.length > 0 && cleanGstin.length !== 15;
+  // Migrizo is registered in Uttar Pradesh (09...). A client registered in a
+  // different state is an INTERSTATE supply, which is normally IGST at the full
+  // rate rather than CGST+SGST at half each. We flag it rather than silently
+  // changing the tax on an invoice — that is an accounting decision.
+  const OUR_STATE = '09';
+  const interstate = cleanGstin.length === 15 && cleanGstin.slice(0, 2) !== OUR_STATE;
 
   // One-click branded invoice email for this specific milestone payment.
   const isPaid = payment.status === 'paid';
@@ -55,9 +70,16 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
    * guarantees the document the client receives matches the one you preview.
    */
   const saveGst = async (): Promise<boolean> => {
-    if (rateNum === Number(payment.gst_rate ?? 0) && gstMode === (payment.gst_mode ?? 'add')) return true;
+    const gstinChanged = cleanGstin !== (lead?.gstin || '');
+    const rateChanged = rateNum !== Number(payment.gst_rate ?? 0) || gstMode !== (payment.gst_mode ?? 'add');
+    if (!rateChanged && !gstinChanged) return true;
     setSavingGst(true);
-    await updatePayment(payment.id, { gst_rate: rateNum, gst_mode: gstMode });
+    // The number goes on the lead, the rate on the payment. A malformed GSTIN
+    // is never written — the invoice would carry it to the client's accountant.
+    if (gstinChanged && lead && (gstinValid || cleanGstin.length === 0)) {
+      await updateLead(lead.id, { gstin: cleanGstin || null });
+    }
+    if (rateChanged) await updatePayment(payment.id, { gst_rate: rateNum, gst_mode: gstMode });
     setSavingGst(false);
     return true;
   };
@@ -200,11 +222,50 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
                   </button>
                 ))}
               </div>
-              <button onClick={() => { setGstOpen(false); setGstRate(String(payment.gst_rate ?? 0)); setGstMode((payment.gst_mode ?? 'add') as 'add' | 'inclusive'); }}
+              <button onClick={() => { setGstOpen(false); setGstRate(String(payment.gst_rate ?? 0)); setGstMode((payment.gst_mode ?? 'add') as 'add' | 'inclusive'); setGstin(lead?.gstin || ''); }}
                 className="p-1 rounded hover:bg-surface-2 text-muted hover:text-ink" title="Cancel">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
+
+            {/* The client's GST number. Optional, and says so — most clients
+                are individuals who have none. */}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-2">
+                <Building2 className="w-3.5 h-3.5 text-muted" /> Client GSTIN
+              </span>
+              <input
+                type="text" value={gstin} maxLength={20}
+                onChange={(e) => setGstin(e.target.value)}
+                placeholder="optional · 22AAAAA0000A1Z5"
+                spellCheck={false}
+                className={cn(
+                  'w-[210px] px-2 py-1 rounded-md border bg-surface text-[12.5px] uppercase tracking-wide outline-none transition',
+                  cleanGstin.length === 0 ? 'border-border focus:border-[#4F46E5]'
+                    : gstinValid ? 'border-[#A7F3D0] focus:border-[#047857]'
+                    : 'border-[#FCA5A5] focus:border-[#B91C1C]',
+                )}
+              />
+              {cleanGstin.length > 0 && gstinValid && (
+                <span className="text-[11px] font-semibold text-[#047857]">looks right</span>
+              )}
+              {cleanGstin.length > 0 && !gstinValid && (
+                <span className="text-[11px] text-[#B91C1C]">
+                  {gstinLooksShort ? `${cleanGstin.length} of 15 characters` : 'not a valid GSTIN format'}
+                </span>
+              )}
+              {lead?.gstin && cleanGstin !== lead.gstin && (
+                <button onClick={() => setGstin(lead.gstin || '')}
+                  className="text-[11px] text-muted hover:text-ink underline">undo</button>
+              )}
+            </div>
+
+            {interstate && (
+              <div className="mt-1.5 rounded-lg border border-[#FDE68A] bg-[hsl(var(--amber-soft))] px-2.5 py-1.5 text-[11.5px] leading-relaxed text-[#92400E]">
+                This GSTIN is registered in another state, so the supply is interstate.
+                The invoice will still print <b>CGST + SGST</b>. If it should be <b>IGST {rateNum || 18}%</b> instead, say so and it will be changed.
+              </div>
+            )}
 
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted">
               <span>Taxable <b className="text-ink-2 num">{formatMoney(Math.round(preview.taxable), currency)}</b></span>
@@ -218,14 +279,16 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <button
                 onClick={async () => { await saveGst(); downloadPdf(); }}
-                disabled={savingGst || sendingInvoice}
+                disabled={savingGst || sendingInvoice || !gstinValid}
+                title={!gstinValid ? 'Fix or clear the GSTIN first' : undefined}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-ink-2 bg-surface border border-border hover:bg-surface-2 transition-all disabled:opacity-50"
               >
                 <Download className="w-3.5 h-3.5" /> Save GST &amp; download PDF
               </button>
               <button
                 onClick={async () => { await saveGst(); setGstOpen(false); void sendInvoice(false); }}
-                disabled={savingGst || sendingInvoice}
+                disabled={savingGst || sendingInvoice || !gstinValid}
+                title={!gstinValid ? 'Fix or clear the GSTIN first' : undefined}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
               >
                 <Send className="w-3.5 h-3.5" />
@@ -244,6 +307,7 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
               payment.gst_mode === 'inclusive'
                 ? payment.amount
                 : payment.amount * (1 + Number(payment.gst_rate) / 100)), currency)}</b>
+            {lead?.gstin && <span className="text-faint">· GSTIN {lead.gstin}</span>}
           </div>
         )}
         {payment.note && (

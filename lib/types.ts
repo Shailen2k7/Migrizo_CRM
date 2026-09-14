@@ -67,6 +67,12 @@ export interface Lead {
   won_at: string | null;
   tags: string[];
   industry: string | null;
+  /**
+   * The client's GST number (migration 120). Optional — most leads are
+   * individuals and have none. Typed once on any payment row's GST bar and
+   * reused by every invoice for that client.
+   */
+  gstin?: string | null;
   // Ad-form intake (migration 050). investment_readiness is DERIVED and is what
   // automation reads; intake holds the raw answers verbatim so a mapping change
   // can always be re-run against the originals. NULL readiness means the

@@ -762,7 +762,7 @@ export function invoiceNumber(payment: { id: string; created_at: string | null }
 }
 
 export function renderInvoice(
-  lead: Pick<Lead, 'full_name' | 'email' | 'phone' | 'visa_type' | 'currency'>,
+  lead: Pick<Lead, 'full_name' | 'email' | 'phone' | 'visa_type' | 'currency' | 'gstin'>,
   payment: Pick<Payment, 'id' | 'milestone' | 'amount' | 'status' | 'paid_at' | 'created_at'>
     & { gst_rate?: number | null; gst_mode?: 'add' | 'inclusive' | null },
   invoiceNo: string,
@@ -830,6 +830,7 @@ export function renderInvoice(
           <div style="font-size:16px;font-weight:800;color:${NAVY};margin-top:6px;line-height:1.35;">${esc(lead.full_name)}</div>
           <div style="font-size:13px;color:#4A5162;margin-top:6px;line-height:1.6;">${esc(lead.email || '')}</div>
           <div style="font-size:13px;color:#4A5162;line-height:1.6;">${esc(lead.phone || '')}</div>
+          ${lead.gstin ? `<div style="font-size:12.5px;color:${INK};margin-top:6px;line-height:1.6;"><b>GSTIN:</b> ${esc(lead.gstin)}</div>` : ''}
         </td>
       </tr>
     </table>
