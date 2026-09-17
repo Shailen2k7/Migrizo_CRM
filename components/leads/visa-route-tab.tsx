@@ -32,7 +32,8 @@ const ROUTES: Record<RouteKey, {
     short: 'GTV', full: 'Global Talent Visa', tagline: 'For recognised leaders and rising talent in tech, science, academia and the arts.',
     accent: '#4338CA', tint: '#EEF2FF', border: '#C7D0F0',
     fee: '£3,000',
-    milestones: [['Kickstart', '£500'], ['Profile Building', '£1,250'], ['Endorsement Submission', '£500'], ['Final Balance', '£750']],
+    // 17 Sep 2026 plan: all four instalments before endorsement submission.
+    milestones: [['Kickstart', '£500'], ['Profile Building — Phase 1', '£1,000'], ['Profile Building — Phase 2', '£1,000'], ['Endorsement Submission', '£500']],
     gov: 'Endorsement £561 · Visa £205 · IHS £1,035/yr · optional PR support',
     timeline: 'Endorsement 3–8 weeks · Visa 3 weeks',
     journey: ['Onboarding', 'Build the Profile', 'Write & Approve', 'Endorsement', 'Visa & Approval'],

@@ -13,7 +13,7 @@
 import type { Lead, Payment } from '@/lib/types';
 import { GTV_PROCESS_HTML } from '@/lib/email/gtv-process-html';
 import { IFV_PROCESS_HTML } from '@/lib/email/ifv-process-html';
-import { MILESTONE_META } from '@/lib/types';
+import { MILESTONE_META, GTV_PLAN_CHANGED_AT } from '@/lib/types';
 
 // Brand palette (matches the Migrizo brochure system)
 const NAVY = '#16294E';
@@ -232,19 +232,22 @@ function renderSLAGTV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discoun
   const name = esc(lead.full_name);
   const email = esc(lead.email || '—');
   const phone = esc(lead.phone || '—');
-  // Discount (max £1,500) cascades across Profile Building (M2) and Final Balance
-  // (M4); Kickstart (M1) and Submission (M3) stay fixed at £500 each.
-  const d = Math.max(0, Math.min(discount || 0, 1500));
-  let r2 = 0, r4 = 0;
-  if (d <= 500) { r2 = d; }
-  else if (d <= 1000) { r2 = 500; r4 = d - 500; }
-  else { r2 = 500 + (d - 1000) / 2; r4 = 500 + (d - 1000) / 2; }
-  const M1 = 500, M2 = 1250 - r2, M3 = 500, M4 = 750 - r4;
+  // THE PLAN (17 Sep 2026): £500 / £1,000 / £1,000 / £500, all four paid
+  // BEFORE the endorsement application is submitted.
+  //
+  // Discount (max £1,500) comes off the two Profile Building phases, split
+  // evenly. Kickstart (M1) and Endorsement Submission (M4) stay fixed at £500
+  // each — they are the two payments that open and close the engagement, and
+  // keeping them whole means every client pays the same to start and to file.
+  // Whole pounds only: an odd discount puts the extra pound on Phase 1.
+  const d = Math.max(0, Math.min(Math.round(discount || 0), 1500));
+  const r2 = Math.ceil(d / 2), r3 = d - r2;
+  const M1 = 500, M2 = 1000 - r2, M3 = 1000 - r3, M4 = 500;
   const netFee = M1 + M2 + M3 + M4; // === 3000 - d
   const gbp = (n: number) => `\u00A3${n.toLocaleString('en-GB')}`;
   const feeIntro = d > 0
-    ? `The standard professional fee for the end-to-end Global Talent Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as milestone-based payments below. As a special arrangement, a discount of ${gbp(d)} has been applied — adjusted across the Profile Building and Final Balance milestones as shown below — bringing your net professional fee to <b>${gbp(netFee)}</b>. Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`
-    : `The total professional fee payable to Migrizo for the end-to-end Global Talent Visa service is <b>\u00A33,000</b> (Three Thousand Pounds Sterling). This is structured as milestone-based payments as detailed below. Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`;
+    ? `The standard professional fee for the end-to-end Global Talent Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as four instalments below. As a special arrangement, a discount of ${gbp(d)} has been applied — adjusted across the two Profile Building phases as shown below — bringing your net professional fee to <b>${gbp(netFee)}</b>. <b>The professional fee is payable in full before Migrizo submits the endorsement application.</b> Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`
+    : `The total professional fee payable to Migrizo for the end-to-end Global Talent Visa service is <b>\u00A33,000</b> (Three Thousand Pounds Sterling), structured as four instalments as detailed below. <b>The professional fee is payable in full before Migrizo submits the endorsement application.</b> Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`;
 
   const kv = (k: string, v: string) => `
     <tr>
@@ -340,10 +343,10 @@ function renderSLAGTV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discoun
         <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;" align="right">Amount</td>
         <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;">Paid By</td>
       </tr>
-      ${feeRow('1', 'Kickstart Fee — Engagement commencement, roadmap initiation', gbp(M1), 'Client → Migrizo')}
-      ${feeRow('2', 'Profile Building Commencement — Following roadmap delivery, profile development begins' + (r2 > 0 ? ' (discount applied)' : ''), gbp(M2), 'Client → Migrizo')}
-      ${feeRow('3', 'Endorsement Application Submission Fee — Due at the time of submission to UK Home Office', gbp(M3), 'Client → Migrizo')}
-      ${M4 > 0 ? feeRow('4', 'Final Professional Fee Balance — Payable upon receipt of endorsement approval from UK Home Office' + (r4 > 0 ? ' (discount applied)' : ''), gbp(M4), 'Client → Migrizo') : ''}
+      ${feeRow('1', 'Kickstart — Eligibility assessment, endorsing-body strategy and your personalised roadmap', gbp(M1), 'Client → Migrizo')}
+      ${feeRow('2', 'Profile Building — Phase 1 — UK-style CV, LinkedIn, personal statement and the first evidence required' + (r2 > 0 ? ' (discount applied)' : ''), gbp(M2), 'Client → Migrizo')}
+      ${feeRow('3', 'Profile Building — Phase 2 — Recommendation letters, PR coordination and the criteria-mapped evidence portfolio' + (r3 > 0 ? ' (discount applied)' : ''), gbp(M3), 'Client → Migrizo')}
+      ${feeRow('4', 'Endorsement Submission — Final review and submission of the endorsement application. Payable before submission', gbp(M4), 'Client → Migrizo')}
       ${d > 0 ? `
       <tr style="background:#E6F7EE;">
         <td style="padding:8px 10px;"></td>
@@ -362,7 +365,7 @@ function renderSLAGTV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discoun
       ${feeRow('7', 'UK Government: Visa Application Fee', '£205', 'Client → UKVI')}
       ${feeRow('8', 'UK Government: Immigration Health Surcharge (IHS) — £1,035 per person per year (e.g., 3-year visa ≈ £3,105)', '£1,035/yr/person', 'Client → UKVI')}
     </table>
-    ${p(`It is suggested to release the payment on time in phases for the smooth operations and process flow. Delay in payments might cause the nullify the agreement and company will not be liable to any responsibility in lieu of the successful application.`)}
+    ${p(`All four instalments must be received before the endorsement application is submitted. Releasing each instalment on time keeps the work moving without interruption; a delay in payment may pause the engagement, and Migrizo will not be liable for any consequence of that delay on the application.`)}
     <div style="font-size:13px;font-weight:700;color:${NAVY};margin:12px 0 4px;">Important Notes on Fees</div>
     <ul style="margin:0 0 10px;padding-left:20px;">
       ${li(`All payments to Migrizo (India) OR M4 Investment Ltd. (UK) must be made via bank transfer — or, for clients in India, via UPI (grownmind@icici) — to the account details provided in the invoice issued at each milestone. Receipts will be issued for every payment received.`)}
@@ -689,7 +692,7 @@ export function renderProcess(lead: Pick<Lead, 'full_name' | 'visa_type'>): { su
   return {
     subject: `UK Global Talent Visa — how it works, what we need, and what it costs`,
     html: GTV_PROCESS_HTML,
-    text: `Hi ${lead.full_name}, here is how the UK Global Talent Visa works with Migrizo: a fully-managed 7-step process (profile evaluation, personalised roadmap, profile building, supporting documents, endorsement submission, visa application, post-landing support) for a fixed GBP 3,000 professional fee across 4 milestones. Government and third-party costs (endorsement GBP 561, visa GBP 210, IHS, optional PR) are paid directly by you. Total estimated all-inclusive cost: about GBP 7,500 (3-year visa) or GBP 9,500 (5-year visa). Book a free profile assessment on WhatsApp: https://wa.me/447887348822 - Team Migrizo`,
+    text: `Hi ${lead.full_name}, here is how the UK Global Talent Visa works with Migrizo: a fully-managed 7-step process (profile evaluation, personalised roadmap, profile building, supporting documents, endorsement submission, visa application, post-landing support) for a fixed GBP 3,000 professional fee in four instalments - Kickstart GBP 500, Profile Building Phase 1 GBP 1,000, Profile Building Phase 2 GBP 1,000, Endorsement Submission GBP 500 - all paid before we submit your endorsement application. Government and third-party costs (endorsement GBP 561, visa GBP 210, IHS, optional PR) are paid directly by you. Total estimated all-inclusive cost: about GBP 7,500 (3-year visa) or GBP 9,500 (5-year visa). Book a free profile assessment on WhatsApp: https://wa.me/447887348822 - Team Migrizo`,
   };
 }
 
@@ -777,7 +780,24 @@ export function renderInvoice(
     endorsement: 'Endorsement Submission',
     post_approval: 'Final Balance',
   };
-  const gtvLabel = MILESTONE_META[payment.milestone]?.label || payment.milestone;
+  // A RECEIPT ALREADY SENT MUST NEVER RE-PRINT DIFFERENTLY.
+  //
+  // The GTV plan changed on 17 Sep 2026 and the milestone labels moved with
+  // it: the third instalment used to be "Endorsement" and is now "Profile
+  // Building — Phase 2". Without this, re-downloading a paid receipt from
+  // August would print a different line item than the client already holds.
+  // So payments recorded before the change keep the labels they were issued
+  // under, and only new ones use the new plan.
+  const LEGACY_GTV_MILESTONE_LABELS: Record<string, string> = {
+    kickstart: 'Kickstart',
+    profile_building: 'Profile Building',
+    endorsement: 'Endorsement',
+    post_approval: 'Post Approval',
+  };
+  const underOldPlan = new Date(payment.created_at).getTime() < new Date(GTV_PLAN_CHANGED_AT).getTime();
+  const gtvLabel = underOldPlan
+    ? (LEGACY_GTV_MILESTONE_LABELS[payment.milestone] || payment.milestone)
+    : (MILESTONE_META[payment.milestone]?.label || payment.milestone);
   const milestone = visaKindOf(lead.visa_type) === 'ifv'
     ? (IFV_MILESTONE_LABELS[payment.milestone] || gtvLabel)
     : gtvLabel;

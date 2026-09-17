@@ -127,6 +127,17 @@ export const GTV_PROCESS_HTML = `<!DOCTYPE html>
       .price-num { font-size:38px !important; }
       .hide-mobile { display:none !important; }
     }
+  
+    /* Small phones (iPhone SE, compact Android). Added after both blocks above
+       so it wins: the second block's 24px side padding otherwise overrides the
+       first block's 16px and costs 48px of a 320px screen. */
+    @media only screen and (max-width:420px) {
+      .outer-pad  { padding:0 !important; }
+      .container  { width:100% !important; max-width:100% !important; border-radius:0 !important; }
+      .stack-pad  { padding-left:16px !important; padding-right:16px !important; }
+      .fluid-img  { width:100% !important; max-width:100% !important; height:auto !important; }
+      .ic-cell    { display:block !important; width:100% !important; box-sizing:border-box !important; }
+    }
   </style>
 </head>
 <body style="margin:0; padding:0; background-color:#EEF1F8;">
@@ -137,7 +148,7 @@ export const GTV_PROCESS_HTML = `<!DOCTYPE html>
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#EEF1F8;">
     <tr>
-      <td align="center" style="padding:24px 12px;">
+      <td align="center" class="outer-pad" style="padding:24px 12px;">
 
         <!-- ===================== MAIN CONTAINER ===================== -->
         <table role="presentation" class="container" width="640" cellpadding="0" cellspacing="0" style="width:640px; max-width:640px; background-color:#FFFFFF; border-radius:18px; overflow:hidden; box-shadow:0 8px 30px rgba(22,41,78,0.10);">
@@ -150,13 +161,13 @@ export const GTV_PROCESS_HTML = `<!DOCTYPE html>
           </tr>
           <tr>
             <td style="background-color:#FFFFFF; padding:14px 32px 14px 32px; border-bottom:1px solid #EEF1F8;" align="left">
-              <img src="https://crm.migrizo.com/migrizo-email-logo.png" alt="Migrizo — Smart. Fast. Reliable Visas" width="180" style="display:block; width:180px; max-width:180px; height:auto;" />
+              <img class="fluid-img" src="https://crm.migrizo.com/migrizo-email-logo.png" alt="Migrizo — Smart. Fast. Reliable Visas" width="180" style="display:block; width:180px; max-width:180px; height:auto;" />
             </td>
           </tr>
           <tr>
             <td style="padding:0; line-height:0;">
               <a href="https://wa.me/447887348822" target="_blank">
-                <img src="https://crm.migrizo.com/gtv-hero.jpg" alt="UK Global Talent Visa — a premium advisory and profile-building journey, fully managed by Migrizo" width="640" style="display:block; width:100%; max-width:640px; height:auto;" />
+                <img class="fluid-img" src="https://crm.migrizo.com/gtv-hero.jpg" alt="UK Global Talent Visa — a premium advisory and profile-building journey, fully managed by Migrizo" width="640" style="display:block; width:100%; max-width:640px; height:auto;" />
               </a>
             </td>
           </tr>
@@ -165,16 +176,14 @@ export const GTV_PROCESS_HTML = `<!DOCTYPE html>
           <tr>
             <td style="background-color:#F5F7FC; padding:16px 12px; border-bottom:1px solid #E7EAF1;" align="center">
               <div style="font-size:10.5px; font-weight:800; letter-spacing:1.2px; color:#6B7280; font-family:Arial,Helvetica,sans-serif; margin-bottom:11px;">JUMP TO A SECTION</div>
-              <table role="presentation" cellpadding="0" cellspacing="0" align="center">
-                <tr>
-                  <td style="padding:0 3px;"><a href="#about" class="toc-chip" style="display:inline-block; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">About</a></td>
-                  <td style="padding:0 3px;"><a href="#benefits" class="toc-chip" style="display:inline-block; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">Benefits</a></td>
-                  <td style="padding:0 3px;"><a href="#who" class="toc-chip" style="display:inline-block; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">Who Can Apply</a></td>
-                  <td style="padding:0 3px;"><a href="#need" class="toc-chip" style="display:inline-block; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">What We Need</a></td>
-                  <td style="padding:0 3px;"><a href="#process" class="toc-chip" style="display:inline-block; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">Process</a></td>
-                  <td style="padding:0 3px;"><a href="#pricing" class="toc-chip" style="display:inline-block; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">Pricing</a></td>
-                  </tr>
-              </table>
+              <div style="text-align:center; line-height:1; font-size:0;">
+                  <a href="#about" class="toc-chip" style="display:inline-block; margin:3px 2px; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">About</a>
+                  <a href="#benefits" class="toc-chip" style="display:inline-block; margin:3px 2px; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">Benefits</a>
+                  <a href="#who" class="toc-chip" style="display:inline-block; margin:3px 2px; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">Who Can Apply</a>
+                  <a href="#need" class="toc-chip" style="display:inline-block; margin:3px 2px; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">What We Need</a>
+                  <a href="#process" class="toc-chip" style="display:inline-block; margin:3px 2px; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">Process</a>
+                  <a href="#pricing" class="toc-chip" style="display:inline-block; margin:3px 2px; background:#FFFFFF; border:1px solid #D9DFF0; border-radius:999px; padding:7px 11px; font-size:11px; font-weight:700; color:#3E56D4; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">Pricing</a>
+                </div>
             </td>
           </tr>
 
@@ -734,24 +743,27 @@ export const GTV_PROCESS_HTML = `<!DOCTYPE html>
             <td style="background-color:#F5F7FC; padding:32px 32px 6px 32px;" class="stack-pad" align="left">
               <div style="width:34px; height:3px; background-color:#3E56D4; border-radius:2px; margin-bottom:14px;"></div>
               <h2 class="h2" style="margin:0 0 4px 0; font-size:22px; color:#16294E; font-family:Arial,Helvetica,sans-serif; font-weight:800;">Professional fee structure</h2>
-              <p style="margin:0 0 14px 0; font-size:13px; color:#6B7280; font-family:Arial,Helvetica,sans-serif;">One fixed fee, paid across four simple milestones.</p>
+              <p style="margin:0 0 8px 0; font-size:13px; color:#6B7280; font-family:Arial,Helvetica,sans-serif;">One fixed fee, paid in four instalments &mdash; all before we submit your endorsement application.</p>
             </td>
           </tr>
           <tr>
-            <td style="background-color:#F5F7FC; padding:0 26px 12px 26px;" class="stack-pad">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <td style="background-color:#F5F7FC; padding:0 32px 14px 32px;" class="stack-pad">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FFFFFF; border:1px solid #E1E6F2; border-radius:14px;"><tr><td style="padding:2px 18px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td valign="top" style="padding:15px 10px 15px 0; border-bottom:1px solid #E1E6F2;"><div style="font-size:10px; letter-spacing:1.4px; font-weight:700; color:#8A93A8; font-family:Arial,Helvetica,sans-serif; text-transform:uppercase; margin-bottom:4px;">Instalment 01</div><div style="font-size:15px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif; line-height:1.35;">Kickstart</div><div style="font-size:12.5px; color:#6B7280; font-family:Arial,Helvetica,sans-serif; line-height:1.55; margin-top:3px;">Eligibility assessment, endorsing-body strategy and your personalised roadmap.</div></td><td valign="top" align="right" style="padding:15px 0; width:1%; border-bottom:1px solid #E1E6F2;"><div style="font-size:18px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif; white-space:nowrap; padding-top:15px;">&pound;500</div></td></tr><tr><td valign="top" style="padding:15px 10px 15px 0; border-bottom:1px solid #E1E6F2;"><div style="font-size:10px; letter-spacing:1.4px; font-weight:700; color:#8A93A8; font-family:Arial,Helvetica,sans-serif; text-transform:uppercase; margin-bottom:4px;">Instalment 02</div><div style="font-size:15px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif; line-height:1.35;">Profile Building &mdash; Phase 1</div><div style="font-size:12.5px; color:#6B7280; font-family:Arial,Helvetica,sans-serif; line-height:1.55; margin-top:3px;">UK-style CV, LinkedIn, personal statement and the first evidence you will need.</div></td><td valign="top" align="right" style="padding:15px 0; width:1%; border-bottom:1px solid #E1E6F2;"><div style="font-size:18px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif; white-space:nowrap; padding-top:15px;">&pound;1,000</div></td></tr><tr><td valign="top" style="padding:15px 10px 15px 0; border-bottom:1px solid #E1E6F2;"><div style="font-size:10px; letter-spacing:1.4px; font-weight:700; color:#8A93A8; font-family:Arial,Helvetica,sans-serif; text-transform:uppercase; margin-bottom:4px;">Instalment 03</div><div style="font-size:15px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif; line-height:1.35;">Profile Building &mdash; Phase 2</div><div style="font-size:12.5px; color:#6B7280; font-family:Arial,Helvetica,sans-serif; line-height:1.55; margin-top:3px;">Recommendation letters, PR coordination and your criteria-mapped evidence portfolio.</div></td><td valign="top" align="right" style="padding:15px 0; width:1%; border-bottom:1px solid #E1E6F2;"><div style="font-size:18px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif; white-space:nowrap; padding-top:15px;">&pound;1,000</div></td></tr><tr><td valign="top" style="padding:15px 10px 15px 0;"><div style="font-size:10px; letter-spacing:1.4px; font-weight:700; color:#8A93A8; font-family:Arial,Helvetica,sans-serif; text-transform:uppercase; margin-bottom:4px;">Instalment 04</div><div style="font-size:15px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif; line-height:1.35;">Endorsement Submission</div><div style="font-size:12.5px; color:#6B7280; font-family:Arial,Helvetica,sans-serif; line-height:1.55; margin-top:3px;">Final review and submission of your endorsement application.</div></td><td valign="top" align="right" style="padding:15px 0; width:1%;"><div style="font-size:18px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif; white-space:nowrap; padding-top:15px;">&pound;500</div></td></tr></table></td></tr></table>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#F5F7FC; padding:2px 32px 30px 32px;" class="stack-pad">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#16294E; border-radius:12px;">
                 <tr>
-                  <td class="stack" width="25%" valign="top" style="padding:6px;"><div style="background:#FFFFFF; border:1px solid #E1E6F2; border-radius:12px; padding:16px 8px; text-align:center;"><div style="font-size:20px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif;">£500</div><div style="font-size:11px; color:#6B7280; font-family:Arial,Helvetica,sans-serif; margin-top:2px;">Kickstart</div></div></td>
-                  <td class="stack" width="25%" valign="top" style="padding:6px;"><div style="background:#FFFFFF; border:1px solid #E1E6F2; border-radius:12px; padding:16px 8px; text-align:center;"><div style="font-size:20px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif;">£1,250</div><div style="font-size:11px; color:#6B7280; font-family:Arial,Helvetica,sans-serif; margin-top:2px;">Profile Building</div></div></td>
-                  <td class="stack" width="25%" valign="top" style="padding:6px;"><div style="background:#FFFFFF; border:1px solid #E1E6F2; border-radius:12px; padding:16px 8px; text-align:center;"><div style="font-size:20px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif;">£500</div><div style="font-size:11px; color:#6B7280; font-family:Arial,Helvetica,sans-serif; margin-top:2px;">Endorsement</div></div></td>
-                  <td class="stack" width="25%" valign="top" style="padding:6px;"><div style="background:#FFFFFF; border:1px solid #E1E6F2; border-radius:12px; padding:16px 8px; text-align:center;"><div style="font-size:20px; font-weight:800; color:#16294E; font-family:Arial,Helvetica,sans-serif;">£750</div><div style="font-size:11px; color:#6B7280; font-family:Arial,Helvetica,sans-serif; margin-top:2px;">Final Payment</div></div></td>
+                  <td style="padding:16px 8px 16px 18px;" valign="middle">
+                    <div style="font-size:11px; letter-spacing:1.6px; font-weight:700; color:#C7D0E4; font-family:Arial,Helvetica,sans-serif; text-transform:uppercase;">Total professional fee</div>
+                    <div style="font-size:12.5px; color:#C7D0E4; font-family:Arial,Helvetica,sans-serif; margin-top:3px;">Paid in full before we submit your endorsement application</div>
+                  </td>
+                  <td style="padding:16px 18px 16px 8px; width:1%;" align="right" valign="middle">
+                    <div style="font-size:26px; font-weight:800; color:#F4C430; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;">&pound;3,000</div>
+                  </td>
                 </tr>
               </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="background-color:#F5F7FC; padding:2px 32px 30px 32px;" class="stack-pad" align="center">
-              <div style="display:inline-block; background:#16294E; color:#FFFFFF; border-radius:10px; padding:12px 24px; font-size:15px; font-weight:800; font-family:Arial,Helvetica,sans-serif;">Total Professional Fee: <span style="color:#F4C430;">£3,000</span></div>
             </td>
           </tr>
 

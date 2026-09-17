@@ -197,12 +197,44 @@ export const PAYMENT_META: Record<PaymentStatus, { label: string; bg: string; fg
   overdue: { label: 'Overdue',  bg: '#FEE2E2', fg: '#B91C1C' },
 };
 
+/**
+ * THE GTV PAYMENT PLAN — changed on 17 Sep 2026.
+ *
+ *   1  Kickstart                     £500    16.7%
+ *   2  Profile Building — Phase 1    £1,000  33.3%
+ *   3  Profile Building — Phase 2    £1,000  33.3%
+ *   4  Endorsement Submission        £500    16.7%
+ *                                    £3,000  — ALL paid before the endorsement
+ *                                              application is submitted.
+ *
+ * The previous plan put the fourth payment AFTER endorsement approval. It no
+ * longer exists.
+ *
+ * WHY THE KEYS DID NOT CHANGE
+ * `milestone` is stored on every payment row and read by the dashboard, the
+ * ladder, the pipeline and the reports. The keys name a POSITION — the first,
+ * second, third and fourth instalment — which is how the dashboard already
+ * presents them ("3rd instalment"). So only the labels moved, and every
+ * existing row stays in the slot it was recorded in.
+ *
+ * `post_approval` is therefore now the fourth instalment, Endorsement
+ * Submission, which happens BEFORE approval. The key's name is historical and
+ * wrong; renaming it means rewriting every payment row, which is not worth the
+ * risk for a word nobody outside this file sees.
+ *
+ * Receipts and invoices for payments made under the OLD plan keep their old
+ * labels — see LEGACY_GTV_MILESTONE_LABELS in lib/email/branded.ts. A document
+ * already sent to a client must never re-print differently.
+ */
 export const MILESTONE_META: Record<Milestone, { label: string; pct: number; order: number }> = {
-  kickstart:        { label: 'Kickstart',        pct: 25, order: 1 },
-  profile_building: { label: 'Profile Building', pct: 35, order: 2 },
-  endorsement:      { label: 'Endorsement',      pct: 25, order: 3 },
-  post_approval:    { label: 'Post Approval',    pct: 15, order: 4 },
+  kickstart:        { label: 'Kickstart',                  pct: 17, order: 1 },
+  profile_building: { label: 'Profile Building — Phase 1', pct: 33, order: 2 },
+  endorsement:      { label: 'Profile Building — Phase 2', pct: 33, order: 3 },
+  post_approval:    { label: 'Endorsement Submission',     pct: 17, order: 4 },
 };
+
+/** The day the plan above replaced the old one. Invoices before it keep old labels. */
+export const GTV_PLAN_CHANGED_AT = '2026-09-17T00:00:00+05:30';
 
 // Safe accessor — returns a Junk-styled fallback for unknown stages so the app never crashes on stale data
 export function getStageMeta(stage: string | null | undefined): { label: string; bg: string; fg: string; dot: string } {
