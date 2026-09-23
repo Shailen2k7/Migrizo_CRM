@@ -6,6 +6,7 @@ import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
 import { Topbar } from '@/components/topbar';
 import { LeadsTable } from '@/components/leads/leads-table';
+import { CvInbox } from '@/components/leads/cv-inbox';
 import { LeadsDashboard, type DashFilter } from '@/components/leads/leads-dashboard';
 import { industryLabel } from '@/lib/types';
 import { READINESS_META, type Readiness } from '@/lib/intake';
@@ -57,6 +58,7 @@ function LeadsPageInner() {
           <p className="text-[13.5px] text-muted mt-2">{summary}</p>
         </div>
         <div className="flex items-center gap-2.5">
+          <CvInbox />
           <button onClick={exportCsv} className="btn btn-outline">Export CSV</button>
           <Topbar leads={leads} payments={payments} onAddLead={ui.openAddLead} onImport={ui.openImport} onOpenLead={ui.openLeadDrawer} />
         </div>

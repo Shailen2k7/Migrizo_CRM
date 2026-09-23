@@ -32,16 +32,20 @@ interface AppData {
   canSendEmails: boolean;
   setMemberPaymentAccess: (userId: string, canView: boolean) => Promise<void>;
   refresh: () => Promise<void>;
+  /** Re-reads ONE lead from the database. Used after a write made elsewhere. */
+  refreshLead: (leadId: string) => Promise<void>;
   refreshMembers: () => Promise<void>;
   refreshCases: () => Promise<void>;
   refreshFollowUps: () => Promise<void>;
   memberNameById: (userId: string | null | undefined) => string;
   createLead: (input: Partial<Lead>) => Promise<Lead | null>;
   updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
+  /** Applies ONE patch to many leads in a single request. Used by Master Leads. */
+  bulkUpdateLeads: (ids: string[], patch: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
   toggleSpotlight: (id: string) => Promise<void>;
   setLeadOffer: (id: string, offer: { type: OfferType | null; amount?: number | null; currency?: 'GBP' | 'INR' | 'USD' | null; note?: string | null }) => Promise<void>;
-  setLeadQualification: (id: string, q: { profile?: 'cv' | 'linkedin' | 'both' | null; eligibility?: 'eligible' | 'not_eligible' | null }) => Promise<void>;
+  setLeadQualification: (id: string, q: { profile?: 'cv' | 'linkedin' | 'both' | null; eligibility?: Lead['eligibility'] }) => Promise<void>;
   addNote: (leadId: string, body: string) => Promise<void>;
   getNotes: (leadId: string) => Promise<Note[]>;
   recordPayment: (input: Partial<Payment> & { lead_id: string; milestone: Payment['milestone']; amount: number }) => Promise<void>;
@@ -87,6 +91,25 @@ interface ProviderProps {
   initialPayments: Payment[];
   initialActivity: Activity[];
   children: React.ReactNode;
+}
+
+/**
+ * Turns a Postgres constraint violation into something a human can act on.
+ *
+ * Picking "Highly Eligible" before migration 121 has been run comes back as
+ * `new row for relation "leads" violates check constraint
+ * "leads_eligibility_chk"`, which tells the person at the screen nothing about
+ * what to do next. Everything else is passed through untouched, because a
+ * message invented for an error we have not seen is worse than the real one.
+ */
+function friendlyLeadError(message: string): string {
+  if (message.includes('leads_eligibility_chk')) {
+    return 'Highly Eligible and Others are not switched on in the database yet — run migration 121 in Supabase, then try again.';
+  }
+  if (message.includes('leads_investment_readiness_check')) {
+    return 'That willingness-to-pay value is not one the database accepts.';
+  }
+  return message;
 }
 
 export function AppProvider({ user, workspace, role, initialCanViewPayments, initialLeads, initialPayments, initialActivity, children }: ProviderProps) {
@@ -306,13 +329,40 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     const { error } = await supabase.from('leads').update(effPatch).eq('id', id);
     if (error) {
       if (before) setLeads((prev) => prev.map((l) => (l.id === id ? before : l)));
-      toast.error(`Update failed: ${error.message}`);
+      toast.error(friendlyLeadError(error.message));
       return;
     }
     if (patch.stage && before?.stage !== patch.stage) {
       logActivity('moved_stage', id, { from: before?.stage, to: patch.stage });
     }
   }, [supabase, leads, logActivity]);
+
+  /**
+   * The same patch across many leads, in ONE request.
+   *
+   * Tagging 1,872 unreviewed leads a dropdown at a time is not a thing anyone
+   * will finish, so Master Leads offers a selection. Doing that as N calls to
+   * updateLead would be N round trips and N optimistic renders; `.in('id', …)`
+   * is a single statement the database is happy to run.
+   *
+   * Deliberately DUMBER than updateLead: no won_at stamping, no activity write.
+   * It exists to set classification fields in bulk, and stage changes made
+   * through it are the same plain writes the drawer makes — nothing here
+   * enrols, moves or messages anybody.
+   */
+  const bulkUpdateLeads = useCallback(async (ids: string[], patch: Partial<Lead>) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const before = leads;
+    setLeads((prev) => prev.map((l) => (idSet.has(l.id) ? { ...l, ...patch } as Lead : l)));
+    const { error } = await supabase.from('leads').update(patch).in('id', ids);
+    if (error) {
+      setLeads(before);
+      toast.error(friendlyLeadError(error.message));
+      return;
+    }
+    toast.success(`Updated ${ids.length} lead${ids.length === 1 ? '' : 's'}`);
+  }, [leads, supabase]);
 
   const deleteLead = useCallback(async (id: string) => {
     if (role !== 'admin') { toast.error('Only the admin can delete leads'); return; }
@@ -390,7 +440,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
    */
   const setLeadQualification = useCallback(async (
     id: string,
-    q: { profile?: 'cv' | 'linkedin' | 'both' | null; eligibility?: 'eligible' | 'not_eligible' | null },
+    q: { profile?: 'cv' | 'linkedin' | 'both' | null; eligibility?: Lead['eligibility'] },
   ) => {
     const before = leads.find((l) => l.id === id);
     if (!before) return;
@@ -889,7 +939,8 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     user, workspace, role, leads, payments, activity, cases, followUps, members, loading,
     canViewPayments, canSendEmails, setMemberPaymentAccess,
     refresh, refreshMembers, refreshCases, refreshFollowUps, memberNameById,
-    createLead, updateLead, deleteLead, toggleSpotlight, setLeadOffer, setLeadQualification, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
+    refreshLead,
+    createLead, updateLead, bulkUpdateLeads, deleteLead, toggleSpotlight, setLeadOffer, setLeadQualification, addNote, getNotes, recordPayment, updatePayment, deletePayment, bulkInsertLeads, resetWorkspace, loadSampleData,
     createCase, updateCase, updateCaseJourney, sendClientUpdate, deleteCase, getChecklist, updateChecklistItem, addChecklistItem, deleteChecklistItem, getCaseActivity,
     createFollowUp, updateFollowUp, deleteFollowUp, completeFollowUp, reopenFollowUp, cancelFollowUp,
   };
