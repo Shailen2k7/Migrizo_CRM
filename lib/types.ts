@@ -4,6 +4,13 @@
 
 export type LeadStage =
   | 'hot'
+  // Two assessment statuses added Sep 2026. They are ADDITIONS: every value
+  // below them keeps its exact key, so the WhatsApp sequences — which match the
+  // literal strings 'cold' and 'hot' — carry on selecting precisely the same
+  // people they did before. Nothing sets these two automatically; a lead only
+  // reaches one because somebody chose it in the drawer.
+  | 'highly_eligible'
+  | 'eligible'
   | 'cold'
   | 'not_responding'
   | 'mr_coming_soon'
@@ -96,7 +103,11 @@ export interface Lead {
   first_response_at?: string | null;
   profile_received?: 'cv' | 'linkedin' | 'both' | null;
   profile_received_at?: string | null;
-  eligibility?: 'eligible' | 'not_eligible' | null;
+  // Widened by migration 121 from the original two values. NULL still means
+  // "not reviewed", which is a real state and deliberately distinct from
+  // not_eligible. Read it through isGtvEligible() in lib/master-leads.ts
+  // wherever a TOTAL is shown, so highly_eligible counts inside eligible.
+  eligibility?: 'eligible' | 'highly_eligible' | 'not_eligible' | 'others' | null;
   eligibility_at?: string | null;
   eligibility_by?: string | null;
   eligibility_source?: 'manual' | 'derived' | 'ai' | 'whatsapp' | null;
@@ -176,6 +187,11 @@ export interface Activity {
 
 export const STAGE_META: Record<LeadStage, { label: string; bg: string; fg: string; dot: string }> = {
   hot:            { label: 'Hot',             bg: '#FEE2E2', fg: '#B91C1C', dot: '#EF4444' },
+  // The assessment pair, deliberately two shades of the SAME family so they
+  // read as one ladder rather than two unrelated states. Pink sits next to
+  // Hot's red without being mistaken for it; teal sits clear of Cold's blue.
+  highly_eligible:{ label: 'Highly Eligible', bg: '#FCE7F3', fg: '#9D174D', dot: '#EC4899' },
+  eligible:       { label: 'Eligible',        bg: '#CCFBF1', fg: '#0F766E', dot: '#14B8A6' },
   cold:           { label: 'Cold',            bg: '#DBEAFE', fg: '#1E40AF', dot: '#3B82F6' },
   // Set by hand when someone has clearly gone quiet. The Leads filter shows
   // these AND the ones that go stale on their own, so marking one is a
@@ -183,12 +199,12 @@ export const STAGE_META: Record<LeadStage, { label: string; bg: string; fg: stri
   not_responding: { label: 'Not Responding',  bg: '#FFF3EA', fg: '#9A3412', dot: '#EA580C' },
   mr_coming_soon: { label: 'Mr. Coming Soon', bg: '#FEF3C7', fg: '#B45309', dot: '#F59E0B' },
   invoice_sent:   { label: 'Invoice Sent',    bg: '#EDE9FE', fg: '#5B21B6', dot: '#7C3AED' },
-  won:            { label: 'Won',             bg: '#E6F7EE', fg: '#047857', dot: '#10B981' },
+  won:            { label: 'Converted',       bg: '#E6F7EE', fg: '#047857', dot: '#10B981' },
   junk:           { label: 'Junk',            bg: '#F4F4F6', fg: '#6B7280', dot: '#9CA3AF' },
 };
 
 // Tag order used for dropdowns + filters (logical sales-funnel order)
-export const STAGE_ORDER: LeadStage[] = ['hot', 'cold', 'not_responding', 'mr_coming_soon', 'invoice_sent', 'won', 'junk'];
+export const STAGE_ORDER: LeadStage[] = ['hot', 'highly_eligible', 'eligible', 'cold', 'not_responding', 'mr_coming_soon', 'invoice_sent', 'won', 'junk'];
 
 export const PAYMENT_META: Record<PaymentStatus, { label: string; bg: string; fg: string }> = {
   none:    { label: 'Not paid', bg: '#F4F4F6', fg: '#7A7A82' },

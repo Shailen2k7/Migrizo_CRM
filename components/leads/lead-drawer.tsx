@@ -4,10 +4,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Phone, Mail, MessageSquare, IndianRupee, Trash2, Save, Undo2, FileText, CalendarClock, Plus, Star, Pencil, Send, Inbox, Eye, ClipboardList } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import type { Lead, Note, Payment, LeadStage } from '@/lib/types';
-import { STAGE_META, MILESTONE_META, OFFER_META, getVisaMeta, hasOffer, INDUSTRY_LIST, INDUSTRY_META } from '@/lib/types';
+import type { Lead, Note, Payment } from '@/lib/types';
+import { STAGE_META, STAGE_ORDER, getStageMeta, MILESTONE_META, OFFER_META, getVisaMeta, hasOffer, INDUSTRY_LIST, INDUSTRY_META } from '@/lib/types';
 import { useApp } from '@/components/shared/app-provider';
 import { usePipelines, getStageColor } from '@/lib/pipelines';
+import { GTV_META, GTV_ORDER } from '@/lib/master-leads';
 import { Select } from '@/components/shared/select';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { FollowUpsList } from '@/components/followups/followups-list';
@@ -335,8 +336,8 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                         })()}
                       </div>
                     </Row>
-                    <Row label="Stage">
-                      <div style={{ maxWidth: 220 }}>
+                    <Row label="Status">
+                      <div className="w-full">
                         {(() => {
                           const defaultP = pl.pipelines.find((p) => p.is_default) || pl.pipelines[0];
                           const currentPid = effectiveLead.pipeline_id || defaultP?.id || '';
@@ -348,26 +349,85 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                             const options = pStages.map((s) => ({ value: s.stage_key, label: s.name, color: getStageColor(s.color).dot }));
                             if (!known) options.unshift({ value: effectiveLead.stage, label: effectiveLead.stage, color: '#9CA3AF' });
                             return (
-                              <Select<string>
-                                value={effectiveLead.stage}
-                                onChange={(v) => {
-                                  const target = pStages.find((s) => s.stage_key === v);
-                                  const patch: Partial<Lead> = { stage: v as Lead['stage'] };
-                                  if (target?.stage_type === 'won' && !effectiveLead.won_at) patch.won_at = new Date().toISOString();
-                                  setLeadPending(patch);
-                                }}
-                                options={options}
-                                size="sm"
-                              />
+                              <div style={{ maxWidth: 220 }}>
+                                <Select<string>
+                                  value={effectiveLead.stage}
+                                  onChange={(v) => {
+                                    const target = pStages.find((s) => s.stage_key === v);
+                                    const patch: Partial<Lead> = { stage: v as Lead['stage'] };
+                                    if (target?.stage_type === 'won' && !effectiveLead.won_at) patch.won_at = new Date().toISOString();
+                                    setLeadPending(patch);
+                                  }}
+                                  options={options}
+                                  size="sm"
+                                />
+                              </div>
                             );
                           }
+                          // One tap, one status, all of them visible at once — a
+                          // dropdown hid six of seven and made you hunt for the
+                          // one you wanted.
+                          //
+                          // SPOTLIGHT IS NOT A STATUS, and putting it in this row
+                          // as one would have been a quiet disaster: 26 of the 28
+                          // starred leads are Hot, the WhatsApp hot ladder selects
+                          // on stage = 'hot', and every one of them would have
+                          // dropped out of their follow-ups the moment someone
+                          // picked "Spotlight". So it stays the flag it already
+                          // is — sitting after the divider, combining with
+                          // whichever status is set, changing nothing else.
+                          const known = STAGE_ORDER.includes(effectiveLead.stage);
+                          const chip = 'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-semibold border transition-all';
+                          const off = { background: 'hsl(var(--surface))', color: 'hsl(var(--muted))', borderColor: 'hsl(var(--border))' };
                           return (
-                            <Select<LeadStage>
-                              value={effectiveLead.stage}
-                              onChange={(v) => setLeadPending({ stage: v })}
-                              options={(Object.keys(STAGE_META) as LeadStage[]).map((k) => ({ value: k, label: STAGE_META[k].label, color: STAGE_META[k].dot }))}
-                              size="sm"
-                            />
+                            <div className="flex flex-wrap items-center gap-1.5 py-0.5">
+                              {/* A stage written by an older import or a retired
+                                  pipeline still has to be visible and keepable,
+                                  never silently swapped for one of ours. */}
+                              {!known && (
+                                <button type="button" disabled aria-pressed className={chip}
+                                  style={{ background: getStageMeta(effectiveLead.stage).bg, color: getStageMeta(effectiveLead.stage).fg, borderColor: getStageMeta(effectiveLead.stage).dot }}
+                                  title="Set before these statuses existed. Pick one below to replace it.">
+                                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: getStageMeta(effectiveLead.stage).dot }} />
+                                  {getStageMeta(effectiveLead.stage).label}
+                                </button>
+                              )}
+                              {STAGE_ORDER.map((k) => {
+                                const m = STAGE_META[k];
+                                const on = effectiveLead.stage === k;
+                                return (
+                                  <button key={k} type="button" aria-pressed={on}
+                                    onClick={() => { if (!on) setLeadPending({ stage: k }); }}
+                                    className={chip}
+                                    style={on ? { background: m.bg, color: m.fg, borderColor: m.dot } : off}
+                                    title={m.label}>
+                                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: on ? m.dot : 'hsl(var(--faint))' }} />
+                                    {m.label}
+                                  </button>
+                                );
+                              })}
+
+                              {/* A zero-height full-width flex item, so Spotlight
+                                  always starts its own line however the statuses
+                                  above happen to wrap. A vertical divider was the
+                                  first instinct and it was wrong — it ended up
+                                  stranded at the end of a wrapped row, dividing
+                                  nothing. */}
+                              <span aria-hidden className="basis-full" />
+
+                              <button type="button" aria-pressed={effectiveLead.is_spotlight}
+                                onClick={() => toggleSpotlight(effectiveLead.id)}
+                                className={chip}
+                                style={effectiveLead.is_spotlight
+                                  ? { background: '#FEF3C7', color: '#92400E', borderColor: '#F59E0B' }
+                                  : off}
+                                title={effectiveLead.is_spotlight
+                                  ? 'In Spotlight. Click to remove — the status above is unaffected.'
+                                  : 'Add to Spotlight. Sits alongside the status, it does not replace it.'}>
+                                <Star className="w-3 h-3" style={effectiveLead.is_spotlight ? { fill: '#F59E0B', color: '#F59E0B' } : { color: '#9CA3AF' }} />
+                                Spotlight
+                              </button>
+                            </div>
                           );
                         })()}
                       </div>
@@ -494,12 +554,13 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                           value={effectiveLead.eligibility ?? 'none'}
                           onChange={(v) => {
                             if (v === (effectiveLead.eligibility ?? 'none')) return;
-                            setLeadQualification(effectiveLead.id, { eligibility: v === 'none' ? null : v as 'eligible' | 'not_eligible' });
+                            setLeadQualification(effectiveLead.id, { eligibility: v === 'none' ? null : v as Lead['eligibility'] });
                           }}
+                          // Built from GTV_ORDER so the drawer and the Master
+                          // Leads view can never offer different answers.
                           options={[
-                            { value: 'none',         label: 'Not reviewed',  color: '#D1D5DB' },
-                            { value: 'eligible',     label: 'Eligible',      color: '#047857' },
-                            { value: 'not_eligible', label: 'Not eligible',  color: '#B91C1C' },
+                            { value: 'none', label: 'Not reviewed', color: '#D1D5DB' },
+                            ...GTV_ORDER.map((k) => ({ value: k as string, label: GTV_META[k].label, color: GTV_META[k].dot })),
                           ]}
                           size="sm"
                         />

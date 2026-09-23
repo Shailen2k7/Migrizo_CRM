@@ -92,7 +92,8 @@ export function LeadsTable({ initialSegment = 'all', onRowClick, dashFilter = nu
   const counts = useMemo(() => {
     const c: Record<Segment, number> = {
       all: leads.length, spotlight: 0, offer: 0, not_responding: 0,
-      hot: 0, cold: 0, mr_coming_soon: 0, invoice_sent: 0, won: 0, junk: 0,
+      hot: 0, highly_eligible: 0, eligible: 0, cold: 0,
+      mr_coming_soon: 0, invoice_sent: 0, won: 0, junk: 0,
     };
     leads.forEach((l) => {
       // The stage tally already covers anyone MARKED not-responding; the second

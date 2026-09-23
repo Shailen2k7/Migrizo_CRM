@@ -16,6 +16,7 @@
 // ============================================================================
 
 import { useMemo, useState } from 'react';
+import { isGtvEligible } from '@/lib/master-leads';
 import { useApp } from '@/components/shared/app-provider';
 import { Select } from '@/components/shared/select';
 import { StatCard, MonthStrip, PanelTitle } from '@/components/shared/dash-ui';
@@ -65,8 +66,8 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
   const cmp = useMemo(() => (compare ? statsFor(meetings, resched, compare) : null), [meetings, resched, compare]);
 
   const realLeads = useMemo(() => leads.filter((l) => !l.is_sample), [leads]);
-  const eligNow = useMemo(() => realLeads.filter((l) => l.eligibility === 'eligible' && inPeriod(l.created_at, period)).length, [realLeads, period]);
-  const eligCmp = useMemo(() => (compare ? realLeads.filter((l) => l.eligibility === 'eligible' && inPeriod(l.created_at, compare)).length : 0), [realLeads, compare]);
+  const eligNow = useMemo(() => realLeads.filter((l) => isGtvEligible(l) && inPeriod(l.created_at, period)).length, [realLeads, period]);
+  const eligCmp = useMemo(() => (compare ? realLeads.filter((l) => isGtvEligible(l) && inPeriod(l.created_at, compare)).length : 0), [realLeads, compare]);
 
   const rates = (s: ReturnType<typeof statsFor>, elig: number) => ({
     book: pctOf(s.booked.length, elig),
@@ -158,7 +159,7 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
 
     const withCall = new Set(meetings.map((m) => m.lead_id).filter(Boolean) as string[]);
     const noCall = realLeads.filter((l) =>
-      l.eligibility === 'eligible' && !withCall.has(l.id) && l.stage !== 'won' && l.stage !== 'junk');
+      isGtvEligible(l) && !withCall.has(l.id) && l.stage !== 'won' && l.stage !== 'junk');
     return { dropped, noCall };
   }, [meetings, resched, realLeads]);
 

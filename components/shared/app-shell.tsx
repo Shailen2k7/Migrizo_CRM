@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { PwaSetup } from '@/components/shared/pwa';
 import { Menu, Plus } from 'lucide-react';
 import { AppProvider } from '@/components/shared/app-provider';
@@ -41,6 +42,7 @@ interface Props {
 }
 
 export function AppShell({ user, workspace, role, canViewPayments, initialLeads, initialPayments, initialActivity, children }: Props) {
+  const pathname = usePathname();
   const [addLeadOpen, setAddLeadOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
@@ -105,7 +107,12 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
         <Sidebar user={user} workspaceName={workspace.name} leadsCount={initialLeads.length} onAddLead={() => { setMobileNav(false); ui.openAddLead(); }} mobileOpen={mobileNav} onClose={() => setMobileNav(false)} collapsed={navCollapsed} onToggleCollapse={toggleNav} />
 
         <main className={`pt-14 md:pt-0 transition-[margin] duration-300 ease-out ${navCollapsed ? 'md:ml-[68px]' : 'md:ml-[240px]'}`}>
-          <CooBanner leads={initialLeads} isAdmin={role === 'admin'} userName={user.name} />
+          {/* The greeting banner belongs on pages you READ. Master Leads is a
+              page you WORK in — it measures its own height from the top of
+              the window, and every pixel of banner is a row of leads lost. */}
+          {!pathname?.startsWith('/master') && (
+            <CooBanner leads={initialLeads} isAdmin={role === 'admin'} userName={user.name} />
+          )}
           {children}
         </main>
 

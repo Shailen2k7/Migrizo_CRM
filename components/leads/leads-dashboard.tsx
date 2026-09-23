@@ -28,6 +28,7 @@ import {
   inPeriod, countDelta, type Period,
 } from '@/lib/dashboard';
 import type { Lead } from '@/lib/types';
+import { isGtvEligible } from '@/lib/master-leads';
 
 export interface DashFilter { label: string; ids: Set<string> }
 
@@ -61,7 +62,9 @@ function cohortOf(leads: Lead[], p: Period) {
     // Cumulative, not "currently sitting at hot" — see HOT_OR_BEYOND.
     reachedHot: created.filter((l) => HOT_OR_BEYOND.includes(l.stage)),
     reviewed: created.filter((l) => !!l.eligibility),
-    eligible: created.filter((l) => l.eligibility === 'eligible'),
+    // isGtvEligible, not a bare ===, so that promoting someone to Highly
+    // Eligible never makes this number tick DOWN. See lib/master-leads.ts.
+    eligible: created.filter(isGtvEligible),
     notEligible: created.filter((l) => l.eligibility === 'not_eligible'),
     won: created.filter((l) => l.stage === 'won'),
   };
@@ -127,9 +130,9 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
    * and is labelled for what it is.
    */
   const verdicts = useMemo(() => ({
-    allEligible:    real.filter((l) => l.eligibility === 'eligible'),
+    allEligible:    real.filter(isGtvEligible),
     allNotEligible: real.filter((l) => l.eligibility === 'not_eligible'),
-    inheritedEligible:    real.filter((l) => l.eligibility === 'eligible' && l.eligibility_source === 'derived').length,
+    inheritedEligible:    real.filter((l) => isGtvEligible(l) && l.eligibility_source === 'derived').length,
     inheritedNotEligible: real.filter((l) => l.eligibility === 'not_eligible' && l.eligibility_source === 'derived').length,
     dated: real.filter(
       (l) => (l.eligibility_source === 'whatsapp' || l.eligibility_source === 'manual') && !!l.eligibility_at,
