@@ -430,7 +430,7 @@ function ManageModal({ pipeline, pipelines, stages, leads, pl, updateLead, onSel
   stages: Stage[];
   leads: LeadP[];
   pl: ReturnType<typeof usePipelines>;
-  updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
+  updateLead: (id: string, patch: Partial<Lead>) => Promise<unknown>;
   onSelectPipeline: (id: string | null) => void;
   onClose: () => void;
 }) {

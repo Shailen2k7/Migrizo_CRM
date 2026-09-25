@@ -8,7 +8,7 @@ import { useApp } from '@/components/shared/app-provider';
 import type { Payment, Milestone } from '@/lib/types';
 import { MILESTONE_META } from '@/lib/types';
 import { formatMoney, moneySymbol, cn } from '@/lib/utils';
-import { FileText, Pencil, Trash2, Send, Download, X, Percent, Building2 } from 'lucide-react';
+import { FileText, Pencil, Trash2, Send, Download, X, Percent, Building2, MapPin, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Props {
@@ -48,6 +48,18 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
   const OUR_STATE = '09';
   const interstate = cleanGstin.length === 15 && cleanGstin.slice(0, 2) !== OUR_STATE;
 
+  // ── the client's billing address ──────────────────────────────────────────
+  // Also the CLIENT's, so it lives on the lead beside the GSTIN (migration
+  // 123). One free-text field: addresses are pasted whole, from India and
+  // abroad, and print line for line. Tidied, never rewritten — trailing spaces
+  // and runs of blank lines go, everything the person typed stays.
+  const ADDRESS_MAX = 600;
+  const [address, setAddress] = useState<string>(lead?.billing_address || '');
+  const cleanAddress = address
+    .split(/\r?\n/).map((line) => line.replace(/\s+$/, ''))
+    .join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const addressLines = cleanAddress ? cleanAddress.split('\n') : [];
+
   // One-click branded invoice email for this specific milestone payment.
   const isPaid = payment.status === 'paid';
   const docWord = isPaid ? 'Receipt' : 'Invoice';
@@ -71,13 +83,22 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
    */
   const saveGst = async (): Promise<boolean> => {
     const gstinChanged = cleanGstin !== (lead?.gstin || '');
+    const addressChanged = cleanAddress !== (lead?.billing_address || '');
     const rateChanged = rateNum !== Number(payment.gst_rate ?? 0) || gstMode !== (payment.gst_mode ?? 'add');
-    if (!rateChanged && !gstinChanged) return true;
+    if (!rateChanged && !gstinChanged && !addressChanged) return true;
     setSavingGst(true);
-    // The number goes on the lead, the rate on the payment. A malformed GSTIN
-    // is never written — the invoice would carry it to the client's accountant.
-    if (gstinChanged && lead && (gstinValid || cleanGstin.length === 0)) {
-      await updateLead(lead.id, { gstin: cleanGstin || null });
+    // The client's details go on the lead, the rate on the payment. A
+    // malformed GSTIN is never written — the invoice would carry it to the
+    // client's accountant. Both client fields go in ONE write so the document
+    // can never print a new address beside an old GST number.
+    const clientPatch: { gstin?: string | null; billing_address?: string | null } = {};
+    if (gstinChanged && (gstinValid || cleanGstin.length === 0)) clientPatch.gstin = cleanGstin || null;
+    if (addressChanged) clientPatch.billing_address = cleanAddress || null;
+    // If the client's details did not save, STOP: sending or downloading now
+    // would produce an invoice without the address you can see in the preview.
+    if (lead && Object.keys(clientPatch).length) {
+      const ok = await updateLead(lead.id, clientPatch);
+      if (!ok) { setSavingGst(false); return false; }
     }
     if (rateChanged) await updatePayment(payment.id, { gst_rate: rateNum, gst_mode: gstMode });
     setSavingGst(false);
@@ -203,6 +224,7 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
         {gstOpen && (
           <div className="mt-2.5 pt-2.5 border-t border-border animate-pageIn">
             <div className="flex flex-wrap items-center gap-2">
+              <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-faint">Tax</span>
               <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-2">
                 <Percent className="w-3.5 h-3.5 text-muted" /> GST
               </span>
@@ -222,42 +244,93 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
                   </button>
                 ))}
               </div>
-              <button onClick={() => { setGstOpen(false); setGstRate(String(payment.gst_rate ?? 0)); setGstMode((payment.gst_mode ?? 'add') as 'add' | 'inclusive'); setGstin(lead?.gstin || ''); }}
+              <button onClick={() => { setGstOpen(false); setGstRate(String(payment.gst_rate ?? 0)); setGstMode((payment.gst_mode ?? 'add') as 'add' | 'inclusive'); setGstin(lead?.gstin || ''); setAddress(lead?.billing_address || ''); }}
                 className="p-1 rounded hover:bg-surface-2 text-muted hover:text-ink" title="Cancel">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            {/* The client's GST number. Optional, and says so — most clients
-                are individuals who have none. */}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-2">
-                <Building2 className="w-3.5 h-3.5 text-muted" /> Client GSTIN
-              </span>
-              <input
-                type="text" value={gstin} maxLength={20}
-                onChange={(e) => setGstin(e.target.value)}
-                placeholder="optional · 22AAAAA0000A1Z5"
-                spellCheck={false}
-                className={cn(
-                  'w-[210px] px-2 py-1 rounded-md border bg-surface text-[12.5px] uppercase tracking-wide outline-none transition',
-                  cleanGstin.length === 0 ? 'border-border focus:border-[#4F46E5]'
-                    : gstinValid ? 'border-[#A7F3D0] focus:border-[#047857]'
-                    : 'border-[#FCA5A5] focus:border-[#B91C1C]',
+            {/* ── Bill to ─────────────────────────────────────────────────
+                The client's details on the left, the block exactly as the
+                invoice will print it on the right — so nobody sends a
+                document to find out what it says. */}
+            <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+              <div className="flex min-w-0 flex-col gap-2.5">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-faint">Bill to</div>
+
+                <label className="block">
+                  <span className="mb-1 flex items-center gap-1.5 text-[11.5px] font-medium text-ink-2">
+                    <Building2 className="h-3.5 w-3.5 text-muted" /> GSTIN
+                    <span className="font-normal text-faint">· optional</span>
+                    {cleanGstin.length > 0 && gstinValid && <span className="ml-auto text-[11px] font-semibold text-[#047857]">looks right</span>}
+                    {cleanGstin.length > 0 && !gstinValid && (
+                      <span className="ml-auto text-[11px] text-[#B91C1C]">
+                        {gstinLooksShort ? `${cleanGstin.length} of 15` : 'invalid format'}
+                      </span>
+                    )}
+                  </span>
+                  <input
+                    type="text" value={gstin} maxLength={20}
+                    onChange={(e) => setGstin(e.target.value)}
+                    placeholder="22AAAAA0000A1Z5"
+                    spellCheck={false}
+                    className={cn(
+                      'w-full rounded-lg border bg-surface px-2.5 py-1.5 text-[12.5px] uppercase tracking-wide outline-none transition',
+                      cleanGstin.length === 0 ? 'border-border focus:border-[#4F46E5]'
+                        : gstinValid ? 'border-[#A7F3D0] focus:border-[#047857]'
+                        : 'border-[#FCA5A5] focus:border-[#B91C1C]',
+                    )}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 flex items-center gap-1.5 text-[11.5px] font-medium text-ink-2">
+                    <MapPin className="h-3.5 w-3.5 text-muted" /> Billing address
+                    <span className="font-normal text-faint">· optional</span>
+                    {address.length > ADDRESS_MAX - 80 && (
+                      <span className={cn('ml-auto text-[11px] tabular-nums', address.length > ADDRESS_MAX ? 'text-[#B91C1C]' : 'text-faint')}>
+                        {address.length}/{ADDRESS_MAX}
+                      </span>
+                    )}
+                  </span>
+                  <textarea
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value.slice(0, ADDRESS_MAX))}
+                    rows={4}
+                    placeholder={'Flat 12, Green Park Residency\nSector 62, Noida\nUttar Pradesh 201301, India'}
+                    className="w-full resize-none rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[12.5px] leading-relaxed outline-none transition placeholder:text-faint focus:border-[#4F46E5]"
+                  />
+                  <span className="mt-1 block text-[11px] text-faint">Paste it as it should appear — each line prints as a line.</span>
+                </label>
+
+                {(lead?.gstin || lead?.billing_address) && (cleanGstin !== (lead?.gstin || '') || cleanAddress !== (lead?.billing_address || '')) && (
+                  <button onClick={() => { setGstin(lead?.gstin || ''); setAddress(lead?.billing_address || ''); }}
+                    className="self-start text-[11px] text-muted underline hover:text-ink">Undo changes</button>
                 )}
-              />
-              {cleanGstin.length > 0 && gstinValid && (
-                <span className="text-[11px] font-semibold text-[#047857]">looks right</span>
-              )}
-              {cleanGstin.length > 0 && !gstinValid && (
-                <span className="text-[11px] text-[#B91C1C]">
-                  {gstinLooksShort ? `${cleanGstin.length} of 15 characters` : 'not a valid GSTIN format'}
-                </span>
-              )}
-              {lead?.gstin && cleanGstin !== lead.gstin && (
-                <button onClick={() => setGstin(lead.gstin || '')}
-                  className="text-[11px] text-muted hover:text-ink underline">undo</button>
-              )}
+              </div>
+
+              {/* Live preview — the same fields, order and tone as the invoice's BILL TO. */}
+              <div className="flex min-w-0 flex-col">
+                <div className="mb-2.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-faint">
+                  <Receipt className="h-3 w-3" /> On the invoice
+                </div>
+                <div className="flex-1 rounded-xl border border-[#E7EAF1] bg-[#F7F8FC] px-4 py-3.5 dark:border-border dark:bg-surface-2">
+                  <div className="text-[9.5px] font-extrabold tracking-[0.1em] text-[#8A91A3]">BILL TO</div>
+                  <div className="mt-1.5 break-words text-[13.5px] font-extrabold leading-snug text-[#12205A] dark:text-ink">{lead?.full_name || 'Client name'}</div>
+                  {addressLines.length > 0 ? (
+                    <div className="mt-1.5 text-[11.8px] leading-[1.55] text-[#4A5162] dark:text-ink-2">
+                      {addressLines.map((line, i) => <div key={i} className="break-words">{line || '\u00A0'}</div>)}
+                    </div>
+                  ) : (
+                    <div className="mt-1.5 text-[11.5px] italic text-faint">No address — this line is left out</div>
+                  )}
+                  {lead?.email && <div className="mt-1.5 break-all text-[11.8px] leading-[1.6] text-[#4A5162] dark:text-ink-2">{lead.email}</div>}
+                  {lead?.phone && <div className="text-[11.8px] leading-[1.6] text-[#4A5162] dark:text-ink-2">{lead.phone}</div>}
+                  {cleanGstin.length > 0 && gstinValid && (
+                    <div className="mt-1.5 text-[11.5px] text-[#1A1D29] dark:text-ink"><b>GSTIN:</b> {cleanGstin}</div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {interstate && (
@@ -278,15 +351,15 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
 
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <button
-                onClick={async () => { await saveGst(); downloadPdf(); }}
+                onClick={async () => { if (await saveGst()) downloadPdf(); }}
                 disabled={savingGst || sendingInvoice || !gstinValid}
                 title={!gstinValid ? 'Fix or clear the GSTIN first' : undefined}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-ink-2 bg-surface border border-border hover:bg-surface-2 transition-all disabled:opacity-50"
               >
-                <Download className="w-3.5 h-3.5" /> Save GST &amp; download PDF
+                <Download className="w-3.5 h-3.5" /> Save &amp; download PDF
               </button>
               <button
-                onClick={async () => { await saveGst(); setGstOpen(false); void sendInvoice(false); }}
+                onClick={async () => { if (!(await saveGst())) return; setGstOpen(false); void sendInvoice(false); }}
                 disabled={savingGst || sendingInvoice || !gstinValid}
                 title={!gstinValid ? 'Fix or clear the GSTIN first' : undefined}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
@@ -308,6 +381,7 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
                 ? payment.amount
                 : payment.amount * (1 + Number(payment.gst_rate) / 100)), currency)}</b>
             {lead?.gstin && <span className="text-faint">· GSTIN {lead.gstin}</span>}
+            {lead?.billing_address && <span className="text-faint">· address on file</span>}
           </div>
         )}
         {payment.note && (

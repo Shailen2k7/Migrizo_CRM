@@ -80,6 +80,11 @@ export interface Lead {
    * reused by every invoice for that client.
    */
   gstin?: string | null;
+  /**
+   * The client's billing address (migration 123). Optional free text, line
+   * breaks preserved, printed under BILL TO on invoices and receipts.
+   */
+  billing_address?: string | null;
   // Ad-form intake (migration 050). investment_readiness is DERIVED and is what
   // automation reads; intake holds the raw answers verbatim so a mapping change
   // can always be re-run against the originals. NULL readiness means the

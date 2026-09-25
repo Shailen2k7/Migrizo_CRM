@@ -765,7 +765,7 @@ export function invoiceNumber(payment: { id: string; created_at: string | null }
 }
 
 export function renderInvoice(
-  lead: Pick<Lead, 'full_name' | 'email' | 'phone' | 'visa_type' | 'currency' | 'gstin'>,
+  lead: Pick<Lead, 'full_name' | 'email' | 'phone' | 'visa_type' | 'currency' | 'gstin' | 'billing_address'>,
   payment: Pick<Payment, 'id' | 'milestone' | 'amount' | 'status' | 'paid_at' | 'created_at'>
     & { gst_rate?: number | null; gst_mode?: 'add' | 'inclusive' | null },
   invoiceNo: string,
@@ -848,6 +848,9 @@ export function renderInvoice(
         <td width="48%" valign="top" style="background:${BG};border-radius:10px;padding:16px 18px;">
           <div style="font-size:11px;font-weight:800;color:${MUTED};letter-spacing:0.8px;">BILL TO</div>
           <div style="font-size:16px;font-weight:800;color:${NAVY};margin-top:6px;line-height:1.35;">${esc(lead.full_name)}</div>
+          <!-- The address prints line for line as typed, escaped first so a
+               stray < in someone's street name can never become markup. -->
+          ${lead.billing_address ? `<div style="font-size:13px;color:#4A5162;margin-top:6px;line-height:1.55;">${esc(lead.billing_address).replace(/\r?\n/g, '<br/>')}</div>` : ''}
           <div style="font-size:13px;color:#4A5162;margin-top:6px;line-height:1.6;">${esc(lead.email || '')}</div>
           <div style="font-size:13px;color:#4A5162;line-height:1.6;">${esc(lead.phone || '')}</div>
           ${lead.gstin ? `<div style="font-size:12.5px;color:${INK};margin-top:6px;line-height:1.6;"><b>GSTIN:</b> ${esc(lead.gstin)}</div>` : ''}

@@ -39,7 +39,8 @@ interface AppData {
   refreshFollowUps: () => Promise<void>;
   memberNameById: (userId: string | null | undefined) => string;
   createLead: (input: Partial<Lead>) => Promise<Lead | null>;
-  updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
+  /** Resolves true once saved, false if the database refused (already rolled back and toasted). */
+  updateLead: (id: string, patch: Partial<Lead>) => Promise<boolean>;
   /** Applies ONE patch to many leads in a single request. Used by Master Leads. */
   bulkUpdateLeads: (ids: string[], patch: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
@@ -105,6 +106,9 @@ interface ProviderProps {
 function friendlyLeadError(message: string): string {
   if (message.includes('leads_eligibility_chk')) {
     return 'Highly Eligible and Others are not switched on in the database yet — run migration 121 in Supabase, then try again.';
+  }
+  if (message.includes('billing_address')) {
+    return 'The billing address field is not switched on in the database yet — run migration 123 in Supabase, then try again.';
   }
   if (message.includes('leads_investment_readiness_check')) {
     return 'That willingness-to-pay value is not one the database accepts.';
@@ -318,7 +322,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     return data as Lead;
   }, [supabase, workspace.id, user.id, logActivity]);
 
-  const updateLead = useCallback(async (id: string, patch: Partial<Lead>) => {
+  const updateLead = useCallback(async (id: string, patch: Partial<Lead>): Promise<boolean> => {
     const before = leads.find((l) => l.id === id);
     // Stamp the conversion time the moment a lead first becomes 'won' (powers the AI COO).
     const effPatch: Partial<Lead> = { ...patch };
@@ -330,11 +334,12 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     if (error) {
       if (before) setLeads((prev) => prev.map((l) => (l.id === id ? before : l)));
       toast.error(friendlyLeadError(error.message));
-      return;
+      return false;
     }
     if (patch.stage && before?.stage !== patch.stage) {
       logActivity('moved_stage', id, { from: before?.stage, to: patch.stage });
     }
+    return true;
   }, [supabase, leads, logActivity]);
 
   /**

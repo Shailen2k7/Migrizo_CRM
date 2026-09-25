@@ -46,7 +46,7 @@ const scoreTone = (s?: number | null) =>
 export default function MyQueuePage() {
   const app = useApp() as ReturnType<typeof useApp> & {
     workspace: { id: string }; user: { id: string; name: string }; role: string;
-    updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
+    updateLead: (id: string, patch: Partial<Lead>) => Promise<unknown>;
   };
   const { workspace, user, updateLead } = app;
 
