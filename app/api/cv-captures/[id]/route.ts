@@ -62,15 +62,32 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!capture) return new NextResponse('Not found', { status: 404 });
 
   const { data: msgData } = await a.admin
-    .from('relay_messages').select('media_path, media_name, media_mime')
+    .from('relay_messages').select('media_path, media_url, media_name, media_mime')
     .eq('id', capture.message_id).maybeSingle();
-  const msg = msgData as { media_path: string | null; media_name: string | null; media_mime: string | null } | null;
-  if (!msg?.media_path) return new NextResponse('The file is no longer stored.', { status: 404 });
+  const msg = msgData as {
+    media_path: string | null; media_url: string | null;
+    media_name: string | null; media_mime: string | null;
+  } | null;
+  if (!msg?.media_path && !msg?.media_url) {
+    return new NextResponse('The file is no longer stored.', { status: 404 });
+  }
 
-  const { data: file, error } = await a.admin.storage.from(RELAY_BUCKET).download(msg.media_path);
-  if (error || !file) return new NextResponse('The file could not be opened.', { status: 404 });
-
-  const buf = Buffer.from(await file.arrayBuffer());
+  // A document too large for our bucket was never copied, but WhatsApp still
+  // holds it — so the reviewer can open it either way.
+  let buf: ArrayBuffer;
+  if (msg.media_path) {
+    const { data: file, error } = await a.admin.storage.from(RELAY_BUCKET).download(msg.media_path);
+    if (error || !file) return new NextResponse('The file could not be opened.', { status: 404 });
+    buf = await file.arrayBuffer();
+  } else {
+    try {
+      const res = await fetch(msg.media_url as string, { signal: AbortSignal.timeout(25_000) });
+      if (!res.ok) return new NextResponse('The file could not be opened.', { status: 404 });
+      buf = await res.arrayBuffer();
+    } catch {
+      return new NextResponse('The file could not be opened.', { status: 404 });
+    }
+  }
   const name = (msg.media_name || capture.file_name || 'document').replace(/["\r\n]/g, '');
   return new NextResponse(buf, {
     headers: {
