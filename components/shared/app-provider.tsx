@@ -1,5 +1,6 @@
 'use client';
 
+import { DEFAULT_CASE_OWNER } from '@/lib/case-stages';
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Lead, Payment, Activity, Workspace, Note, Case, CaseChecklistItem, CaseActivity, CaseStage, ChecklistStatus, FollowUp, OfferType } from '@/lib/types';
@@ -231,6 +232,17 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     const ch = supabase
       .channel('ws-' + workspace.id)
       .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'cases', filter: `workspace_id=eq.${workspace.id}` },
+        // A lead was marked Converted somewhere and its case just opened
+        // (trigger from migration 124). Celebrate in-app and pull the list,
+        // so the Cases page flashes without a refresh.
+        (payload: { new: { client_name?: string } }) => {
+          toast.success(`🎉 New case arrived — ${payload.new?.client_name ?? 'a client'} converted`, { duration: 8000 });
+          void refreshCases();
+        },
+      )
+      .on(
+        'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'leads', filter: `workspace_id=eq.${workspace.id}` },
         (payload) => {
           const row = payload.new as Lead;
@@ -272,7 +284,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
         () => { refreshMembers(); })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [supabase, workspace.id, refreshMembers]);
+  }, [supabase, workspace.id, refreshMembers, refreshCases]);
 
   const logActivity = useCallback(async (action: string, leadId: string | null = null, meta: Record<string, unknown> = {}) => {
     await supabase.from('activity').insert({ workspace_id: workspace.id, user_id: user.id, lead_id: leadId, action, meta });
@@ -691,6 +703,11 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     const lead = input.lead_id ? leads.find((l) => l.id === input.lead_id) : null;
     // New cases start clean at the first step (Onboarding).
     const journey = { tasks: {}, pillars: {}, gates: {} };
+    // Every case is Mansi Behl's by default; if she is not in this workspace,
+    // it falls back to whoever opened it.
+    const mansi = members.find((m) => m.user_id === DEFAULT_CASE_OWNER.id);
+    const ownerId = mansi ? DEFAULT_CASE_OWNER.id : user.id;
+    const ownerName = mansi ? DEFAULT_CASE_OWNER.name : user.name;
     const { data, error } = await supabase.from('cases').insert({
       workspace_id: workspace.id,
       lead_id: input.lead_id,
@@ -700,8 +717,8 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
       visa_type: input.visa_type,
       current_phase: 'onboarding',
       journey,
-      owner_id: user.id,
-      owner_name: user.name,
+      owner_id: ownerId,
+      owner_name: ownerName,
       decision: 'pending',
       created_by: user.id,
     }).select().single();
@@ -709,7 +726,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     toast.success(`Case opened for ${input.client_name}`);
     await refreshCases();
     return (data as Case).id;
-  }, [supabase, workspace.id, user.id, user.name, refreshCases, leads]);
+  }, [supabase, workspace.id, user.id, user.name, refreshCases, leads, members]);
 
   // Fire-and-forget client email via the server route. Never blocks the UI.
   const notifyClientEmail = useCallback(async (

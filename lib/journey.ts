@@ -208,11 +208,21 @@ export interface CaseJourneyState {
   // Per-case task overrides. When a phase key is present here, these tasks
   // replace the template tasks FOR THIS CASE ONLY (used by the edit feature).
   customTasks?: Record<string, JourneyTask[]>;
+  /**
+   * The GTV case-details form (Case Management v2, 28 Sep 2026): onboarding,
+   * Drive, letters of recommendation, criteria & evidence, CV & statement,
+   * LinkedIn, Canva, client review. Lives inside journey so it needs no
+   * migration; shape and helpers are in lib/case-details.ts.
+   */
+  details?: import('./case-details').CaseDetails;
 }
 export function emptyJourney(): CaseJourneyState { return { tasks: {}, pillars: {}, gates: {} }; }
 export function normalizeJourney(raw: unknown): CaseJourneyState {
   const j = (raw && typeof raw === 'object') ? raw as Partial<CaseJourneyState> : {};
-  return { tasks: j.tasks || {}, pillars: j.pillars || {}, gates: j.gates || {}, customTasks: j.customTasks };
+  // `details` is carried through untouched. Dropping it here would silently
+  // erase a client's whole case form the next time any older screen saved
+  // the journey — every key this function does not recognise must survive.
+  return { tasks: j.tasks || {}, pillars: j.pillars || {}, gates: j.gates || {}, customTasks: j.customTasks, details: j.details };
 }
 
 // Overlay any per-case custom tasks onto the template phases. Everything

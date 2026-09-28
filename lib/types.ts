@@ -329,12 +329,23 @@ export interface Case {
   decided_at: string | null;
   archived_at: string | null;
   client_token: string | null;
+  // ---- Case Management v2 (migration 124) --------------------------------
+  /** Display case number, e.g. 1024 → "MIG-1024". Backfilled by created_at. */
+  case_no?: number | null;
+  /** When the case entered its current delivery stage. Drives At risk/Overdue. */
+  stage_entered_at?: string | null;
+  /** Who the ball is with right now. */
+  waiting_on?: 'client' | 'team' | 'authority' | null;
+  /** The date the submission is aimed at; deadlines count down to this. */
+  target_submission_at?: string | null;
 }
 
 export interface CaseChecklistItem {
   id: string;
   case_id: string;
-  stage: CaseStage;
+  /** Stage key. Historically the old CaseStage values; Case Management v2
+      writes the new ten-stage keys (lib/case-stages.ts). The column is text. */
+  stage: string;
   category: string | null;
   title: string;
   description: string | null;
@@ -346,6 +357,9 @@ export interface CaseChecklistItem {
   completed_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Case Management v2 (migration 124): deadline + who owns the task. */
+  due_at?: string | null;
+  assignee_id?: string | null;
 }
 
 export interface CaseActivity {

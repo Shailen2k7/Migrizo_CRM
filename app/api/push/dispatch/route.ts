@@ -120,5 +120,39 @@ export async function POST(req: Request) {
     await admin.from('follow_ups').update({ notified_at: now.toISOString() }).eq('id', f.id);
   }
 
-  return NextResponse.json({ ok: true, dispatched, followUps: due.length });
+  // ---- NEW CASES: a lead marked Converted became a case (DB trigger, 124).
+  // Ride the same minute-cron. The whole workspace gets the WhatsApp-style
+  // push once per case; a case_activity marker makes "once" true even if two
+  // cron ticks overlap the window.
+  let casesPushed = 0;
+  const { data: freshCases } = await admin
+    .from('cases')
+    .select('id, workspace_id, client_name, visa_type, created_at')
+    .gte('created_at', windowStart)
+    .limit(20);
+  for (const fc of freshCases || []) {
+    const { data: already } = await admin
+      .from('case_activity').select('id')
+      .eq('case_id', fc.id).eq('action', 'case_push_sent').limit(1);
+    if (already && already.length > 0) continue;
+    // Mark FIRST so a concurrent tick cannot double-send.
+    const { error: markErr } = await admin.from('case_activity').insert({
+      workspace_id: fc.workspace_id, case_id: fc.id, user_id: null,
+      action: 'case_push_sent', meta: {},
+    });
+    if (markErr) continue;
+    const { data: subs } = await admin
+      .from('push_subscriptions').select('*').eq('workspace_id', fc.workspace_id);
+    if (subs && subs.length > 0) {
+      const visa = /ifv|innovator|founder|fiv/i.test(fc.visa_type || '') ? 'Innovator Founder Visa' : 'Global Talent Visa';
+      casesPushed += await sendToSubs(admin, subs as SubRow[], {
+        title: `🎉 New case: ${fc.client_name}`,
+        body: `Converted just now · ${visa} — tap to open the case`,
+        url: '/cases',
+        tag: `case-${fc.id}`,
+      });
+    }
+  }
+
+  return NextResponse.json({ ok: true, dispatched, followUps: due.length, casesPushed });
 }

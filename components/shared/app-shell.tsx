@@ -110,7 +110,7 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
           {/* The greeting banner belongs on pages you READ. Master Leads is a
               page you WORK in — it measures its own height from the top of
               the window, and every pixel of banner is a row of leads lost. */}
-          {!pathname?.startsWith('/master') && (
+          {!pathname?.startsWith('/master') && !pathname?.startsWith('/cases') && (
             <CooBanner leads={initialLeads} isAdmin={role === 'admin'} userName={user.name} />
           )}
           {children}
