@@ -115,7 +115,7 @@ export interface Lead {
   eligibility?: 'eligible' | 'highly_eligible' | 'not_eligible' | 'others' | null;
   eligibility_at?: string | null;
   eligibility_by?: string | null;
-  eligibility_source?: 'manual' | 'derived' | 'ai' | 'whatsapp' | null;
+  eligibility_source?: 'manual' | 'derived' | 'ai' | 'whatsapp' | 'rule' | null;
   // CV on record: the extracted profile text behind the
   // drawer's "View profile" button.
   /** When this person most recently filled the ad form (083). */

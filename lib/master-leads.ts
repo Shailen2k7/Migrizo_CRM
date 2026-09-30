@@ -107,6 +107,7 @@ export function gtvSourceLabel(lead: Pick<Lead, 'eligibility_source'>): string |
     case 'whatsapp': return 'Told on WhatsApp';
     case 'ai':       return 'Read from their CV';
     case 'derived':  return 'Inherited from older data';
+    case 'rule':     return 'Tagged by rule (category + WTP)';
     default:         return null;
   }
 }

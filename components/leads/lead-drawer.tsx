@@ -568,6 +568,8 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                           <div className="mt-1 text-[11px] text-muted">
                             {effectiveLead.eligibility_source === 'derived'
                               ? 'Derived from stage history — one click above confirms it'
+                              : effectiveLead.eligibility_source === 'rule'
+                              ? 'Tagged by rule from category + willingness to pay — one click above overrides it'
                               : effectiveLead.eligibility_source === 'ai'
                               ? 'AI verdict from the CV they sent — one click above confirms or overrides it'
                               : effectiveLead.eligibility_source === 'whatsapp'
