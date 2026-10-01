@@ -21,7 +21,7 @@ function LeadsPageInner() {
 
   const summary = useMemo(() => {
     const won = leads.filter((l) => l.stage === 'won').length;
-    const active = leads.filter((l) => !['won', 'junk'].includes(l.stage)).length;
+    const active = leads.filter((l) => !['won', 'junk', 'lost'].includes(l.stage)).length;
     return `${leads.length} total · ${active} active · ${won} closed won`;
   }, [leads]);
 

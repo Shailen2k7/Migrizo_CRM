@@ -29,6 +29,7 @@ import {
 } from '@/lib/dashboard';
 import type { Lead } from '@/lib/types';
 import { isGtvEligible } from '@/lib/master-leads';
+import { likeForLike } from '@/lib/period-compare';
 
 export interface DashFilter { label: string; ids: Set<string> }
 
@@ -46,10 +47,14 @@ const HOT_OR_BEYOND = ['hot', 'mr_coming_soon', 'invoice_sent', 'won'];
  * The one cohort definition every card and the funnel read.
  *
  * Everything is cohorted by created_at: "of the leads that arrived in this
- * period, how many are hot / cold / starred". That keeps the cards answering
- * the same question about the same set of people, so they can be read across
- * without a mental gear change. Eligibility is the deliberate exception — it
- * is cohorted by when the verdict was reached, not when the lead arrived.
+ * period, how many are hot / cold / starred / eligible". All six cards answer
+ * the same question about the same set of people, so they read across without
+ * a mental gear change and the month-on-month deltas compare like with like.
+ *
+ * (Until 1 Oct 2026 Eligible / Not eligible counted only verdicts typed by
+ * hand or sent on WhatsApp inside the period. That showed "2 eligible" for an
+ * August in which 502 of the month's leads were eligible, and +11,500% for
+ * September. Owner asked for one meaning across the row.)
  */
 function cohortOf(leads: Lead[], p: Period) {
   const created = leads.filter((l) => inPeriod(l.created_at, p));
@@ -70,19 +75,6 @@ function cohortOf(leads: Lead[], p: Period) {
   };
 }
 
-/**
- * The verdicts genuinely reached inside a period. Only rows with a real
- * timestamp reach here — see the `verdicts` comment below for why that
- * exclusion matters.
- */
-function pickTold(dated: Lead[], p: Period | null) {
-  const inside = p ? dated.filter((l) => inPeriod(l.eligibility_at!, p)) : [];
-  return {
-    eligible: inside.filter((l) => l.eligibility === 'eligible'),
-    notEligible: inside.filter((l) => l.eligibility === 'not_eligible'),
-  };
-}
-
 export function LeadsDashboard({ onFilter, activeFilter }: {
   onFilter: (f: DashFilter | null) => void;
   activeFilter: DashFilter | null;
@@ -96,7 +88,8 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
   const period = periods.get(periodKey)!;
   const cmpOpts = useMemo(() => compareOptions(periods, periodKey), [periods, periodKey]);
   const effCmp = cmpOpts.includes(cmpKey) ? cmpKey : 'prev';
-  const compare = resolveCompare(periods, periodKey, effCmp);
+  // While the period is still running, compare with the same elapsed days.
+  const compare = likeForLike(period, resolveCompare(periods, periodKey, effCmp), now);
 
   const real = useMemo(() => leads.filter((l) => !l.is_sample), [leads]);
   const cur = useMemo(() => cohortOf(real, period), [real, period]);
@@ -107,46 +100,10 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
   // five, but the foot carries the number people actually act on.
   const spotlightAll = useMemo(() => real.filter((l) => l.is_spotlight).length, [real]);
 
-  /**
-   * TWO DIFFERENT THINGS LIVE IN leads.eligibility, AND CONFLATING THEM LIES.
-   *
-   * 'derived' — migration 074 stamped a verdict on the whole back catalogue by
-   *   reading the lead's stage: anyone at hot-or-beyond became 'eligible',
-   *   anyone at junk became 'not_eligible'. That is a relabelling of the
-   *   pipeline, not a decision anybody reached or communicated, and
-   *   eligibility_at holds the moment the migration ran rather than the moment
-   *   anyone was told. It cannot be cohorted by date. It is also why the
-   *   not-eligible total reads in the hundreds: that number is overwhelmingly
-   *   the junk pile wearing a different name.
-   *
-   * 'whatsapp' / 'manual' — a verdict somebody actually reached and sent, with
-   *   a real timestamp behind it. These are the only rows that can honestly
-   *   answer "how many did we assess this period".
-   *
-   * So the headline is the DATED count for the selected period — which makes
-   * all six cards read across as one period's story instead of four being
-   * September and two being all of history — and the foot carries the all-time
-   * total plus how much of it is inherited, so the big number is still there
-   * and is labelled for what it is.
-   */
-  const verdicts = useMemo(() => ({
-    allEligible:    real.filter(isGtvEligible),
-    allNotEligible: real.filter((l) => l.eligibility === 'not_eligible'),
-    inheritedEligible:    real.filter((l) => isGtvEligible(l) && l.eligibility_source === 'derived').length,
-    inheritedNotEligible: real.filter((l) => l.eligibility === 'not_eligible' && l.eligibility_source === 'derived').length,
-    dated: real.filter(
-      (l) => (l.eligibility_source === 'whatsapp' || l.eligibility_source === 'manual') && !!l.eligibility_at,
-    ),
-  }), [real]);
-
-  const told = useMemo(() => pickTold(verdicts.dated, period), [verdicts.dated, period]);
-  const cmpTold = useMemo(() => pickTold(verdicts.dated, compare), [verdicts.dated, compare]);
-
-  const recording = verdicts.allEligible.length + verdicts.allNotEligible.length > 0;
-  const inheritedTotal = verdicts.inheritedEligible + verdicts.inheritedNotEligible;
-
-  const verdictFoot = (allTime: number, inherited: number) =>
-    inherited > 0 ? `${allTime} all-time · ${inherited} inherited` : `${allTime} all-time`;
+  // All-time totals for the card feet, so the period number always sits
+  // beside the size of the whole book.
+  const allEligible = useMemo(() => real.filter(isGtvEligible).length, [real]);
+  const allNotEligible = useMemo(() => real.filter((l) => l.eligibility === 'not_eligible').length, [real]);
 
   // Each month bar stacks hot over cold over everything else, so the strip
   // answers "is the quality of what we're buying improving?" at a glance.
@@ -202,8 +159,6 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
     { label: 'Won',           value: cur.won.length },
   ];
 
-  const notYet = 'not recorded yet';
-
   return (
     <div className="mb-5 animate-pageIn">
       {/* period + comparison selectors */}
@@ -258,33 +213,23 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
           accent="#F59E0B" active={activeFilter?.label === 'Spotlight leads'}
           onClick={() => pick('Spotlight leads', cur.spotlight)} />
 
-        {/* Headline = told in this period; foot = the all-time ledger. Both
-            scales are on the card, and neither pretends to be the other. */}
-        <StatCard label="Eligible" value={recording ? String(told.eligible.length) : '—'}
-          foot={recording ? verdictFoot(verdicts.allEligible.length, verdicts.inheritedEligible) : notYet}
-          delta={countDelta(told.eligible.length, compare ? cmpTold.eligible.length : null)}
-          accent="#047857" active={activeFilter?.label === 'Told eligible'}
-          onClick={told.eligible.length > 0 ? () => pick('Told eligible', told.eligible) : undefined} />
+        <StatCard label="Eligible" value={String(cur.eligible.length)}
+          foot={`${share(cur.eligible.length)} · ${allEligible} all-time`}
+          delta={countDelta(cur.eligible.length, cmp ? cmp.eligible.length : null)}
+          accent="#047857" active={activeFilter?.label === 'Eligible leads'}
+          onClick={() => pick('Eligible leads', cur.eligible)} />
 
-        <StatCard label="Not eligible" value={recording ? String(told.notEligible.length) : '—'}
-          foot={recording ? verdictFoot(verdicts.allNotEligible.length, verdicts.inheritedNotEligible) : notYet}
-          delta={countDelta(told.notEligible.length, compare ? cmpTold.notEligible.length : null)}
-          accent="#B45309" active={activeFilter?.label === 'Told not eligible'}
-          onClick={told.notEligible.length > 0 ? () => pick('Told not eligible', told.notEligible) : undefined} />
+        <StatCard label="Not eligible" value={String(cur.notEligible.length)}
+          foot={`${share(cur.notEligible.length)} · ${allNotEligible} all-time`}
+          delta={countDelta(cur.notEligible.length, cmp ? cmp.notEligible.length : null)}
+          accent="#B45309" active={activeFilter?.label === 'Not eligible leads'}
+          onClick={() => pick('Not eligible leads', cur.notEligible)} />
       </div>
 
-      {/* The one sentence that stops somebody reading the all-time figure as a
-          verdict we actually delivered. It disappears once the backfill is no
-          longer the majority of the ledger. */}
-      {inheritedTotal > 0 && (
-        <div className="mb-4 -mt-1 text-[11.5px] leading-relaxed text-faint">
-          <b className="text-muted">Eligible / Not eligible</b> count verdicts sent in {period.short}.
-          The all-time totals include <b className="text-muted">{inheritedTotal}</b> inherited from the
-          2024 backfill, which inferred a verdict from the lead&apos;s stage — junk became
-          &ldquo;not eligible&rdquo;, hot-or-beyond became &ldquo;eligible&rdquo;. Those were never
-          communicated to anyone; only the {verdicts.dated.length} dated verdicts were.
-        </div>
-      )}
+      <div className="mb-4 -mt-1 text-[11.5px] leading-relaxed text-faint">
+        Every card counts the leads <b className="text-muted">created in {period.short}</b>, as they stand today.
+        Eligibility includes every tag — set by hand, told on WhatsApp, read from a CV, or tagged by rule.
+      </div>
 
       {/* Lead flow: the year strip and the funnel are one story at two zoom
           levels, so they share one panel — side by side, half each, divided by
@@ -317,11 +262,6 @@ export function LeadsDashboard({ onFilter, activeFilter }: {
               Lead funnel — {period.short}
             </PanelTitle>
             <Funnel steps={funnelSteps} leakNoun="leads" />
-            {!recording && (
-              <div className="mt-3 text-[11.5px] text-muted">
-                Eligibility is not being recorded yet — set it in the lead drawer and the Eligible step fills in automatically.
-              </div>
-            )}
           </div>
         </div>
       </CollapsiblePanel>

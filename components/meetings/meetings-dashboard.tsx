@@ -25,6 +25,7 @@ import {
   inPeriod, pctOf, fmtPct, deltaOf, countDelta, type Period,
 } from '@/lib/dashboard';
 import { AlertTriangle } from 'lucide-react';
+import { likeForLike } from '@/lib/period-compare';
 
 export interface DashMeeting {
   id: string; lead_id: string | null; client_name: string;
@@ -33,16 +34,32 @@ export interface DashMeeting {
 export interface ReschedEvent { meeting_id: string; created_at: string }
 export interface MeetFilter { label: string; ids: Set<string> }
 
-function statsFor(meetings: DashMeeting[], resched: ReschedEvent[], p: Period) {
+/**
+ * Every rate compares like with like (owner's audit, 1 Oct 2026):
+ *   - show / no-show / cancellation: of the calls DUE in the period that have
+ *     an outcome recorded. Calls whose time has passed but are still marked
+ *     "upcoming" are counted separately as `unmarked`, never silently dropped.
+ *   - recovery: of THOSE dropped calls (no-show or cancelled), how many were
+ *     rescheduled or got a later call with the same lead. It used to divide
+ *     reschedules made in the period by drops in the period — two different
+ *     sets of calls, which could read above 100%.
+ */
+function statsFor(meetings: DashMeeting[], resched: ReschedEvent[], p: Period, nowMs: number) {
   const booked = meetings.filter((m) => inPeriod(m.created_at, p));
   const due = meetings.filter((m) => inPeriod(m.starts_at, p));
   const done = due.filter((m) => m.status === 'completed');
   const ns = due.filter((m) => m.status === 'no_show');
   const can = due.filter((m) => m.status === 'cancelled');
   const stillUpcoming = due.filter((m) => m.status === 'upcoming');
-  const resolved = due.length - stillUpcoming.length;
-  const rebooked = resched.filter((e) => inPeriod(e.created_at, p)).length;
-  return { booked, due, done, ns, can, stillUpcoming, resolved, rebooked };
+  const unmarked = stillUpcoming.filter((m) => new Date(m.starts_at).getTime() < nowMs);
+  const resolved = done.length + ns.length + can.length;
+  const reschedIds = new Set(resched.map((e) => e.meeting_id));
+  const dropped = [...ns, ...can];
+  const recovered = dropped.filter((m) => reschedIds.has(m.id) || meetings.some((x) =>
+    x.id !== m.id && !!m.lead_id && x.lead_id === m.lead_id && new Date(x.starts_at) > new Date(m.starts_at)));
+  const recoveredIds = new Set(recovered.map((m) => m.id));
+  const notRecovered = dropped.filter((m) => !recoveredIds.has(m.id));
+  return { booked, due, done, ns, can, stillUpcoming, unmarked, resolved, dropped, recovered, notRecovered };
 }
 
 export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }: {
@@ -60,24 +77,41 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
   const period = periods.get(periodKey)!;
   const cmpOpts = useMemo(() => compareOptions(periods, periodKey), [periods, periodKey]);
   const effCmp = cmpOpts.includes(cmpKey) ? cmpKey : 'prev';
-  const compare = resolveCompare(periods, periodKey, effCmp);
+  // While the period is still running, compare with the same elapsed days.
+  const compare = likeForLike(period, resolveCompare(periods, periodKey, effCmp), now);
 
-  const cur = useMemo(() => statsFor(meetings, resched, period), [meetings, resched, period]);
-  const cmp = useMemo(() => (compare ? statsFor(meetings, resched, compare) : null), [meetings, resched, compare]);
+  const nowMs = now.getTime();
+  const cur = useMemo(() => statsFor(meetings, resched, period, nowMs), [meetings, resched, period, nowMs]);
+  const cmp = useMemo(() => (compare ? statsFor(meetings, resched, compare, nowMs) : null), [meetings, resched, compare, nowMs]);
 
+  /**
+   * Call booking = of the ELIGIBLE leads that arrived in the period, how many
+   * have booked a call (at any time since). Before 1 Oct 2026 it divided calls
+   * booked in the period — for leads from any month — by eligible leads that
+   * arrived in it: two different groups of people.
+   */
   const realLeads = useMemo(() => leads.filter((l) => !l.is_sample), [leads]);
-  const eligNow = useMemo(() => realLeads.filter((l) => isGtvEligible(l) && inPeriod(l.created_at, period)).length, [realLeads, period]);
-  const eligCmp = useMemo(() => (compare ? realLeads.filter((l) => isGtvEligible(l) && inPeriod(l.created_at, compare)).length : 0), [realLeads, compare]);
+  const leadsWithCall = useMemo(() => new Set(meetings.map((m) => m.lead_id).filter(Boolean) as string[]), [meetings]);
+  const bookingOf = (p: Period | null) => {
+    if (!p) return null;
+    const elig = realLeads.filter((l) => isGtvEligible(l) && inPeriod(l.created_at, p));
+    const withCall = new Set(elig.filter((l) => leadsWithCall.has(l.id)).map((l) => l.id));
+    return { elig: elig.length, booked: withCall.size, meetings: meetings.filter((m) => !!m.lead_id && withCall.has(m.lead_id)) };
+  };
+  const bookCur = useMemo(() => bookingOf(period)!, [realLeads, leadsWithCall, period, meetings]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bookCmp = useMemo(() => bookingOf(compare), [realLeads, leadsWithCall, compare, meetings]); // eslint-disable-line react-hooks/exhaustive-deps
+  const eligNow = bookCur.elig;
 
-  const rates = (s: ReturnType<typeof statsFor>, elig: number) => ({
-    book: pctOf(s.booked.length, elig),
+  const rates = (s: ReturnType<typeof statsFor>, b: ReturnType<typeof bookingOf>) => ({
+    book: b ? pctOf(b.booked, b.elig) : null,
     show: pctOf(s.done.length, s.resolved),
     ns:   pctOf(s.ns.length, s.resolved),
     can:  pctOf(s.can.length, s.resolved),
-    rec:  pctOf(s.rebooked, s.ns.length + s.can.length),
+    rec:  pctOf(s.recovered.length, s.dropped.length),
   });
-  const v = rates(cur, eligNow);
-  const p = cmp ? rates(cmp, eligCmp) : null;
+  const v = rates(cur, bookCur);
+  const p = cmp ? rates(cmp, bookCmp) : null;
+  const unmarkedNote = cur.unmarked.length > 0 ? ` · ${cur.unmarked.length} past call${cur.unmarked.length === 1 ? '' : 's'} not marked` : '';
 
   // Each month bar is STACKED by what happened to the calls booked that month
   // — completed, no-show, cancelled, still upcoming. Same footprint as a flat
@@ -199,30 +233,30 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
           accent="#16294E" active={activeFilter?.label === 'Booked in period'}
           onClick={() => pick('Booked in period', cur.booked)} />
         <StatCard label="Call booking" value={eligNow > 0 ? fmtPct(v.book) : '—'}
-          foot={eligNow > 0 ? `${cur.booked.length} of ${eligNow} eligible leads` : 'needs eligibility on leads'}
+          foot={eligNow > 0 ? `${bookCur.booked} of ${eligNow} eligible leads booked a call` : 'no eligible leads this period'}
           delta={eligNow > 0 ? deltaOf(v.book, p?.book) : deltaOf(null, null)} accent="#4F46E5"
-          active={activeFilter?.label === 'Booked in period'}
-          onClick={() => pick('Booked in period', cur.booked)} />
+          active={activeFilter?.label === 'Calls of eligible leads'}
+          onClick={() => pick('Calls of eligible leads', bookCur.meetings)} />
         <StatCard label="Show rate" value={fmtPct(v.show)}
-          foot={`${cur.done.length} of ${cur.resolved} held`}
+          foot={`${cur.done.length} of ${cur.resolved} calls with an outcome${unmarkedNote}`}
           delta={deltaOf(v.show, p?.show)} accent="#047857"
           active={activeFilter?.label === 'Completed'}
           onClick={() => pick('Completed', cur.done)} />
         <StatCard label="No-show" value={fmtPct(v.ns)}
-          foot={`${cur.ns.length} of ${cur.resolved} held`}
+          foot={`${cur.ns.length} of ${cur.resolved} calls with an outcome`}
           delta={deltaOf(v.ns, p?.ns, true)} accent="#EF4444"
           active={activeFilter?.label === 'No-shows'}
           onClick={() => pick('No-shows', cur.ns)} />
         <StatCard label="Cancellation" value={fmtPct(v.can)}
-          foot={`${cur.can.length} of ${cur.resolved} held`}
+          foot={`${cur.can.length} of ${cur.resolved} calls with an outcome`}
           delta={deltaOf(v.can, p?.can, true)} accent="#B45309"
           active={activeFilter?.label === 'Cancelled'}
           onClick={() => pick('Cancelled', cur.can)} />
         <StatCard label="Recovery" value={fmtPct(v.rec)}
-          foot={`${cur.rebooked} of ${cur.ns.length + cur.can.length} dropped rebooked`}
+          foot={`${cur.recovered.length} of ${cur.dropped.length} dropped calls rebooked`}
           delta={deltaOf(v.rec, p?.rec)} accent="#7C3AED"
           active={activeFilter?.label === 'Dropped, not rebooked'}
-          onClick={() => pick('Dropped, not rebooked', [...cur.ns, ...cur.can])} />
+          onClick={() => pick('Dropped, not rebooked', cur.notRecovered)} />
       </div>
 
       {/* Call flow is FULL width: it used to sit beside Needs attention in a
@@ -259,7 +293,7 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
                   { label: 'Completed', n: cur.done.length,  fg: '#047857', bg: '#E6F7EE' },
                   { label: 'No-show',   n: cur.ns.length,    fg: '#B91C1C', bg: '#FDECEC' },
                   { label: 'Cancelled', n: cur.can.length,   fg: '#6B7280', bg: '#F3F4F6' },
-                  { label: 'Rebooked',  n: cur.rebooked,     fg: '#6D28D9', bg: '#F1ECFE' },
+                  { label: 'Rebooked',  n: cur.recovered.length, fg: '#6D28D9', bg: '#F1ECFE' },
                 ].map((o) => (
                   <div key={o.label} className="rounded-xl border border-border p-3">
                     <div className="num text-[20px] font-extrabold leading-none" style={{ color: o.fg }}>{o.n}</div>
@@ -267,7 +301,7 @@ export function MeetingsDashboard({ meetings, resched, onFilter, activeFilter }:
                       <span className="text-[11px] text-muted">{o.label}</span>
                       <span className="rounded-md px-1.5 py-0.5 text-[10px] font-extrabold" style={{ background: o.bg, color: o.fg }}>
                         {o.label === 'Rebooked'
-                          ? fmtPct(pctOf(o.n, cur.ns.length + cur.can.length))
+                          ? fmtPct(pctOf(o.n, cur.dropped.length))
                           : fmtPct(pctOf(o.n, cur.resolved))}
                       </span>
                     </div>
