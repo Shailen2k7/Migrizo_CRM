@@ -257,6 +257,13 @@ export const MILESTONE_META: Record<Milestone, { label: string; pct: number; ord
 /** The day the plan above replaced the old one. Invoices before it keep old labels. */
 export const GTV_PLAN_CHANGED_AT = '2026-09-17T00:00:00+05:30';
 
+/**
+ * The day the Innovator Founder plan went from four instalments
+ * (500 / 1,000 / 750 / 750) to three (500 / 1,500 / 1,000). Receipts for
+ * payments recorded before it keep the labels they were issued under.
+ */
+export const IFV_PLAN_CHANGED_AT = '2026-10-05T00:00:00+05:30';
+
 // Safe accessor — returns a Junk-styled fallback for unknown stages so the app never crashes on stale data
 export function getStageMeta(stage: string | null | undefined): { label: string; bg: string; fg: string; dot: string } {
   if (stage && stage in STAGE_META) return STAGE_META[stage as LeadStage];
