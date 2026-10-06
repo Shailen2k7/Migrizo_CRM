@@ -13,7 +13,7 @@
 import type { Lead, Payment } from '@/lib/types';
 import { GTV_PROCESS_HTML } from '@/lib/email/gtv-process-html';
 import { IFV_PROCESS_HTML } from '@/lib/email/ifv-process-html';
-import { MILESTONE_META, GTV_PLAN_CHANGED_AT, IFV_PLAN_CHANGED_AT } from '@/lib/types';
+import { milestoneLabel } from '@/lib/types';
 
 // Brand palette (matches the Migrizo brochure system)
 const NAVY = '#16294E';
@@ -470,10 +470,10 @@ function renderSLAGTV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discoun
 //     for clause (all 13 sections, all seven refund sub-clauses) with the
 //     route-specific parts swapped: the ten-step founder scope, the IFV
 //     milestone table, and government costs reduced to a single clause (4.2)
-//     with no figures, per the approved wireframe. Three milestones since
-//     5 Oct 2026 (500 / 1,500 / 1,000). A discount comes off Document
-//     Preparation first (up to 1,000), then Application Submission, capped
-//     at 1,500 — so every instalment stays at least £500.
+//     with no figures, per the approved wireframe. Four milestones (6 Oct
+//     2026 plan: 500 / 1,000 / 1,000 / 500). A discount comes off Business
+//     Plan Stage first, then All Document Delivery, then both equally,
+//     capped at 1,500 — Kickstart and Submission are never discounted.
 // ---------------------------------------------------------------------------
 function renderSLAIFV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discount = 0): { subject: string; html: string; text: string } {
   const name = esc(lead.full_name);
@@ -481,14 +481,16 @@ function renderSLAIFV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discoun
   const phone = esc(lead.phone || '—');
 
   const d = Math.max(0, Math.min(discount || 0, 1500));
-  const r2 = Math.min(d, 1000);
-  const r3 = d - r2;
-  const M1 = 500, M2 = 1500 - r2, M3 = 1000 - r3;
-  const netFee = M1 + M2 + M3; // === 3000 - d
+  let r2 = 0, r3 = 0;
+  if (d <= 500) { r2 = d; }
+  else if (d <= 1000) { r2 = 500; r3 = d - 500; }
+  else { r2 = 500 + (d - 1000) / 2; r3 = 500 + (d - 1000) / 2; }
+  const M1 = 500, M2 = 1000 - r2, M3 = 1000 - r3, M4 = 500;
+  const netFee = M1 + M2 + M3 + M4; // === 3000 - d
   const gbp = (n: number) => `\u00A3${n.toLocaleString('en-GB')}`;
 
   const feeIntro = d > 0
-    ? `The standard professional fee for the end-to-end Innovator Founder Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as milestone-based payments below. As a special arrangement, a discount of ${gbp(d)} has been applied — adjusted across the Document Preparation and Application Submission milestones as shown below — bringing your net professional fee to <b>${gbp(netFee)}</b>.`
+    ? `The standard professional fee for the end-to-end Innovator Founder Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as milestone-based payments below. As a special arrangement, a discount of ${gbp(d)} has been applied — adjusted across the Business Plan Stage and All Document Delivery milestones as shown below — bringing your net professional fee to <b>${gbp(netFee)}</b>.`
     : `The total professional fee payable to Migrizo for the end-to-end Innovator Founder Visa service is <b>\u00A33,000</b> (Three Thousand Pounds Sterling). This is structured as milestone-based payments as detailed below.`;
 
   const kv = (k: string, v: string) => `
@@ -560,9 +562,10 @@ function renderSLAIFV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discoun
         <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;" align="right">Amount</td>
         <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;">Paid By</td>
       </tr>
-      ${feeRow('1', 'Kickstart — Engagement commencement, founder and business idea assessment', gbp(M1), 'Client → Migrizo')}
-      ${feeRow('2', 'Document Preparation — Business structuring plan, business plan, pitch deck and supporting documents' + (r2 > 0 ? ' (discount applied)' : ''), gbp(M2), 'Client → Migrizo')}
-      ${feeRow('3', 'Application Submission — Due at the time of submission to the endorsing body' + (r3 > 0 ? ' (discount applied)' : ''), gbp(M3), 'Client → Migrizo')}
+      ${feeRow('1', 'Kickstart Fee (Idea) — Engagement commencement, founder profile and business idea development', gbp(M1), 'Client → Migrizo')}
+      ${feeRow('2', 'Business Plan Stage — Due when business plan work starts: business structuring plan, business plan and financials' + (r2 > 0 ? ' (discount applied)' : ''), gbp(M2), 'Client → Migrizo')}
+      ${feeRow('3', 'All Document Delivery — Due on delivery of the complete document pack: business plan, financial forecast, pitch deck and founder statement' + (r3 > 0 ? ' (discount applied)' : ''), gbp(M3), 'Client → Migrizo')}
+      ${feeRow('4', 'Endorsement Application Submission — Due at the time of submission to the endorsing body', gbp(M4), 'Client → Migrizo')}
       ${d > 0 ? `
       <tr style="background:#E6F7EE;">
         <td style="padding:8px 10px;"></td>
@@ -707,7 +710,7 @@ function renderProcessIFV(lead: Pick<Lead, 'full_name'>): { subject: string; htm
   return {
     subject: `UK Innovator Founder Visa — how it works, what we need, and what it costs`,
     html: IFV_PROCESS_HTML,
-    text: `Hi ${lead.full_name}, here is how the UK Innovator Founder Visa works with Migrizo: a fully-managed 10-step process (founder profile analysis, business idea assessment, eligibility mapping, gap identification, business structuring plan, documentation support, endorsement preparation, endorsement submission, visa filing assistance, post-approval and business setup) for a fixed GBP 3,000 professional fee across 3 milestones (500 / 1,500 / 1,000). Government and third-party costs (endorsement GBP 1,000, visa GBP 1,357 per person, IHS GBP 1,035 per person per year) are paid by you directly - about GBP 5,500 for a single applicant on a 3-year visa. Total all-inclusive: about GBP 8,500. Timeline: endorsement 4-6 weeks, visa 2-3 weeks. No minimum investment, no job offer required, settlement after 3 years. Book a free founder profile assessment on WhatsApp: https://wa.me/447887348822 - Team Migrizo`,
+    text: `Hi ${lead.full_name}, here is how the UK Innovator Founder Visa works with Migrizo: a fully-managed 10-step process (founder profile analysis, business idea assessment, eligibility mapping, gap identification, business structuring plan, documentation support, endorsement preparation, endorsement submission, visa filing assistance, post-approval and business setup) for a fixed GBP 3,000 professional fee across 4 milestones (500 / 1,000 / 1,000 / 500). Government and third-party costs (endorsement GBP 1,000, visa GBP 1,357 per person, IHS GBP 1,035 per person per year) are paid by you directly - about GBP 5,500 for a single applicant on a 3-year visa. Total all-inclusive: about GBP 8,500. Timeline: endorsement 4-6 weeks, visa 2-3 weeks. No minimum investment, no job offer required, settlement after 3 years. Book a free founder profile assessment on WhatsApp: https://wa.me/447887348822 - Team Migrizo`,
   };
 }
 
@@ -772,44 +775,10 @@ export function renderInvoice(
   const amount = payment.amount || 0;
   // The milestone KEY is fixed across the CRM (payments, pipeline, reports).
   // Only the label shown to the client follows the visa route.
-  // Innovator Founder: three instalments since 5 Oct 2026. Receipts for
-  // payments recorded before that keep the four-instalment labels they were
-  // issued under (same rule as the GTV change below).
-  const IFV_MILESTONE_LABELS: Record<string, string> = {
-    kickstart: 'Kickstart',
-    profile_building: 'Document Preparation',
-    endorsement: 'Application Submission',
-    post_approval: 'Final Balance',
-  };
-  const LEGACY_IFV_MILESTONE_LABELS: Record<string, string> = {
-    kickstart: 'Kickstart',
-    profile_building: 'Business Plan Stage',
-    endorsement: 'Endorsement Submission',
-    post_approval: 'Final Balance',
-  };
-  const ifvLabels = new Date(payment.created_at).getTime() < new Date(IFV_PLAN_CHANGED_AT).getTime()
-    ? LEGACY_IFV_MILESTONE_LABELS : IFV_MILESTONE_LABELS;
-  // A RECEIPT ALREADY SENT MUST NEVER RE-PRINT DIFFERENTLY.
-  //
-  // The GTV plan changed on 17 Sep 2026 and the milestone labels moved with
-  // it: the third instalment used to be "Endorsement" and is now "Profile
-  // Building — Phase 2". Without this, re-downloading a paid receipt from
-  // August would print a different line item than the client already holds.
-  // So payments recorded before the change keep the labels they were issued
-  // under, and only new ones use the new plan.
-  const LEGACY_GTV_MILESTONE_LABELS: Record<string, string> = {
-    kickstart: 'Kickstart',
-    profile_building: 'Profile Building',
-    endorsement: 'Endorsement',
-    post_approval: 'Post Approval',
-  };
-  const underOldPlan = new Date(payment.created_at).getTime() < new Date(GTV_PLAN_CHANGED_AT).getTime();
-  const gtvLabel = underOldPlan
-    ? (LEGACY_GTV_MILESTONE_LABELS[payment.milestone] || payment.milestone)
-    : (MILESTONE_META[payment.milestone]?.label || payment.milestone);
-  const milestone = visaKindOf(lead.visa_type) === 'ifv'
-    ? (ifvLabels[payment.milestone] || gtvLabel)
-    : gtvLabel;
+  // A RECEIPT ALREADY SENT MUST NEVER RE-PRINT DIFFERENTLY: milestoneLabel()
+  // (lib/types.ts) picks the route's plan in force when the payment was
+  // recorded — GTV changed 17 Sep 2026, IFV 6 Oct 2026.
+  const milestone = milestoneLabel(payment.milestone, visaKindOf(lead.visa_type) === 'ifv' ? 'ifv' : 'gtv', payment.created_at);
   const kind = visaKindOf(lead.visa_type);
   const visa = kind === 'ifv' ? 'Innovator Founder Visa' : 'Global Talent Visa';
   // GST comes from the payment row (migration 075) so the emailed invoice and

@@ -257,12 +257,56 @@ export const MILESTONE_META: Record<Milestone, { label: string; pct: number; ord
 /** The day the plan above replaced the old one. Invoices before it keep old labels. */
 export const GTV_PLAN_CHANGED_AT = '2026-09-17T00:00:00+05:30';
 
+// ── Innovator Founder Visa fee plan ─────────────────────────────────────────
+// Owner's plan, 6 Oct 2026 — four instalments, £3,000:
+//   Kickstart Fee (Idea) £500 · Business Plan Stage £1,000 ·
+//   All Document Delivery £1,000 · Endorsement Application Submission £500
+// The milestone KEYS are shared with GTV (payments, reports and invoices all
+// store them); only the names and amounts shown for an IFV client differ.
+export const IFV_MILESTONE_META: Record<Milestone, { label: string; long: string; gbp: number; order: number }> = {
+  kickstart:        { label: 'Kickstart Fee (Idea)',   long: 'Kickstart Fee (Idea)',                gbp: 500,  order: 1 },
+  profile_building: { label: 'Business Plan Stage',    long: 'Business Plan Stage Starting',        gbp: 1000, order: 2 },
+  endorsement:      { label: 'Document Delivery',      long: 'All Document Delivery',               gbp: 1000, order: 3 },
+  post_approval:    { label: 'Endorsement Submission', long: 'Endorsement Application Submission',  gbp: 500,  order: 4 },
+};
+
 /**
- * The day the Innovator Founder plan went from four instalments
- * (500 / 1,000 / 750 / 750) to three (500 / 1,500 / 1,000). Receipts for
- * payments recorded before it keep the labels they were issued under.
+ * The day the plan above took effect. IFV receipts for payments recorded
+ * before it keep the labels they were issued under (500/1,000/750/750 plan).
+ * A short-lived three-instalment plan (5 Oct) never reached a receipt.
  */
-export const IFV_PLAN_CHANGED_AT = '2026-10-05T00:00:00+05:30';
+export const IFV_PLAN_CHANGED_AT = '2026-10-06T00:00:00+05:30';
+
+const LEGACY_IFV_LABELS: Record<Milestone, string> = {
+  kickstart: 'Kickstart', profile_building: 'Business Plan Stage',
+  endorsement: 'Endorsement Submission', post_approval: 'Final Balance',
+};
+const LEGACY_GTV_LABELS: Record<Milestone, string> = {
+  kickstart: 'Kickstart', profile_building: 'Profile Building',
+  endorsement: 'Endorsement', post_approval: 'Post Approval',
+};
+
+/** Is this visa_type (clean key or legacy free text) the Innovator Founder route? */
+export function isIfvVisa(visa: string | null | undefined): boolean {
+  const v = (visa || '').toLowerCase();
+  return v === 'ifv' || v === 'fiv' || v.includes('innovator') || v.includes('founder');
+}
+
+/**
+ * The one name for a payment's milestone, everywhere it is shown: the right
+ * route's plan, and — when the payment's date is given — the plan that was in
+ * force when it was recorded, so a receipt never re-prints differently.
+ */
+export function milestoneLabel(m: Milestone | string, visa: string | null | undefined, recordedAt?: string | null): string {
+  const key = m as Milestone;
+  const t = recordedAt ? new Date(recordedAt).getTime() : Date.now();
+  if (isIfvVisa(visa)) {
+    if (t < new Date(IFV_PLAN_CHANGED_AT).getTime()) return LEGACY_IFV_LABELS[key] ?? String(m);
+    return IFV_MILESTONE_META[key]?.label ?? String(m);
+  }
+  if (t < new Date(GTV_PLAN_CHANGED_AT).getTime()) return LEGACY_GTV_LABELS[key] ?? String(m);
+  return MILESTONE_META[key]?.label ?? String(m);
+}
 
 // Safe accessor — returns a Junk-styled fallback for unknown stages so the app never crashes on stale data
 export function getStageMeta(stage: string | null | undefined): { label: string; bg: string; fg: string; dot: string } {

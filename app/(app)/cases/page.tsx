@@ -30,8 +30,8 @@ import {
   outcomeOf, OUTCOME_META, OUTCOME_ORDER, type Outcome,
   type CaseStageKey, type CaseHealth,
 } from '@/lib/case-stages';
-import { getVisaMeta, type Case } from '@/lib/types';
-import { hydrateDetails, progressOfDetails, closeReasonLabel } from '@/lib/case-details';
+import { getVisaMeta, isIfvVisa, type Case } from '@/lib/types';
+import { hydrateDetails, progressFor, closeReasonLabel } from '@/lib/case-details';
 import { C, TONE } from '@/lib/case-theme';
 import { initials, avatarColor } from '@/lib/utils';
 import { Plus, Search, X, Download, ArrowRight, Sparkles, ChevronDown } from 'lucide-react';
@@ -52,7 +52,7 @@ function formOf(c: Case) {
 }
 function pctOfCase(c: Case, stage: CaseStageKey): number {
   const f = formOf(c);
-  return f ? progressOfDetails(f).pct : progressOf(stage);
+  return f ? progressFor(f, isIfvVisa(c.visa_type)).pct : progressOf(stage);
 }
 function nextOfCase(c: Case, fallback: Map<string, string>): string | undefined {
   return formOf(c)?.next_action?.trim() || fallback.get(c.id);

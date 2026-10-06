@@ -32,11 +32,13 @@ import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/components/shared/app-provider';
 import { CASE_STAGES, STAGE_BY_KEY, stageOf, stageIndex, stageEnteredAt, outcomeOf, OUTCOME_META, DEFAULT_CASE_OWNER, type CaseStageKey } from '@/lib/case-stages';
 import {
-  hydrateDetails, tasksOf, progressOfDetails, safeUrl, GTV_ROUTES, OC_OPTIONS,
+  hydrateDetails, safeUrl, GTV_ROUTES, OC_OPTIONS,
   CLOSE_REASONS, closeReasonLabel, withDecisions, type CaseDetails, type CloseReason, type Verdict,
+  tasksFor, progressFor, hydrateIfv, IFV_DOCS, IFV_CRITERIA, ENDORSING_BODIES,
+  type IfvDetails, type IfvDocKey, type IfvCriterionKey,
 } from '@/lib/case-details';
 import { normalizeJourney } from '@/lib/journey';
-import { getVisaMeta, MILESTONE_META, type Case, type Note, type Payment } from '@/lib/types';
+import { getVisaMeta, MILESTONE_META, IFV_MILESTONE_META, isIfvVisa, milestoneLabel, type Case, type Milestone, type Note, type Payment } from '@/lib/types';
 import { useUI } from '@/components/shared/app-shell';
 import { initials, avatarColor, formatMoney } from '@/lib/utils';
 import { ArrowLeft, Calendar, Link2, Check, Send, ChevronDown, X, ExternalLink, Camera, Mail, Phone, MapPin, Plus, Download, Trash2, PauseCircle, PlayCircle, Archive, RotateCcw } from 'lucide-react';
@@ -160,7 +162,7 @@ function SelectField({ value, onChange, options }: { value: string; onChange: (v
   );
 }
 
-function Section({ n, title, hint, children }: { n: number; title: string; hint?: string; children: React.ReactNode }) {
+function Section({ n, title, hint, badge, children }: { n: number; title: string; hint?: string; badge?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="rounded-xl border px-5 py-4 sm:px-6" style={{ background: C.card, borderColor: C.line }}>
       <div className="flex items-start gap-4">
@@ -170,6 +172,7 @@ function Section({ n, title, hint, children }: { n: number; title: string; hint?
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h3 className="m-0 text-[17px] font-bold" style={{ color: C.navy }}>{title}</h3>
             {hint && <span className="text-[12px]" style={{ color: C.sub }}>{hint}</span>}
+            {badge && <span className="ml-auto">{badge}</span>}
           </div>
           <div className="mt-3">{children}</div>
         </div>
@@ -288,7 +291,27 @@ function MetaCell({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-function PaymentLine({ p, currency }: { p: Payment; currency: string }) {
+/**
+ * Innovator Founder fee phase shown on the section where it falls due, with
+ * its live status from the client's payments: Paid · Invoiced · Overdue, or
+ * "Due at this stage" when nothing has been raised yet.
+ */
+function PhaseChip({ m, pays }: { m: Milestone; pays: Payment[] }) {
+  const meta = IFV_MILESTONE_META[m];
+  const p = pays.find((x) => x.milestone === m);
+  const tone = p?.status === 'paid' ? { bg: C.greenSoft, fg: C.greenDark, txt: 'Paid ✓' }
+    : p?.status === 'overdue' ? { bg: '#FBE7E2', fg: '#9A3B2A', txt: 'Overdue' }
+    : p ? { bg: '#FBF1DD', fg: '#8A5A12', txt: 'Invoiced' }
+    : { bg: '#EEF1F4', fg: '#3D4757', txt: 'Due at this stage' };
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-[3px] text-[11.5px] font-semibold"
+      style={{ background: tone.bg, color: tone.fg }} title={`${meta.long} · £${meta.gbp.toLocaleString('en-GB')}`}>
+      £{meta.gbp.toLocaleString('en-GB')} · {meta.label}<span style={{ opacity: 0.75 }}>· {tone.txt}</span>
+    </span>
+  );
+}
+
+function PaymentLine({ p, currency, visa }: { p: Payment; currency: string; visa: string | null }) {
   const tone = p.status === 'paid'
     ? { bg: C.greenSoft, fg: C.greenDark, label: 'Paid' }
     : p.status === 'overdue'
@@ -298,7 +321,7 @@ function PaymentLine({ p, currency }: { p: Payment; currency: string }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b py-3 last:border-0" style={{ borderColor: C.lineSoft }}>
       <div className="min-w-0 flex-1">
-        <div className="text-[13.5px] font-semibold" style={{ color: C.navy }}>{MILESTONE_META[p.milestone]?.label ?? p.milestone}</div>
+        <div className="text-[13.5px] font-semibold" style={{ color: C.navy }}>{milestoneLabel(p.milestone, visa, p.created_at)}</div>
         <div className="text-[12px]" style={{ color: C.sub }}>
           {p.status === 'paid' ? 'Paid' : 'Due'} {when ? new Date(when).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
           {p.note ? ` · ${p.note}` : ''}
@@ -340,6 +363,10 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
   const [d, setD] = useState<CaseDetails>(saved);
   const [owner, setOwner] = useState<string>(c?.owner_id ?? '');
   const [stage, setStage] = useState<CaseStageKey>(c ? stageOf(c) : 'case_created');
+  // The case's visa can be switched on the page (Route box). Innovator Founder
+  // cases get their own checklist — it follows the selection immediately.
+  const [caseVisa, setCaseVisa] = useState<string>(c?.visa_type ?? '');
+  const ifvCase = isIfvVisa(caseVisa);
   const [saving, setSaving] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [askDiscard, setAskDiscard] = useState(false);
@@ -365,6 +392,7 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
     setD(withDecisions(hydrateDetails((c.journey as { details?: unknown } | null)?.details), c));
     setOwner(c.owner_id ?? '');
     setStage(stageOf(c));
+    setCaseVisa(c.visa_type ?? '');
     setNoteDraft(''); setEmailAsk(null); setAskDiscard(false); setPhotoBroken(false);
     setStatusMenu(false); setCloseAsk(null);
   }, [c]);
@@ -374,11 +402,12 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
     void getNotes(c.lead_id).then(setNotes);
   }, [c?.lead_id, getNotes]);
 
-  const progress = useMemo(() => progressOfDetails(d), [d]);
+  const progress = useMemo(() => progressFor(d, ifvCase), [d, ifvCase]);
   const dirty = useMemo(() => {
     if (!c) return false;
-    return JSON.stringify(d) !== JSON.stringify(saved) || owner !== (c.owner_id ?? '') || stage !== stageOf(c);
-  }, [c, d, saved, owner, stage]);
+    return JSON.stringify(d) !== JSON.stringify(saved) || owner !== (c.owner_id ?? '') || stage !== stageOf(c)
+      || caseVisa !== (c.visa_type ?? '');
+  }, [c, d, saved, owner, stage, caseVisa]);
 
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -430,7 +459,17 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
   const driveUrl = safeUrl(d.drive_url);
   const canvaUrl = safeUrl(d.canva_url);
   const visa = getVisaMeta(c.visa_type);
-  const isIfv = (visa?.short || '').toLowerCase().includes('innovator') || /ifv/i.test(c.visa_type || '');
+  const isIfv = ifvCase;
+  const iv = hydrateIfv(d.ifv);
+  const setIfv = (patch: Partial<IfvDetails>) => setD((p) => ({ ...p, ifv: { ...hydrateIfv(p.ifv), ...patch } }));
+  const setIfvDoc = (k: IfvDocKey, patch: Partial<IfvDetails['docs'][IfvDocKey]>) =>
+    setD((p) => { const v = hydrateIfv(p.ifv); return { ...p, ifv: { ...v, docs: { ...v.docs, [k]: { ...v.docs[k], ...patch } } } }; });
+  const setIfvCrit = (k: IfvCriterionKey, patch: Partial<IfvDetails['criteria'][IfvCriterionKey]>) =>
+    setD((p) => { const v = hydrateIfv(p.ifv); return { ...p, ifv: { ...v, criteria: { ...v.criteria, [k]: { ...v.criteria[k], ...patch } } } }; });
+  // Visa must be applied for within 3 months of the endorsement letter.
+  const visaDeadline = isIfv && d.endorsement === 'approved' && d.endorsement_decided_on && (d.visa ?? 'pending') === 'pending' && !d.visa_applied_on
+    ? (() => { const x = new Date(`${d.endorsement_decided_on}T12:00:00Z`); x.setUTCMonth(x.getUTCMonth() + 3); return x; })()
+    : null;
 
   // Every write moves cases.updated_at, which "days in stage" falls back to
   // until migration 124 adds its own column. Pinning the real stage start in
@@ -440,7 +479,7 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
   const save = async (opts?: { readyToFile?: boolean }) => {
     setSaving(true);
     const nowIso = new Date().toISOString();
-    const before = tasksOf(saved);
+    const before = tasksFor(saved, ifvCase);
     let next: CaseDetails = { ...d };
     let nextStage = stage;
     if (opts?.readyToFile) {
@@ -463,13 +502,14 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
     if (stageMoved) next = { ...next, stage_entered_at: nowIso };
     else next = pinStage(next);
 
-    const newlyDone = tasksOf(next)
+    const newlyDone = tasksFor(next, ifvCase)
       .filter((t) => t.done && !before.find((b) => b.key === t.key)?.done)
       .map((t) => t.label);
     const target = STAGE_BY_KEY[nextStage];
     const journey = { ...normalizeJourney(c.journey), details: next };
 
     const extra = {
+      visa_type: caseVisa || c.visa_type,
       owner_id: owner || null,
       owner_name: owner ? personName(owner) : null,
       delivery_stage: nextStage,
@@ -492,6 +532,8 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
     const summary: string[] = [];
     if (newlyDone.length) summary.push(`Completed: ${newlyDone.join(', ')}`);
     if (stageMoved) summary.push(`Stage → ${target.label}`);
+    const visaSwitched = isIfvVisa(caseVisa) !== isIfvVisa(c.visa_type);
+    if (visaSwitched) summary.push(`Visa → ${isIfvVisa(caseVisa) ? 'Innovator Founder Visa' : 'Global Talent Visa'}`);
     if (opts?.readyToFile) summary.push('Marked ready to file the endorsement application');
     if (endChanged && next.endorsement !== 'pending') summary.push(next.endorsement === 'approved' ? 'Endorsement approved' : 'Endorsement refused');
     if (visaChanged && next.visa !== 'pending') summary.push(next.visa === 'approved' ? 'Visa granted' : 'Visa refused');
@@ -500,7 +542,7 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
         workspace_id: c.workspace_id, case_id: c.id, user_id: user.id, action: 'details_updated',
         meta: {
           completed: newlyDone, stage_from: stageOf(c), stage_to: nextStage,
-          ready_to_file: !!opts?.readyToFile, progress: progressOfDetails(next).pct,
+          ready_to_file: !!opts?.readyToFile, progress: progressFor(next, ifvCase).pct,
           endorsement: next.endorsement ?? 'pending', visa: next.visa ?? 'pending',
         },
       });
@@ -826,8 +868,15 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
               <div className="flex items-center gap-3 text-[13px] font-semibold" style={{ color: C.navy }}>
                 <span className="shrink-0">Route:</span>
                 <div className="min-w-0 flex-1">
-                  <SelectField value={isIfv ? 'innovator_founder' : d.route} onChange={(v) => set('route', v)}
-                    options={isIfv ? [{ value: 'innovator_founder', label: 'Innovator founder' }] : GTV_ROUTES} />
+                  {/* One box for the visa and its route: the three GTV routes,
+                      or Innovator Founder — which switches the checklist. */}
+                  <SelectField value={isIfv ? 'ifv' : d.route}
+                    onChange={(v) => {
+                      if (v === 'ifv') { setCaseVisa('Innovator Founder Visa'); return; }
+                      if (isIfv) setCaseVisa('Global Talent Visa');
+                      set('route', v);
+                    }}
+                    options={[...GTV_ROUTES.map((r) => ({ value: r.value, label: `GTV · ${r.label}` })), { value: 'ifv', label: 'Innovator Founder Visa' }]} />
                 </div>
               </div>
               <div className="flex items-center gap-3 text-[13px] font-semibold" style={{ color: C.navy }}>
@@ -866,7 +915,7 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
             <div className="mt-3 flex flex-col gap-3">
 
               {/* 1 · Onboarding */}
-              <Section n={1} title="Onboarding">
+              <Section n={1} title="Onboarding" badge={isIfv ? <PhaseChip m="kickstart" pays={leadPayments} /> : undefined}>
                 <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
                   <CheckRow checked={d.onboarded} onChange={(v) => set('onboarded', v)}>Client onboarded</CheckRow>
                   <div className="ml-auto flex items-center gap-3 text-[13px]" style={{ color: C.ink }}>
@@ -876,8 +925,26 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
                 </div>
               </Section>
 
-              {/* 2 · Documents in Drive */}
-              <Section n={2} title="Documents in Drive">
+              {/* IFV 2 · Founder & business idea */}
+              {isIfv && (
+                <Section n={2} title="Founder & business idea" hint="We develop the business idea with the founder.">
+                  <div className="grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
+                    <CheckRow checked={iv.founder_reviewed} onChange={(v) => setIfv({ founder_reviewed: v })}>Founder profile reviewed</CheckRow>
+                    <CheckRow checked={iv.idea_developed} onChange={(v) => setIfv({ idea_developed: v })}>Business idea developed with the founder</CheckRow>
+                    <CheckRow checked={iv.english_b2} onChange={(v) => setIfv({ english_b2: v })}>English (B2) evidence confirmed</CheckRow>
+                    <CheckRow checked={iv.funds_checked} onChange={(v) => setIfv({ funds_checked: v })}>Maintenance funds checked</CheckRow>
+                  </div>
+                  <div className="mt-3.5 flex flex-wrap items-center gap-3 text-[13px]" style={{ color: C.ink }}>
+                    <span className="shrink-0 font-semibold" style={{ color: C.navy }}>Business idea</span>
+                    <div className="min-w-[260px] flex-1">
+                      <TextField value={iv.idea_title} onChange={(v) => setIfv({ idea_title: v })} placeholder="One line — e.g. AI compliance platform for UK care homes" />
+                    </div>
+                  </div>
+                </Section>
+              )}
+
+              {/* 2 · Documents in Drive (IFV: 3) */}
+              <Section n={isIfv ? 3 : 2} title="Documents in Drive">
                 <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
                   <CheckRow checked={d.docs_received} onChange={(v) => set('docs_received', v)}>All required documents received and checked</CheckRow>
                   <div className="ml-auto flex min-w-[280px] flex-1 items-center gap-3 text-[13px] sm:max-w-[520px]" style={{ color: C.ink }}>
@@ -887,6 +954,7 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
                 </div>
               </Section>
 
+              {!isIfv && (<>
               {/* 3 · Letters of recommendation */}
               <Section n={3} title="Letters of recommendation">
                 <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line }}>
@@ -1032,8 +1100,122 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
                 </div>
               </Section>
 
+              </>)}
+
+              {isIfv && (<>
+              {/* IFV 4 · Business plan pack */}
+              <Section n={4} title="Business plan pack" hint="Each document drafted, then final." badge={<PhaseChip m="profile_building" pays={leadPayments} />}>
+                <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line }}>
+                  <table className="w-full border-collapse text-[13px]" style={{ minWidth: 640 }}>
+                    <thead>
+                      <tr style={{ background: C.tableHead }}>
+                        {['Document', 'Drafted', 'Final', 'Document link'].map((h, i) => (
+                          <th key={h} className="px-3 py-2 text-[12px] font-bold"
+                            style={{ color: C.navy, borderBottom: `1px solid ${C.line}`, textAlign: i === 1 || i === 2 ? 'center' : 'left', borderLeft: i ? `1px solid ${C.lineSoft}` : undefined }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {IFV_DOCS.map((doc, i) => (
+                        <tr key={doc.key} style={{ borderTop: i ? `1px solid ${C.lineSoft}` : undefined }}>
+                          <td className="px-3 py-2.5">
+                            <div className="font-semibold" style={{ color: C.navy }}>{doc.label}</div>
+                            <div className="text-[11.5px]" style={{ color: C.sub }}>{doc.hint}</div>
+                          </td>
+                          {(['drafted', 'final'] as const).map((k) => (
+                            <td key={k} className="px-3 py-2" style={{ borderLeft: `1px solid ${C.lineSoft}`, width: 92 }}>
+                              <div className="flex justify-center"><Box checked={iv.docs[doc.key][k]} onChange={(v) => setIfvDoc(doc.key, { [k]: v })} label={`${doc.label} ${k}`} /></div>
+                            </td>
+                          ))}
+                          <td className="px-3 py-2" style={{ borderLeft: `1px solid ${C.lineSoft}`, width: 260 }}>
+                            <LinkField value={iv.docs[doc.key].link} onChange={(v) => setIfvDoc(doc.key, { link: v })} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Section>
+
+              {/* IFV 5 · Endorsement criteria */}
+              <Section n={5} title="Endorsement criteria" hint="What the endorsing body assesses — show where the plan proves each one.">
+                <div className="grid gap-3 lg:grid-cols-3">
+                  {IFV_CRITERIA.map((cr) => {
+                    const v = iv.criteria[cr.key];
+                    return (
+                      <div key={cr.key} className="flex flex-col rounded-lg border p-4"
+                        style={{ borderColor: v.done ? '#A7DCC2' : C.line, background: v.done ? C.greenBg : C.card }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[15px] font-bold" style={{ color: C.navy }}>{cr.label}</span>
+                          <Box checked={v.done} onChange={(x) => setIfvCrit(cr.key, { done: x })} label={`${cr.label} evidence covered`} />
+                        </div>
+                        <p className="m-0 mt-1.5 text-[12px] leading-relaxed" style={{ color: C.sub }}>{cr.question}</p>
+                        <div className="mt-auto flex items-center gap-2 pt-3">
+                          <div className="min-w-0 flex-1">
+                            <TextField value={v.note} onChange={(x) => setIfvCrit(cr.key, { note: x })} placeholder="Where the plan shows it…" />
+                          </div>
+                          <LinkButton value={v.link} onChange={(x) => setIfvCrit(cr.key, { link: x })} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Section>
+
+              {/* IFV 6 · Client review & sign-off */}
+              <Section n={6} title="Client review & sign-off" badge={<PhaseChip m="endorsement" pays={leadPayments} />}>
+                <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+                  <div className="flex flex-col gap-2.5">
+                    <CheckRow checked={iv.review_discussed} onChange={(v) => setIfv({ review_discussed: v })}>Complete document pack delivered and discussed with the client</CheckRow>
+                    <CheckRow checked={iv.review_final} onChange={(v) => setIfv({ review_final: v })}>Client signed off the final pack</CheckRow>
+                  </div>
+                  <div className="ml-auto flex flex-col items-end gap-1.5">
+                    {d.ready_to_file_at ? (
+                      <div className="rounded-lg px-4 py-2.5 text-[13px] font-semibold" style={{ background: C.greenSoft, color: C.greenDark }}>
+                        ✓ Ready to submit — marked {new Date(d.ready_to_file_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-[12px]" style={{ color: C.sub }}>
+                          {allDone ? 'Everything is complete — ready when you are.' : `Complete all tasks before submitting (${progress.total - progress.done} left).`}
+                        </span>
+                        <button type="button" disabled={!allDone || saving} onClick={() => void save({ readyToFile: true })}
+                          className="h-10 rounded-lg px-6 text-[13px] font-semibold transition disabled:cursor-not-allowed"
+                          style={allDone
+                            ? { background: C.green, color: '#fff' }
+                            : { background: '#E9EDF1', color: '#8C95A1', border: `1px solid ${C.line}` }}>
+                          Ready to submit to the endorsing body
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </Section>
+
+              {/* IFV 7 · Endorsing body & interview */}
+              <Section n={7} title="Endorsing body & interview" badge={<PhaseChip m="post_approval" pays={leadPayments} />}>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <FieldBox label="Endorsing body">
+                    <SelectField value={iv.endorsing_body} onChange={(v) => setIfv({ endorsing_body: v })} options={ENDORSING_BODIES} />
+                  </FieldBox>
+                  {iv.endorsing_body === 'other' && (
+                    <FieldBox label="Name of endorsing body">
+                      <TextField value={iv.endorsing_body_other} onChange={(v) => setIfv({ endorsing_body_other: v })} placeholder="Endorsing body name" />
+                    </FieldBox>
+                  )}
+                  <FieldBox label="Interview date">
+                    <DateField value={iv.interview_date} onChange={(v) => setIfv({ interview_date: v })} />
+                  </FieldBox>
+                </div>
+                <div className="mt-3.5 flex flex-wrap gap-x-8 gap-y-2.5">
+                  <CheckRow checked={iv.interview_prep} onChange={(v) => setIfv({ interview_prep: v })}>Interview prepared (pitch deck walkthrough, Q&amp;A rehearsal)</CheckRow>
+                  <CheckRow checked={iv.interview_done} onChange={(v) => setIfv({ interview_done: v })}>Interview attended</CheckRow>
+                </div>
+              </Section>
+              </>)}
+
               {/* 9 · Endorsement & visa decision */}
-              <Section n={9} title="Endorsement & visa decision" hint="Record each outcome when it arrives. Visa granted completes the case.">
+              <Section n={isIfv ? 8 : 9} title="Endorsement & visa decision" hint="Record each outcome when it arrives. Visa granted completes the case.">
                 <div className="grid gap-3 md:grid-cols-2">
                   <DecisionCard title="Endorsement" sub={isIfv ? 'Endorsing body decision' : 'Tech Nation / endorsing body decision'}
                     value={d.endorsement ?? 'pending'} onChange={(v) => set('endorsement', v)}
@@ -1059,6 +1241,16 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
                     </FieldBox>
                   </DecisionCard>
                 </div>
+                {visaDeadline && (() => {
+                  const left = Math.ceil((visaDeadline.getTime() - Date.now()) / 86_400_000);
+                  const tone = left < 0 ? { bg: '#FBE7E2', fg: '#9A3B2A' } : left <= 21 ? { bg: '#FBF1DD', fg: '#8A5A12' } : { bg: C.greenBg, fg: C.greenDark };
+                  return (
+                    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-4 py-3 text-[13px]" style={{ background: tone.bg, color: tone.fg }}>
+                      <b>Apply for the visa by {visaDeadline.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</b>
+                      <span>· {left < 0 ? `${-left} days past the deadline` : `${left} days left`} — the endorsement letter is valid for 3 months.</span>
+                    </div>
+                  );
+                })()}
               </Section>
 
               {/* Next action */}
@@ -1132,7 +1324,7 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
                     </div>
                   )}
                   <div className="mt-1">
-                    {leadPayments.map((p) => <PaymentLine key={p.id} p={p} currency={currency} />)}
+                    {leadPayments.map((p) => <PaymentLine key={p.id} p={p} currency={currency} visa={c.visa_type} />)}
                     {leadPayments.length === 0 && (
                       <div className="py-6 text-center text-[13px]" style={{ color: C.faint }}>No payments recorded for this client yet.</div>
                     )}

@@ -50,6 +50,8 @@ export interface CaseDetails {
   visa?: Verdict;
   visa_applied_on?: string | null;
   visa_decided_on?: string | null;
+  /** Innovator Founder checklist — only present on IFV cases (see IfvDetails). */
+  ifv?: IfvDetails;
   closed_note?: string | null;
   closed_at?: string | null;
 }
@@ -207,4 +209,123 @@ export function safeUrl(raw: string): string | null {
     const u = new URL(withScheme);
     return u.protocol === 'https:' || u.protocol === 'http:' ? u.toString() : null;
   } catch { return null; }
+}
+
+
+// =============================================================================
+// INNOVATOR FOUNDER VISA — the IFV case checklist (owner's brief, 6 Oct 2026)
+// -----------------------------------------------------------------------------
+// The route: Migrizo develops the business idea WITH the founder (clients come
+// without one), builds the business-plan pack, an endorsing body assesses it
+// as Innovative · Viable · Scalable, and the visa follows the endorsement
+// letter. No post-visa check-in tracking — those are post-visa services.
+//
+// Stored at journey.details.ifv, beside — never inside — the GTV fields, so a
+// case switched between routes keeps both checklists intact. Shared with GTV:
+// onboarding, Documents in Drive, target date, next action, ready-to-file,
+// the decision fields, photo and closure.
+// =============================================================================
+
+export interface IfvDoc { drafted: boolean; final: boolean; link: string }
+export interface IfvCriterion { done: boolean; note: string; link: string }
+export type IfvDocKey = 'business_plan' | 'financial_forecast' | 'pitch_deck' | 'market_research' | 'founder_statement';
+export type IfvCriterionKey = 'innovative' | 'viable' | 'scalable';
+
+export interface IfvDetails {
+  founder_reviewed: boolean;
+  idea_developed: boolean;
+  idea_title: string;
+  english_b2: boolean;
+  funds_checked: boolean;
+  docs: Record<IfvDocKey, IfvDoc>;
+  criteria: Record<IfvCriterionKey, IfvCriterion>;
+  review_discussed: boolean;
+  review_final: boolean;
+  endorsing_body: string;          // ENDORSING_BODIES value
+  endorsing_body_other: string;
+  interview_date: string | null;   // 'YYYY-MM-DD'
+  interview_prep: boolean;
+  interview_done: boolean;
+}
+
+export const IFV_DOCS: { key: IfvDocKey; label: string; hint: string }[] = [
+  { key: 'business_plan',      label: 'Business plan',              hint: 'The full plan the endorsing body assesses' },
+  { key: 'financial_forecast', label: 'Financial forecast (3 years)', hint: 'P&L, cash flow and key assumptions' },
+  { key: 'pitch_deck',         label: 'Pitch deck',                 hint: 'Used in the endorsement interview' },
+  { key: 'market_research',    label: 'Market research',            hint: 'UK market size, customers, competitors' },
+  { key: 'founder_statement',  label: 'Founder CV & statement',     hint: "Why this founder can deliver this business" },
+];
+
+export const IFV_CRITERIA: { key: IfvCriterionKey; label: string; question: string }[] = [
+  { key: 'innovative', label: 'Innovative', question: 'A genuine, original business plan that meets new or existing market needs and/or creates a competitive advantage.' },
+  { key: 'viable',     label: 'Viable',     question: 'Realistic and achievable plan; the founder has, or is developing, the skills, knowledge and market awareness to run it.' },
+  { key: 'scalable',   label: 'Scalable',   question: 'Evidence of structured planning and potential for job creation and growth into national and international markets.' },
+];
+
+/** Default first: Innovator International is the most established IFV endorsing body. */
+export const ENDORSING_BODIES: { value: string; label: string }[] = [
+  { value: 'innovator_international', label: 'Innovator International' },
+  { value: 'envestors',               label: 'Envestors' },
+  { value: 'other',                   label: 'Other' },
+];
+
+const ifvDoc = (): IfvDoc => ({ drafted: false, final: false, link: '' });
+const ifvCrit = (): IfvCriterion => ({ done: false, note: '', link: '' });
+
+export function emptyIfv(): IfvDetails {
+  return {
+    founder_reviewed: false, idea_developed: false, idea_title: '', english_b2: false, funds_checked: false,
+    docs: { business_plan: ifvDoc(), financial_forecast: ifvDoc(), pitch_deck: ifvDoc(), market_research: ifvDoc(), founder_statement: ifvDoc() },
+    criteria: { innovative: ifvCrit(), viable: ifvCrit(), scalable: ifvCrit() },
+    review_discussed: false, review_final: false,
+    endorsing_body: 'innovator_international', endorsing_body_other: '',
+    interview_date: null, interview_prep: false, interview_done: false,
+  };
+}
+
+/** A stored IFV checklist completed with defaults — older or partial shapes still render. */
+export function hydrateIfv(raw: unknown): IfvDetails {
+  const e = emptyIfv();
+  if (!raw || typeof raw !== 'object') return e;
+  const r = raw as Partial<IfvDetails>;
+  return {
+    ...e,
+    ...Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'docs' && k !== 'criteria')),
+    docs: Object.fromEntries(IFV_DOCS.map(({ key }) => [key, { ...e.docs[key], ...(r.docs?.[key] ?? {}) }])) as IfvDetails['docs'],
+    criteria: Object.fromEntries(IFV_CRITERIA.map(({ key }) => [key, { ...e.criteria[key], ...(r.criteria?.[key] ?? {}) }])) as IfvDetails['criteria'],
+  } as IfvDetails;
+}
+
+/** Every IFV checkbox, labelled for the progress count and the case timeline. */
+export function tasksOfIfv(d: CaseDetails): { key: string; label: string; done: boolean }[] {
+  const v = hydrateIfv(d.ifv);
+  const t: { key: string; label: string; done: boolean }[] = [
+    { key: 'onboarded', label: 'Client onboarded', done: d.onboarded },
+    { key: 'ifv_founder', label: 'Founder profile reviewed', done: v.founder_reviewed },
+    { key: 'ifv_idea', label: 'Business idea developed', done: v.idea_developed },
+    { key: 'ifv_english', label: 'English (B2) evidence confirmed', done: v.english_b2 },
+    { key: 'ifv_funds', label: 'Maintenance funds checked', done: v.funds_checked },
+    { key: 'docs', label: 'All required documents received', done: d.docs_received },
+  ];
+  IFV_DOCS.forEach(({ key, label }) => {
+    t.push({ key: `ifv_${key}_d`, label: `${label} drafted`, done: v.docs[key].drafted });
+    t.push({ key: `ifv_${key}_f`, label: `${label} final`, done: v.docs[key].final });
+  });
+  IFV_CRITERIA.forEach(({ key, label }) => t.push({ key: `ifv_c_${key}`, label: `${label} evidence covered`, done: v.criteria[key].done }));
+  t.push({ key: 'ifv_rev_d', label: 'Document pack discussed with client', done: v.review_discussed });
+  t.push({ key: 'ifv_rev_f', label: 'Client sign-off on final pack', done: v.review_final });
+  t.push({ key: 'ifv_int_p', label: 'Endorsement interview prepared', done: v.interview_prep });
+  t.push({ key: 'ifv_int_d', label: 'Endorsement interview attended', done: v.interview_done });
+  return t;
+}
+
+/** The checklist for this case's route. */
+export function tasksFor(d: CaseDetails, ifv: boolean) {
+  return ifv ? tasksOfIfv(d) : tasksOf(d);
+}
+
+export function progressFor(d: CaseDetails, ifv: boolean): { done: number; total: number; pct: number } {
+  const t = tasksFor(d, ifv);
+  const done = t.filter((x) => x.done).length;
+  return { done, total: t.length, pct: t.length ? Math.round((done / t.length) * 100) : 0 };
 }

@@ -6,7 +6,7 @@ import { Select } from '@/components/shared/select';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useApp } from '@/components/shared/app-provider';
 import type { Payment, Milestone } from '@/lib/types';
-import { MILESTONE_META } from '@/lib/types';
+import { MILESTONE_META, IFV_MILESTONE_META, isIfvVisa, milestoneLabel } from '@/lib/types';
 import { formatMoney, moneySymbol, cn } from '@/lib/utils';
 import { FileText, Pencil, Trash2, Send, Download, X, Percent, Building2, MapPin, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
@@ -179,7 +179,7 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
       <div className="p-3 rounded-xl border border-border group">
         <div className="flex items-center justify-between mb-1.5">
           <div>
-            <div className="text-[13px] font-semibold">{MILESTONE_META[payment.milestone].label}</div>
+            <div className="text-[13px] font-semibold">{milestoneLabel(payment.milestone, lead?.visa_type, payment.created_at)}</div>
             <div className="text-[11px] text-muted">{payment.paid_at ? `Paid · ${new Date(payment.paid_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Not yet received'}</div>
           </div>
           <div className="flex items-center gap-2">
@@ -411,7 +411,13 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
               <Select<Milestone>
                 value={milestone}
                 onChange={setMilestone}
-                options={(Object.keys(MILESTONE_META) as Milestone[]).map((m) => ({ value: m, label: `${MILESTONE_META[m].label} (${MILESTONE_META[m].pct}%)` }))}
+                // The client's own route: IFV clients see the IFV plan (with £ amounts), everyone else the GTV plan.
+                options={(Object.keys(MILESTONE_META) as Milestone[]).map((m) => ({
+                  value: m,
+                  label: isIfvVisa(lead?.visa_type)
+                    ? `${IFV_MILESTONE_META[m].label} (£${IFV_MILESTONE_META[m].gbp.toLocaleString('en-GB')})`
+                    : `${MILESTONE_META[m].label} (${MILESTONE_META[m].pct}%)`,
+                }))}
               />
             </div>
             <div>
@@ -453,7 +459,7 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
         onClose={() => setConfirmDelete(false)}
         onConfirm={async () => { await deletePayment(payment.id); setConfirmDelete(false); }}
         title="Delete this payment?"
-        description={`This will delete the ${MILESTONE_META[payment.milestone].label} payment of ${formatMoney(payment.amount, currency)}. The client's Collected total will be reduced automatically. This cannot be undone.`}
+        description={`This will delete the ${milestoneLabel(payment.milestone, lead?.visa_type, payment.created_at)} payment of ${formatMoney(payment.amount, currency)}. The client's Collected total will be reduced automatically. This cannot be undone.`}
         confirmLabel="Delete payment"
         variant="danger"
       />

@@ -42,8 +42,8 @@ const ROUTES: Record<RouteKey, {
     short: 'IFV', full: 'Innovator Founder Visa', tagline: 'For entrepreneurs establishing or scaling an innovative business in the UK.',
     accent: '#0E7490', tint: '#ECFEFF', border: '#A5E8F5',
     fee: '£3,000',
-    // 5 Oct 2026 plan: three instalments, same £3,000 total.
-    milestones: [['Kickstart', '£500'], ['Document Preparation', '£1,500'], ['Application Submission', '£1,000']],
+    // 6 Oct 2026 plan — the same four instalments as IFV_MILESTONE_META.
+    milestones: [['Kickstart Fee (Idea)', '£500'], ['Business Plan Stage Starting', '£1,000'], ['All Document Delivery', '£1,000'], ['Endorsement Application Submission', '£500']],
     gov: 'Paid by the client directly to the relevant authority',
     timeline: 'Endorsement 4–6 weeks · Visa 2–3 weeks',
     journey: ['Onboarding', 'Build the Business Case', 'Write & Approve', 'Endorsement', 'Visa & Approval'],
