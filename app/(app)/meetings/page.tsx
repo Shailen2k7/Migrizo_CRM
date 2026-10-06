@@ -19,6 +19,9 @@ interface Meeting {
   starts_at: string; ends_at: string; status: string; notes: string | null;
   meet_link: string | null; manage_token: string; created_at: string;
 }
+/** Choices for the gap kept free around every call (Calendar settings). */
+const GAP_OPTIONS = [15, 30, 45, 60];
+
 interface Member { id: string; user_id: string; slug: string; display_name: string; title: string; meeting_link: string | null; timezone: string; slot_minutes: number; slot_step_minutes: number; buffer_minutes: number; working_hours: Record<string, [string, string][]>; active: boolean;
   min_notice_minutes: number; max_days_ahead: number; daily_meeting_cap: number | null;
   reminder_kinds: string[]; paused_message: string | null; }
@@ -628,7 +631,7 @@ const DAYS: { key: string; label: string }[] = [
 
 const BLANK_PAGE: Partial<Member> = {
   slug: '', display_name: '', title: 'GTV Consultation', meeting_link: '', timezone: 'Asia/Kolkata',
-  slot_minutes: 30, slot_step_minutes: 30, buffer_minutes: 0, active: true,
+  slot_minutes: 30, slot_step_minutes: 30, buffer_minutes: 30, active: true,
   min_notice_minutes: 60, max_days_ahead: 30, daily_meeting_cap: null,
   reminder_kinds: ['h24', 'h3', 'h1', 'm15', 'start'], paused_message: null,
   working_hours: { mon: [['10:00', '18:00']], tue: [['10:00', '18:00']], wed: [['10:00', '18:00']], thu: [['10:00', '18:00']], fri: [['10:00', '18:00']], sat: [], sun: [] },
@@ -653,7 +656,7 @@ function SettingsDrawer({ myMember, members, people, isAdmin, userId, workspaceI
 
   const [m, setM] = useState<Partial<Member>>(current || {
     slug: '', display_name: '', title: 'GTV Consultation', meeting_link: '', timezone: 'Asia/Kolkata',
-    slot_minutes: 30, slot_step_minutes: 30, buffer_minutes: 0, active: true,
+    slot_minutes: 30, slot_step_minutes: 30, buffer_minutes: 30, active: true,
     min_notice_minutes: 60, max_days_ahead: 30, daily_meeting_cap: null,
     reminder_kinds: ['h24', 'h3', 'h1', 'm15', 'start'], paused_message: null,
     working_hours: { mon: [['10:00', '22:00']], tue: [['10:00', '22:00']], wed: [['10:00', '22:00']], thu: [['10:00', '22:00']], fri: [['10:00', '22:00']], sat: [], sun: [['10:00', '22:00']] },
@@ -869,12 +872,22 @@ function SettingsDrawer({ myMember, members, people, isAdmin, userId, workspaceI
             </select></div>
           <div><label className="block text-[12px] font-medium text-muted mb-1">Call length (min)</label>
             <input type="number" value={m.slot_minutes || 30} onChange={(e) => setM({ ...m, slot_minutes: Number(e.target.value) })} className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none" /></div>
-          <div><label className="block text-[12px] font-medium text-muted mb-1">Gap after (min)</label>
-            <input type="number" min={0} value={m.buffer_minutes ?? 0} onChange={(e) => setM({ ...m, buffer_minutes: Number(e.target.value) })} className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none" /></div>
+          <div><label className="block text-[12px] font-medium text-muted mb-1">Gap between calls</label>
+            {/* Owner's choices, 6 Oct 2026: 15 / 30 / 45 / 60. A calendar still
+                on the old free-number value (e.g. 0) shows as "choose one"
+                until it is set, so nothing changes until someone picks. */}
+            <select value={GAP_OPTIONS.includes(m.buffer_minutes ?? 0) ? m.buffer_minutes : ''}
+              onChange={(e) => setM({ ...m, buffer_minutes: Number(e.target.value) })}
+              className="w-full px-3 py-2 border border-border rounded-lg text-[13px] focus:border-indigo outline-none bg-surface">
+              {!GAP_OPTIONS.includes(m.buffer_minutes ?? 0) && (
+                <option value="" disabled>{m.buffer_minutes ? `${m.buffer_minutes} min — choose one` : 'No gap — choose one'}</option>
+              )}
+              {GAP_OPTIONS.map((v) => <option key={v} value={v}>{v === 60 ? '1 hour' : `${v} minutes`}</option>)}
+            </select></div>
         </div>
         <p className="text-[11px] text-faint mb-3 leading-[1.5]">
-          <b className="text-ink-2">Slot every 30 · call 30 · gap 0</b> offers 10:00, 10:30, 11:00 — and booking 2:00pm still leaves 2:30pm open.
-          Any gap above 0 is enforced on <i>both</i> sides of a booking, so it removes the neighbouring slot.
+          The gap keeps that much free time <b className="text-ink-2">before and after every call</b>. With a 15-minute call and a
+          30-minute gap, a 10:00 booking keeps the calendar closed until 10:45 — no two calls are ever closer than 30 minutes.
         </p>
         <label className="block text-[12px] font-medium text-muted mb-1">Timezone</label>
         <input value={m.timezone || ''} onChange={(e) => setM({ ...m, timezone: e.target.value })} className="w-full px-3 py-2 border border-border rounded-lg text-[13px] mb-4 focus:border-indigo outline-none" />
