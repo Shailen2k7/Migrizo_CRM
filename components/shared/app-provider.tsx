@@ -581,6 +581,14 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
       // month the money arrived, not the month it was typed in.
       paid_at: input.status === 'paid' || !input.status ? (input.paid_at || new Date().toISOString()) : null,
       note: input.note || null,
+      // Migration 126: a payment in another currency than the client's billing
+      // currency carries what it counts for, and the rate used. Sent only when
+      // present, so same-currency payments never depend on the new columns.
+      ...(input.credit_amount != null ? {
+        credit_amount: input.credit_amount,
+        credit_currency: input.credit_currency ?? null,
+        fx_rate: input.fx_rate ?? null,
+      } : {}),
       created_by: user.id,
     };
     const { data, error } = await supabase.from('payments').insert(payload).select().single();
@@ -591,7 +599,7 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     // Refresh ONLY the affected lead (fast) instead of re-fetching everything.
     await refreshLead(input.lead_id);
 
-    logActivity('recorded_payment', input.lead_id, { milestone: input.milestone, amount: input.amount });
+    logActivity('recorded_payment', input.lead_id, { milestone: input.milestone, amount: input.amount, currency: input.currency || 'INR' });
     toast.success(`Payment recorded`);
 
     // On a PAID payment: auto-send the receipt for this payment. If it's the

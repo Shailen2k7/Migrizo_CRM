@@ -144,8 +144,8 @@ export function ActivityFeed({ activity, leads, memberNameById }: { activity: Ac
           }
           if (a.action === 'added_note') return <><span className="font-semibold">{actor}</span> added a note on <span className="font-semibold">{lead?.full_name || 'a lead'}</span></>;
           if (a.action === 'recorded_payment') {
-            const m = a.meta as { amount?: number };
-            return <><span className="font-semibold">{actor}</span> logged <span className="font-semibold">{formatMoney(m.amount || 0, lead?.currency || 'INR')}</span> payment for <span className="font-semibold">{lead?.full_name || 'client'}</span></>;
+            const m = a.meta as { amount?: number; currency?: string };
+            return <><span className="font-semibold">{actor}</span> logged <span className="font-semibold">{formatMoney(m.amount || 0, m.currency || lead?.currency || 'INR')}</span> payment for <span className="font-semibold">{lead?.full_name || 'client'}</span></>;
           }
           if (a.action === 'imported_leads') return <><span className="font-semibold">{actor}</span> imported <span className="font-semibold">{(a.meta as { count?: number }).count || 0}</span> leads</>;
           return <><span className="font-semibold">{actor}</span> · {a.action}</>;

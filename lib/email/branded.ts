@@ -767,11 +767,14 @@ export function invoiceNumber(payment: { id: string; created_at: string | null }
 
 export function renderInvoice(
   lead: Pick<Lead, 'full_name' | 'email' | 'phone' | 'visa_type' | 'currency' | 'gstin' | 'billing_address'>,
-  payment: Pick<Payment, 'id' | 'milestone' | 'amount' | 'status' | 'paid_at' | 'created_at'>
+  payment: Pick<Payment, 'id' | 'milestone' | 'amount' | 'status' | 'paid_at' | 'created_at'> & { currency?: string | null }
     & { gst_rate?: number | null; gst_mode?: 'add' | 'inclusive' | null },
   invoiceNo: string,
 ): { subject: string; html: string; text: string } {
-  const currency = lead.currency || 'INR';
+  // An invoice is issued in the currency of ITS payment (migration 126), not
+  // the client's billing currency — a ₹64,500 Kickstart on a client later
+  // billed in £ must never print as £64,500.
+  const currency = payment.currency || lead.currency || 'INR';
   const amount = payment.amount || 0;
   // The milestone KEY is fixed across the CRM (payments, pipeline, reports).
   // Only the label shown to the client follows the visa route.

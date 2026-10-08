@@ -90,7 +90,7 @@ export function useNotifications({ leads, payments }: { leads: Lead[]; payments:
           id: 'pay-overdue-' + p.id,
           type: 'overdue-pay',
           text: `Payment overdue from ${lead.full_name}`,
-          sub: `${formatMoney(p.amount, lead?.currency || 'INR')} · ${p.due_date ? `due ${timeAgo(p.due_date)}` : 'overdue'}`,
+          sub: `${formatMoney(p.amount, p.currency || lead?.currency || 'INR')} · ${p.due_date ? `due ${timeAgo(p.due_date)}` : 'overdue'}`,
           leadId: p.lead_id,
           ts: p.due_date ? new Date(p.due_date).getTime() : new Date(p.created_at).getTime(),
           priority: 'high',

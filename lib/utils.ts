@@ -58,6 +58,30 @@ export function toINR(amount: number, currency?: string | null): number {
   return (amount || 0) * rate;
 }
 
+/** Standing rate: units of `to` per 1 unit of `from` (from FX_TO_INR). */
+export function fxStanding(from?: string | null, to?: string | null): number {
+  return (FX_TO_INR[from || 'INR'] ?? 1) / (FX_TO_INR[to || 'INR'] ?? 1);
+}
+
+/**
+ * What a payment counts for in the client's billing currency. Mirrors the
+ * database exactly (public.payment_credit, migration 126), so the CRM and
+ * leads.amount_paid can never disagree:
+ *   same currency            → the amount itself
+ *   credit recorded for it   → the credit (rate fixed when it was entered)
+ *   otherwise                → converted at the standing rate
+ */
+export function paymentCredit(
+  p: { amount: number; currency?: string | null; credit_amount?: number | null; credit_currency?: string | null },
+  billingCurrency?: string | null,
+): number {
+  const bill = (billingCurrency || 'INR').toUpperCase();
+  const own = (p.currency || bill).toUpperCase();
+  if (own === bill) return p.amount || 0;
+  if (p.credit_amount != null && (p.credit_currency || '').toUpperCase() === bill) return Number(p.credit_amount);
+  return Math.round((p.amount || 0) * fxStanding(own, bill) * 100) / 100;
+}
+
 export function initials(name: string): string {
   if (!name) return '?';
   const parts = name.trim().split(/\s+/).filter(Boolean);

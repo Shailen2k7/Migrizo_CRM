@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '@/components/shared/app-provider';
 import { useUI } from '@/components/shared/app-shell';
-import { MILESTONE_META, PAYMENT_META } from '@/lib/types';
+import { MILESTONE_META, PAYMENT_META, milestoneLabel } from '@/lib/types';
 import type { Milestone, Payment, Lead } from '@/lib/types';
 import { formatMoney, initials, avatarColor, cn } from '@/lib/utils';
 import { Plus, Download, Search, IndianRupee, Check, EyeOff, Eye } from 'lucide-react';
@@ -103,7 +103,7 @@ export default function PaymentsPage() {
     const headers = ['Client', 'Milestone', 'Amount', 'Currency', 'Status', 'Paid At', 'Note'];
     const rows = payments.map((p) => {
       const l = leads.find((x) => x.id === p.lead_id);
-      return [l?.full_name || '—', MILESTONE_META[p.milestone].label, p.amount, l?.currency || 'INR', p.status, p.paid_at || '', p.note || ''];
+      return [l?.full_name || '—', milestoneLabel(p.milestone, l?.visa_type, p.created_at), p.amount, p.currency || l?.currency || 'INR', p.status, p.paid_at || '', p.note || ''];
     });
     const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });

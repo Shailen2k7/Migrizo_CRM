@@ -7,13 +7,13 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useApp } from '@/components/shared/app-provider';
 import type { Payment, Milestone } from '@/lib/types';
 import { MILESTONE_META, IFV_MILESTONE_META, isIfvVisa, milestoneLabel } from '@/lib/types';
-import { formatMoney, moneySymbol, cn } from '@/lib/utils';
+import { formatMoney, moneySymbol, cn, fxStanding, paymentCredit } from '@/lib/utils';
 import { FileText, Pencil, Trash2, Send, Download, X, Percent, Building2, MapPin, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Props {
   payment: Payment;
-  currency?: string; // the lead's currency — single source of truth
+  currency?: string; // the client's billing currency (fallback for rows without their own)
 }
 
 export function PaymentRow({ payment, currency = 'INR' }: Props) {
@@ -22,6 +22,9 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const [milestone, setMilestone] = useState<Milestone>(payment.milestone);
+  // A payment's own currency (migration 126) — what it was paid / invoiced in.
+  const [ccy, setCcy] = useState<string>(payment.currency || currency);
+  const [rateText, setRateText] = useState<string>('');
   const [amount, setAmount] = useState<string>(String(payment.amount));
   const [status, setStatus] = useState<Payment['status']>(payment.status);
   const [note, setNote] = useState(payment.note || '');
@@ -37,6 +40,10 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
   // It belongs to the CLIENT, so it is read from and written to the lead. Type
   // it once here and every future invoice for this person already carries it.
   const lead = leads.find((l) => l.id === payment.lead_id);
+  // Every amount on this row is in the PAYMENT's own currency; the client's
+  // billing currency only appears in the "counts as" line.
+  const own = payment.currency || currency;
+  const billing = lead?.currency || currency;
   const [gstin, setGstin] = useState<string>(lead?.gstin || '');
   const cleanGstin = gstin.replace(/\s+/g, '').toUpperCase();
   const gstinValid = cleanGstin.length === 0 || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(cleanGstin);
@@ -148,6 +155,8 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
   const openEditor = () => {
     setMilestone(payment.milestone);
     setAmount(String(payment.amount));
+    setCcy(payment.currency || currency);
+    setRateText(String(payment.fx_rate ?? Math.round(fxStanding(payment.currency || currency, lead?.currency || currency) * 10000) / 10000));
     setStatus(payment.status);
     setNote(payment.note || '');
     setEditOpen(true);
@@ -156,10 +165,20 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
   const save = async () => {
     const n = parseFloat(amount);
     if (!n || n < 0) return;
+    const r = parseFloat(rateText) || 0;
+    if (ccy !== billing && !(r > 0)) return;
     setBusy(true);
     await updatePayment(payment.id, {
       milestone,
       amount: Math.round(n),
+      // Correcting the currency label is allowed per payment; when it differs
+      // from the client's billing currency, its value there is kept with it.
+      currency: ccy as Payment['currency'],
+      // Conversion fields only when this payment needs (or had) them, so editing
+      // an ordinary same-currency payment never touches the migration-126 columns.
+      ...(ccy !== billing
+        ? { credit_amount: Math.round(n * r), credit_currency: billing as Payment['currency'], fx_rate: r }
+        : payment.credit_amount != null ? { credit_amount: null, credit_currency: null, fx_rate: null } : {}),
       status,
       note: note.trim() || null,
       paid_at: status === 'paid' ? (payment.paid_at || new Date().toISOString()) : null,
@@ -184,7 +203,12 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
           </div>
           <div className="flex items-center gap-2">
             <div className="text-right">
-              <div className="num font-bold">{formatMoney(payment.amount, currency)}</div>
+              <div className="num font-bold">{formatMoney(payment.amount, own)}</div>
+              {own !== billing && (
+                <div className="text-[10.5px] text-muted num" title={payment.fx_rate ? `Rate used: 1 ${own} = ${payment.fx_rate} ${billing}` : 'Converted at the standing rate'}>
+                  counts as {formatMoney(Math.round(paymentCredit(payment, billing)), billing)}
+                </div>
+              )}
               <span className="chip" style={{ background: statusMeta[payment.status].bg, color: statusMeta[payment.status].fg, border: 'none' }}>{statusMeta[payment.status].label}</span>
             </div>
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -341,9 +365,9 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
             )}
 
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted">
-              <span>Taxable <b className="text-ink-2 num">{formatMoney(Math.round(preview.taxable), currency)}</b></span>
-              {rateNum > 0 && <span>GST <b className="text-ink-2 num">{formatMoney(Math.round(preview.gst), currency)}</b></span>}
-              <span>Client pays <b className="text-ink num">{formatMoney(Math.round(preview.total), currency)}</b></span>
+              <span>Taxable <b className="text-ink-2 num">{formatMoney(Math.round(preview.taxable), own)}</b></span>
+              {rateNum > 0 && <span>GST <b className="text-ink-2 num">{formatMoney(Math.round(preview.gst), own)}</b></span>}
+              <span>Client pays <b className="text-ink num">{formatMoney(Math.round(preview.total), own)}</b></span>
               {rateNum > 0 && (
                 <span className="text-faint">CGST {(rateNum / 2)}% + SGST {(rateNum / 2)}%</span>
               )}
@@ -379,7 +403,7 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
             client pays <b className="text-ink-2 num">{formatMoney(Math.round(
               payment.gst_mode === 'inclusive'
                 ? payment.amount
-                : payment.amount * (1 + Number(payment.gst_rate) / 100)), currency)}</b>
+                : payment.amount * (1 + Number(payment.gst_rate) / 100)), own)}</b>
             {lead?.gstin && <span className="text-faint">· GSTIN {lead.gstin}</span>}
             {lead?.billing_address && <span className="text-faint">· address on file</span>}
           </div>
@@ -421,13 +445,42 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
               />
             </div>
             <div>
-              <label className="input-label">Amount ({moneySymbol(currency)})</label>
+              <label className="input-label">Amount ({moneySymbol(ccy)})</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-faint text-[13px] num">{moneySymbol(currency)}</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-faint text-[13px] num">{moneySymbol(ccy)}</span>
                 <input type="number" min="0" className="input pl-8" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
               </div>
-              {amount && Number(amount) > 0 && <div className="text-[11px] text-muted mt-1">{formatMoney(Math.round(Number(amount)), currency)}</div>}
+              {amount && Number(amount) > 0 && <div className="text-[11px] text-muted mt-1">{formatMoney(Math.round(Number(amount)), ccy)}</div>}
             </div>
+          </div>
+
+          <div>
+            <label className="input-label">Currency of this payment</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['INR', 'GBP', 'USD'] as const).map((c) => (
+                <button key={c} type="button"
+                  onClick={() => { setCcy(c); if (c !== billing) setRateText(String(Math.round(fxStanding(c, billing) * 10000) / 10000)); }}
+                  className={cn('py-2 rounded-md text-[12.5px] font-semibold border transition', ccy === c ? 'border-transparent' : 'border-border hover:bg-surface-2 text-muted')}
+                  style={ccy === c ? { background: '#EEF0FF', color: '#3C3489' } : undefined}>
+                  {moneySymbol(c)} {c}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted mt-1.5">
+              Change only if this payment was entered in the wrong currency — the amount is kept as typed.
+              The client is billed in <b className="text-ink-2">{billing}</b>.
+            </p>
+            {ccy !== billing && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md p-2.5 text-[12.5px]" style={{ background: '#EEF0FF', color: '#26215C' }}>
+                <span>1 {ccy} =</span>
+                <input type="number" min="0" step="0.0001" className="input !h-8 !w-[110px] !py-1 text-[12.5px]" value={rateText}
+                  onChange={(e) => setRateText(e.target.value)} aria-label="Exchange rate" />
+                <span>{billing}</span>
+                {Number(amount) > 0 && parseFloat(rateText) > 0 && (
+                  <span>· counts as <b>{formatMoney(Math.round(Number(amount) * parseFloat(rateText)), billing)}</b></span>
+                )}
+              </div>
+            )}
           </div>
 
           <div>
@@ -459,7 +512,7 @@ export function PaymentRow({ payment, currency = 'INR' }: Props) {
         onClose={() => setConfirmDelete(false)}
         onConfirm={async () => { await deletePayment(payment.id); setConfirmDelete(false); }}
         title="Delete this payment?"
-        description={`This will delete the ${milestoneLabel(payment.milestone, lead?.visa_type, payment.created_at)} payment of ${formatMoney(payment.amount, currency)}. The client's Collected total will be reduced automatically. This cannot be undone.`}
+        description={`This will delete the ${milestoneLabel(payment.milestone, lead?.visa_type, payment.created_at)} payment of ${formatMoney(payment.amount, own)}. The client's Collected total will be reduced automatically. This cannot be undone.`}
         confirmLabel="Delete payment"
         variant="danger"
       />

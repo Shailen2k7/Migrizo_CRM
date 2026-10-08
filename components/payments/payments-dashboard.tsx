@@ -110,15 +110,13 @@ export function PaymentsDashboard({ onFilter, activeFilter, onOpenLead }: {
    * name at the top of the page until someone corrects it. A number that is
    * quietly wrong is worse than a number that is visibly incomplete.
    */
+  // Since migration 126 a payment in another currency than its client is
+  // normal (paid in ₹, billed in £) and is valued in its OWN currency, so
+  // nothing is in conflict and nothing is left out. The notice stays wired
+  // but empty.
   const conflicted = useMemo(() => {
     const set = new Set<string>();
     const rows: { payment: Payment; lead: Lead }[] = [];
-    for (const p of visiblePayments) {
-      const lead = leadById.get(p.lead_id);
-      if (!lead) continue;
-      const leadCcy = lead.currency || 'INR';
-      if (p.currency && p.currency !== leadCcy) { set.add(p.id); rows.push({ payment: p, lead }); }
-    }
     // A fingerprint of exactly which payments are in conflict. Dismissing the
     // notice hides THIS set — if a new mismatch appears tomorrow the signature
     // changes and the notice comes back on its own, so hiding it can never
@@ -130,7 +128,7 @@ export function PaymentsDashboard({ onFilter, activeFilter, onOpenLead }: {
   /** A payment in rupees, or null when its currency is in dispute. */
   const inr = useMemo(
     () => (p: Payment): number | null =>
-      conflicted.ids.has(p.id) ? null : toINR(p.amount || 0, ccyOf(p.lead_id)),
+      conflicted.ids.has(p.id) ? null : toINR(p.amount || 0, p.currency || ccyOf(p.lead_id)),
     [conflicted.ids, ccyOf],
   );
 

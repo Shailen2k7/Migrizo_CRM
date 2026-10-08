@@ -40,7 +40,7 @@ import {
 import { normalizeJourney } from '@/lib/journey';
 import { getVisaMeta, MILESTONE_META, IFV_MILESTONE_META, isIfvVisa, milestoneLabel, type Case, type Milestone, type Note, type Payment } from '@/lib/types';
 import { useUI } from '@/components/shared/app-shell';
-import { initials, avatarColor, formatMoney } from '@/lib/utils';
+import { initials, avatarColor, formatMoney, paymentCredit } from '@/lib/utils';
 import { ArrowLeft, Calendar, Link2, Check, Send, ChevronDown, X, ExternalLink, Camera, Mail, Phone, MapPin, Plus, Download, Trash2, PauseCircle, PlayCircle, Archive, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { C } from '@/lib/case-theme';
@@ -327,7 +327,12 @@ function PaymentLine({ p, currency, visa }: { p: Payment; currency: string; visa
           {p.note ? ` · ${p.note}` : ''}
         </div>
       </div>
-      <div className="text-[14px] font-bold tabular-nums" style={{ color: C.navy }}>{formatMoney(p.amount, currency)}</div>
+      <div className="text-right">
+        <div className="text-[14px] font-bold tabular-nums" style={{ color: C.navy }}>{formatMoney(p.amount, p.currency || currency)}</div>
+        {(p.currency || currency) !== currency && (
+          <div className="text-[11px] tabular-nums" style={{ color: C.sub }}>counts as {formatMoney(Math.round(paymentCredit(p, currency)), currency)}</div>
+        )}
+      </div>
       <span className="rounded-full px-2.5 py-[3px] text-[11.5px] font-semibold" style={{ background: tone.bg, color: tone.fg }}>{tone.label}</span>
       <a href={`/api/invoice/pdf?paymentId=${encodeURIComponent(p.id)}`} target="_blank" rel="noopener noreferrer"
         title={p.status === 'paid' ? 'Receipt PDF' : 'Invoice PDF'}
@@ -676,8 +681,9 @@ export function CaseWorkspace({ caseId, onClose }: { caseId: string | null; onCl
         .sort((a, b) => (MILESTONE_META[a.milestone]?.order ?? 9) - (MILESTONE_META[b.milestone]?.order ?? 9))
     : [];
   const currency = lead?.currency || 'INR';
-  const collected = leadPayments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + (p.amount || 0), 0);
-  const billed = leadPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  // In the client's billing currency — each payment converted (migration 126).
+  const collected = Math.round(leadPayments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + paymentCredit(p, currency), 0));
+  const billed = Math.round(leadPayments.reduce((sum, p) => sum + paymentCredit(p, currency), 0));
 
   return (
     <div className="fixed inset-0 z-[70] flex justify-end">

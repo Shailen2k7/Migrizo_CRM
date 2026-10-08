@@ -164,14 +164,11 @@ export function RevenueChart({ payments, leads }: { payments: Payment[]; leads: 
     payments.forEach((p) => {
       if (p.status !== 'paid' || !p.paid_at) return;
       const leadCcy = ccyByLead[p.lead_id] || 'INR';
-      // A payment recorded in a different currency from its client is a typo in
-      // one of the two, and there is no way to tell which. Converting it anyway
-      // is how a single ₹72,500 row on a GBP client put ₹92 lakh into this
-      // chart. Skip it here; the Payments tab lists these by name to be fixed.
-      if (p.currency && p.currency !== leadCcy) return;
+      // Each payment is valued in its OWN currency (migration 126) — a ₹ payment
+      // on a client billed in £ is ₹, never read as £.
       const pd = new Date(p.paid_at);
       const idx = months.findIndex((m) => m.date.getMonth() === pd.getMonth() && m.date.getFullYear() === pd.getFullYear());
-      if (idx >= 0) months[idx].total += toINR(p.amount, leadCcy);
+      if (idx >= 0) months[idx].total += toINR(p.amount, p.currency || leadCcy);
     });
     return months;
   }, [payments, leads]);

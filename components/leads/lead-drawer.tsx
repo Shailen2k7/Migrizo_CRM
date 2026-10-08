@@ -18,7 +18,8 @@ import { ComposeDialog, LeadEmailThread, type LeadEmailRow } from '@/components/
 import { RoadmapBuilder } from '@/components/roadmap/roadmap-builder';
 import { IndustryChip } from '@/components/shared/industry-chip';
 import { READINESS_LIST, READINESS_META, getReadinessMeta, intakeEntries } from '@/lib/intake';
-import { initials, avatarColor, formatMoney, timeAgo, scoreColor, cn } from '@/lib/utils';
+import { initials, avatarColor, formatMoney, timeAgo, scoreColor, cn, fxStanding, paymentCredit } from '@/lib/utils';
+import { Modal } from '@/components/shared/modal';
 import { toast } from 'sonner';
 import { DocEditorModal } from '@/components/leads/doc-editor-modal';
 import { VisaRouteTab } from '@/components/leads/visa-route-tab';
@@ -41,6 +42,9 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
   const [pendingLead, setPendingLead] = useState<Partial<Lead> & { pipeline_id?: string | null }>({});
+  // Changing a client's BILLING currency converts its totals (migration 126);
+  // payments keep their own currency. Rate is text so it can be edited.
+  const [ccySwitch, setCcySwitch] = useState<{ to: 'INR' | 'GBP' | 'USD'; rate: string; source: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -662,7 +666,18 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     <Row label="Currency">
                       <div className="flex gap-1.5">
                         {(['INR', 'GBP', 'USD'] as const).map((c) => (
-                          <button key={c} type="button" onClick={() => setLeadPending({ currency: c })}
+                          <button key={c} type="button" onClick={() => {
+                            if (c === leadCurrency) return;
+                            const hasMoney = leadPayments.length > 0 || (effectiveLead.amount_total || 0) > 0 || (effectiveLead.amount_overdue || 0) > 0;
+                            // Nothing recorded yet: just set it. Anything recorded: convert, with confirmation.
+                            if (!hasMoney) { setLeadPending({ currency: c }); return; }
+                            const standing = Math.round(fxStanding(leadCurrency, c) * 10000) / 10000;
+                            setCcySwitch({ to: c, rate: String(standing), source: 'standing rate' });
+                            fetch(`/api/fx?from=${leadCurrency}&to=${c}`).then((r) => r.json())
+                              .then((j: { ok?: boolean; rate?: number; source?: string }) => {
+                                if (j?.ok && j.rate) setCcySwitch((x) => (x && x.to === c ? { ...x, rate: String(Math.round(j.rate! * 10000) / 10000), source: j.source === 'ecb' ? 'ECB rate today' : 'standing rate' } : x));
+                              }).catch(() => {});
+                          }}
                             className={cn('inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[12px] font-semibold border transition', leadCurrency === c ? 'border-transparent' : 'border-border hover:bg-surface-2 text-muted')}
                             style={leadCurrency === c ? { background: '#EEF0FF', color: '#3C3489' } : undefined}>
                             <span className="text-[13px]">{c === 'INR' ? '₹' : c === 'GBP' ? '£' : '$'}</span> {c}
@@ -683,16 +698,25 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                       />
                     </Row>
                     <Row label="Amount paid">
-                      <InlineNumber
-                        currency={leadCurrency}
-                        value={effectiveLead.amount_paid}
-                        onChange={(v) => {
-                          const total = effectiveLead.amount_total || 0;
-                          const status = v === 0 ? 'none' : (total > 0 && v >= total) ? 'paid' : 'partial';
-                          setLeadPending({ amount_paid: v, payment_status: status });
-                        }}
-                        placeholder="0"
-                      />
+                      {leadPayments.length > 0 ? (
+                        // Calculated from the payments below, each converted into the
+                        // billing currency — typing a number here would disagree with them.
+                        <span className="text-[13px] font-semibold num text-ink">
+                          {formatMoney(effectiveLead.amount_paid || 0, leadCurrency)}
+                          <span className="text-[10.5px] font-normal text-faint ml-2">· from {leadPayments.filter((p) => p.status === 'paid').length} paid payment{leadPayments.filter((p) => p.status === 'paid').length === 1 ? '' : 's'}</span>
+                        </span>
+                      ) : (
+                        <InlineNumber
+                          currency={leadCurrency}
+                          value={effectiveLead.amount_paid}
+                          onChange={(v) => {
+                            const total = effectiveLead.amount_total || 0;
+                            const status = v === 0 ? 'none' : (total > 0 && v >= total) ? 'paid' : 'partial';
+                            setLeadPending({ amount_paid: v, payment_status: status });
+                          }}
+                          placeholder="0"
+                        />
+                      )}
                     </Row>
                     <Row label="Overdue">
                       <InlineNumber
@@ -1059,6 +1083,67 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
           </>
         )}
       </AnimatePresence>
+
+      {ccySwitch && effectiveLead && (() => {
+        const r = parseFloat(ccySwitch.rate) || 0;
+        const conv = (n: number | null | undefined) => Math.round((n || 0) * r);
+        const paidNew = Math.round(leadPayments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + paymentCredit(p, ccySwitch.to), 0));
+        const rows: [string, number, number][] = [
+          ['Total fee', effectiveLead.amount_total || 0, conv(effectiveLead.amount_total)],
+          ...((effectiveLead.discount || 0) > 0 ? [['Discount', effectiveLead.discount || 0, conv(effectiveLead.discount)] as [string, number, number]] : []),
+          ...((effectiveLead.amount_overdue || 0) > 0 ? [['Overdue', effectiveLead.amount_overdue || 0, conv(effectiveLead.amount_overdue)] as [string, number, number]] : []),
+        ];
+        return (
+          <Modal open onClose={() => setCcySwitch(null)} size="sm"
+            title={`Bill this client in ${ccySwitch.to}?`}
+            subtitle="Totals are converted. Every payment keeps its own currency."
+            footer={<>
+              <button onClick={() => setCcySwitch(null)} className="btn btn-ghost">Cancel</button>
+              <button disabled={!(r > 0)} className="btn btn-primary disabled:opacity-50"
+                onClick={() => {
+                  setLeadPending({
+                    currency: ccySwitch.to,
+                    amount_total: conv(effectiveLead.amount_total),
+                    ...((effectiveLead.discount || 0) > 0 ? { discount: conv(effectiveLead.discount) } : {}),
+                    ...((effectiveLead.amount_overdue || 0) > 0 ? { amount_overdue: conv(effectiveLead.amount_overdue) } : {}),
+                    ...(leadPayments.length > 0 ? { amount_paid: paidNew } : {}),
+                  });
+                  setCcySwitch(null);
+                  toast.info('Converted — click Save to keep it');
+                }}>Convert to {ccySwitch.to}</button>
+            </>}>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                <span>1 {leadCurrency} =</span>
+                <input type="number" min="0" step="0.0001" className="input !h-8 !w-[120px] !py-1" value={ccySwitch.rate}
+                  onChange={(e) => setCcySwitch({ ...ccySwitch, rate: e.target.value })} aria-label="Exchange rate" />
+                <span>{ccySwitch.to}</span>
+                <span className="text-[11px] text-muted">· {ccySwitch.source} — edit if needed</span>
+              </div>
+              <div className="rounded-md border border-border divide-y divide-border text-[13px]">
+                {rows.map(([label, from, to]) => (
+                  <div key={label} className="flex items-center justify-between px-3 py-2">
+                    <span className="text-muted">{label}</span>
+                    <span className="num">{formatMoney(from, leadCurrency)} → <b>{formatMoney(to, ccySwitch.to)}</b></span>
+                  </div>
+                ))}
+                {leadPayments.length > 0 && (
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <span className="text-muted">Amount paid</span>
+                    <span className="num">{formatMoney(effectiveLead.amount_paid || 0, leadCurrency)} → <b>{formatMoney(paidNew, ccySwitch.to)}</b></span>
+                  </div>
+                )}
+              </div>
+              {leadPayments.length > 0 && (
+                <p className="text-[11.5px] text-muted leading-relaxed">
+                  Payments already recorded stay in the currency they were paid in, and their invoices are unchanged.
+                  Each one counts toward the {ccySwitch.to} total at the rate recorded with it (or the standing rate).
+                </p>
+              )}
+            </div>
+          </Modal>
+        );
+      })()}
 
       {lead && (
         <ComposeDialog open={composeOpen} leadId={lead.id} toEmail={effectiveLead?.email || ''} toName={effectiveLead?.full_name || ''}

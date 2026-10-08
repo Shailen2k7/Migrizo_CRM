@@ -172,6 +172,14 @@ export interface Payment {
    */
   gst_rate?: number;
   gst_mode?: 'add' | 'inclusive';
+  /**
+   * Migration 126. When this payment's currency differs from the client's
+   * billing currency (leads.currency): what it counts for in that currency,
+   * and the rate used. Null when the two currencies match.
+   */
+  credit_amount?: number | null;
+  credit_currency?: Currency | null;
+  fx_rate?: number | null;
   created_at: string;
   created_by: string | null;
 }

@@ -23,7 +23,7 @@
 
 import { useMemo, useState } from 'react';
 import { useApp } from '@/components/shared/app-provider';
-import { MILESTONE_META } from '@/lib/types';
+import { MILESTONE_META, milestoneLabel } from '@/lib/types';
 import type { Payment, Lead } from '@/lib/types';
 import { formatMoney, formatINR, toINR, initials, avatarColor, cn } from '@/lib/utils';
 import { CollapsiblePanel, PanelTitle } from '@/components/shared/dash-ui';
@@ -92,8 +92,10 @@ export function PaymentRegister({ onOpenLead }: { onOpenLead: (id: string) => vo
       const lead = leadById.get(p.lead_id);
       if (!lead || lead.is_sample || lead.hidden_from_payments) continue;
 
-      const ccy = lead.currency || 'INR';
-      const row: Row = { payment: p, lead, ccy, conflicted: !!p.currency && p.currency !== ccy };
+      // Each payment is shown and totalled in ITS OWN currency (migration 126):
+      // a ₹ Kickstart on a client now billed in £ is still ₹64,500, never "£64,500".
+      const ccy = p.currency || lead.currency || 'INR';
+      const row: Row = { payment: p, lead, ccy, conflicted: false };
       const k = monthKeyOf(p.paid_at);
       const list = byMonth.get(k);
       if (list) list.push(row); else byMonth.set(k, [row]);
@@ -236,7 +238,7 @@ export function PaymentRegister({ onOpenLead }: { onOpenLead: (id: string) => vo
                           {lead.full_name}
                         </button>
                         <div className="text-[11px] text-muted">
-                          {MILESTONE_META[p.milestone]?.label || p.milestone}
+                          {milestoneLabel(p.milestone, lead.visa_type, p.created_at)}
                           {p.note ? ` · ${p.note}` : ''}
                         </div>
                       </div>
