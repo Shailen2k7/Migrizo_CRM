@@ -32,6 +32,46 @@ interface Props {
   onRecordPayment: (leadId: string) => void;
 }
 
+// ---------------------------------------------------------------------------
+// SLA milestone plans. "Standard" mirrors lib/email/branded.ts exactly; the
+// 3-instalment preset merges the two Profile Building phases (500/1000/500,
+// net £2,000 — the agreement shows the £1,000 difference as a discount).
+// Rows stay fully editable, so any structure the client agreed is 30 seconds away.
+// ---------------------------------------------------------------------------
+interface PlanRow { label: string; amount: string }
+const SLA_PLANS: Record<'gtv' | 'ifv', { standard: PlanRow[]; three: PlanRow[] }> = {
+  gtv: {
+    standard: [
+      { label: 'Kickstart — Eligibility assessment, endorsing-body strategy and your personalised roadmap', amount: '500' },
+      { label: 'Profile Building — Phase 1 — UK-style CV, LinkedIn, personal statement and the first evidence required', amount: '1000' },
+      { label: 'Profile Building — Phase 2 — Recommendation letters, PR coordination and the criteria-mapped evidence portfolio', amount: '1000' },
+      { label: 'Endorsement Submission — Final review and submission of the endorsement application. Payable before submission', amount: '500' },
+    ],
+    three: [
+      { label: 'Kickstart — Eligibility assessment, endorsing-body strategy and your personalised roadmap', amount: '500' },
+      { label: 'Profile Building — UK-style CV, LinkedIn, personal statement, recommendation letters, PR coordination and the criteria-mapped evidence portfolio', amount: '1000' },
+      { label: 'Endorsement Submission — Final review and submission of the endorsement application. Payable before submission', amount: '500' },
+    ],
+  },
+  ifv: {
+    standard: [
+      { label: 'Kickstart Fee (Idea) — Engagement commencement, founder profile and business idea development', amount: '500' },
+      { label: 'Business Plan Stage — Due when business plan work starts: business structuring plan, business plan and financials', amount: '1000' },
+      { label: 'All Document Delivery — Due on delivery of the complete document pack: business plan, financial forecast, pitch deck and founder statement', amount: '1000' },
+      { label: 'Endorsement Application Submission — Due at the time of submission to the endorsing body', amount: '500' },
+    ],
+    three: [
+      { label: 'Kickstart Fee (Idea) — Engagement commencement, founder profile and business idea development', amount: '500' },
+      { label: 'Business Plan & Document Delivery — business structuring plan, business plan, financials, pitch deck and founder statement', amount: '1000' },
+      { label: 'Endorsement Application Submission — Due at the time of submission to the endorsing body', amount: '500' },
+    ],
+  },
+};
+const planTotal = (rows: PlanRow[]) => rows.reduce((t, r) => t + (Math.round(Number(r.amount)) || 0), 0);
+const toApiPlan = (rows: PlanRow[]) => rows
+  .map((r) => ({ label: r.label.trim(), amount: Math.max(0, Math.round(Number(r.amount)) || 0) }))
+  .filter((r) => r.label);
+
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, setLeadOffer, setLeadQualification, addNote, getNotes, createFollowUp, role, memberNameById, canViewPayments, canSendEmails, workspace, user: appUser } = useApp();
   const pl = usePipelines(workspace.id);
@@ -53,12 +93,12 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
 
   // One-click branded emails (SLA / onboarding). Server logs to the activity feed.
   const [slaConfigOpen, setSlaConfigOpen] = useState(false);
-  const [slaEditMode, setSlaEditMode] = useState(false);
-  const [slaDiscount, setSlaDiscount] = useState('');
+  // null = standard plan; rows = the custom plan being edited.
+  const [slaPlan, setSlaPlan] = useState<PlanRow[] | null>(null);
 
   // Review-and-edit before sending. Which document the editor holds, plus the
   // discount captured at open time so the preview and the send agree.
-  const [docEditor, setDocEditor] = useState<null | { type: 'sla' | 'process'; discount?: number }>(null);
+  const [docEditor, setDocEditor] = useState<null | { type: 'sla' | 'process'; discount?: number; plan?: { label: string; amount: number }[] }>(null);
   // The formatted CV text (076) — the durable copy of a file that was read
   // once and deleted. Opens in a full modal, not squeezed into a Row.
   const [showProfile, setShowProfile] = useState(false);
@@ -69,7 +109,8 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
       const res = await fetch('/api/email/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: docEditor.type, leadId: lead.id, preview: true,
-          ...(docEditor.discount ? { discount: docEditor.discount } : {}) }),
+          ...(docEditor.discount ? { discount: docEditor.discount } : {}),
+          ...(docEditor.plan ? { plan: docEditor.plan } : {}) }),
       });
       const j = await res.json().catch(() => null);
       if (j?.ok && j.html) return { subject: j.subject, html: j.html };
@@ -85,12 +126,13 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: docEditor.type, leadId: lead.id,
           overrideHtml: html, overrideSubject: subject,
-          ...(docEditor.discount ? { discount: docEditor.discount } : {}) }),
+          ...(docEditor.discount ? { discount: docEditor.discount } : {}),
+          ...(docEditor.plan ? { plan: docEditor.plan } : {}) }),
       });
       const j = await res.json().catch(() => null);
       if (j?.ok) {
         toast.success(`${docEditor.type === 'sla' ? 'Agreement' : '"How it works" email'} sent to ${lead.email}`);
-        if (docEditor.type === 'sla') { setSlaConfigOpen(false); setSlaEditMode(false); setSlaDiscount(''); }
+        if (docEditor.type === 'sla') { setSlaConfigOpen(false); setSlaPlan(null); }
         return true;
       }
       toast.error(`Send failed${j?.reason ? `: ${j.reason}` : ''}`);
@@ -98,14 +140,14 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
     } catch { toast.error('Send failed — check your connection'); return false; }
   };
 
-  const sendEmail = async (type: 'sla' | 'onboarding' | 'process', discount?: number) => {
+  const sendEmail = async (type: 'sla' | 'onboarding' | 'process', discount?: number, plan?: { label: string; amount: number }[]) => {
     if (!lead) return;
     if (!lead.email) { toast.error('This lead has no email address'); return; }
     setSendingEmail(type);
     try {
       let res = await fetch('/api/email/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, leadId: lead.id, ...(discount ? { discount } : {}) }),
+        body: JSON.stringify({ type, leadId: lead.id, ...(discount ? { discount } : {}), ...(plan?.length ? { plan } : {}) }),
       });
       let j = await res.json().catch(() => null);
       if (j?.already_sent) {
@@ -113,11 +155,11 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
         if (!again) return;
         res = await fetch('/api/email/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type, leadId: lead.id, force: true, ...(discount ? { discount } : {}) }),
+          body: JSON.stringify({ type, leadId: lead.id, force: true, ...(discount ? { discount } : {}), ...(plan?.length ? { plan } : {}) }),
         });
         j = await res.json().catch(() => null);
       }
-      if (j?.ok) { toast.success(type === 'sla' ? `SLA sent to ${lead.email}` : type === 'process' ? `"How it works" email sent to ${lead.email}` : `Onboarding email sent to ${lead.email}`); if (type === 'sla') { setSlaConfigOpen(false); setSlaEditMode(false); setSlaDiscount(''); } }
+      if (j?.ok) { toast.success(type === 'sla' ? `SLA sent to ${lead.email}` : type === 'process' ? `"How it works" email sent to ${lead.email}` : `Onboarding email sent to ${lead.email}`); if (type === 'sla') { setSlaConfigOpen(false); setSlaPlan(null); } }
       else toast.error(`Send failed${j?.reason ? `: ${j.reason}` : ''}`);
     } catch {
       toast.error('Send failed — check your connection');
@@ -128,6 +170,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
 
   const lead = leads.find((l) => l.id === leadId) as (Lead & { pipeline_id?: string | null }) | undefined;
   const effectiveLead = useMemo(() => (lead ? { ...lead, ...pendingLead } : null), [lead, pendingLead]);
+  const slaVisaKind: 'gtv' | 'ifv' = /ifv|innovator|founder|fiv/i.test(String(effectiveLead?.visa_type || '')) ? 'ifv' : 'gtv';
   const pendingCount = Object.keys(pendingLead).length;
   const isDirty = pendingCount > 0;
 
@@ -904,7 +947,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     <div className="flex items-center gap-2 pb-3 mb-1 border-b border-border">
                       <span className="text-[11px] font-semibold text-muted uppercase tracking-wide mr-1">Client emails</span>
                       <button
-                        onClick={() => { setSlaConfigOpen((o) => !o); setSlaEditMode(false); setSlaDiscount(''); }}
+                        onClick={() => { setSlaConfigOpen((o) => !o); setSlaPlan(null); }}
                         disabled={sendingEmail !== null || !effectiveLead.email}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#506BD8] bg-[#EEF2FF] hover:bg-[#506BD8] hover:text-white transition-all disabled:opacity-50"
                         title={effectiveLead.email ? 'Prepare and send the branded Service Agreement (optionally apply a discount)' : 'Add an email address first'}
@@ -939,16 +982,16 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     )}
                     {canSendEmails && slaConfigOpen && (
                       <div className="pb-3 mb-1 -mt-1 bg-[#F7F8FC] border border-border rounded-lg px-3 py-2.5">
-                        {!slaEditMode ? (
+                        {slaPlan === null ? (
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[12.5px] text-ink-2">Send the Service Agreement — standard fee <b>£3,000</b>. Any changes?</span>
+                            <span className="text-[12.5px] text-ink-2">Standard plan — 4 instalments, <b>£3,000</b>. Any changes?</span>
                             <div className="ml-auto flex items-center gap-2">
                               <button
-                                onClick={() => setSlaEditMode(true)}
+                                onClick={() => setSlaPlan(SLA_PLANS[slaVisaKind].standard.map((r) => ({ ...r })))}
                                 disabled={sendingEmail !== null}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#506BD8] bg-white border border-[#C7D0F0] hover:bg-[#EEF2FF] transition-all disabled:opacity-50"
                               >
-                                <Pencil className="w-3.5 h-3.5" /> Edit amount
+                                <Pencil className="w-3.5 h-3.5" /> Customise milestones
                               </button>
                               <button
                                 onClick={() => setDocEditor({ type: 'sla' })}
@@ -967,40 +1010,92 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[12px] font-medium text-ink-2">Discount</span>
-                            <div className="inline-flex items-center gap-1">
-                              <span className="text-[12.5px] text-muted">£</span>
-                              <input
-                                autoFocus type="number" min="0" max="1500" step="50" value={slaDiscount}
-                                onChange={(e) => setSlaDiscount(e.target.value)}
-                                placeholder="0"
-                                className="w-[84px] px-2 py-1 rounded-md border border-border bg-surface text-[12.5px] outline-none focus:border-[#4F46E5]"
-                              />
-                            </div>
-                            <span className="text-[11.5px] text-faint">Net fee payable: <b className="text-ink-2">£{(3000 - Math.min(Math.max(Number(slaDiscount) || 0, 0), 1500)).toLocaleString('en-GB')}</b></span>
-                            <div className="ml-auto flex items-center gap-2">
+                          <div className="space-y-2.5">
+                            {/* One-click presets */}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] font-semibold text-muted uppercase tracking-wide mr-1">Presets</span>
                               <button
-                                onClick={() => { setSlaEditMode(false); setSlaDiscount(''); }}
+                                onClick={() => setSlaPlan(SLA_PLANS[slaVisaKind].standard.map((r) => ({ ...r })))}
+                                className="px-2.5 py-1 rounded-full text-[11.5px] font-semibold bg-white border border-border text-ink-2 hover:border-[#4F46E5] hover:text-[#4F46E5] transition"
+                              >
+                                Standard — 4 × (£500/£1,000/£1,000/£500)
+                              </button>
+                              <button
+                                onClick={() => setSlaPlan(SLA_PLANS[slaVisaKind].three.map((r) => ({ ...r })))}
+                                className="px-2.5 py-1 rounded-full text-[11.5px] font-semibold bg-white border border-border text-ink-2 hover:border-[#4F46E5] hover:text-[#4F46E5] transition"
+                              >
+                                3 instalments — £500/£1,000/£500
+                              </button>
+                            </div>
+                            {/* Editable milestone rows */}
+                            <div className="space-y-1.5">
+                              {slaPlan.map((row, i) => (
+                                <div key={i} className="flex items-center gap-1.5">
+                                  <span className="w-5 text-center text-[11.5px] font-bold text-muted flex-shrink-0">{i + 1}</span>
+                                  <input
+                                    value={row.label}
+                                    onChange={(e) => setSlaPlan((prev) => prev!.map((r, ri) => ri === i ? { ...r, label: e.target.value } : r))}
+                                    placeholder="Milestone description"
+                                    className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md border border-border bg-white text-[12px] outline-none focus:border-[#4F46E5]"
+                                  />
+                                  <div className="inline-flex items-center gap-1 flex-shrink-0">
+                                    <span className="text-[12.5px] text-muted">£</span>
+                                    <input
+                                      type="number" min="0" step="50" value={row.amount}
+                                      onChange={(e) => setSlaPlan((prev) => prev!.map((r, ri) => ri === i ? { ...r, amount: e.target.value } : r))}
+                                      className="w-[76px] px-2 py-1.5 rounded-md border border-border bg-white text-[12.5px] font-semibold outline-none focus:border-[#4F46E5]"
+                                    />
+                                  </div>
+                                  <button
+                                    onClick={() => setSlaPlan((prev) => prev!.filter((_, ri) => ri !== i))}
+                                    disabled={slaPlan.length <= 1}
+                                    title="Remove this milestone"
+                                    className="p-1.5 rounded-md text-muted hover:text-red-600 hover:bg-red-50 transition disabled:opacity-30 flex-shrink-0"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {slaPlan.length < 6 && (
+                                <button
+                                  onClick={() => setSlaPlan((prev) => [...prev!, { label: '', amount: '500' }])}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11.5px] font-semibold text-[#506BD8] hover:bg-[#EEF2FF] transition"
+                                >
+                                  <Plus className="w-3 h-3" /> Add milestone
+                                </button>
+                              )}
+                              <span className="text-[12px] text-ink-2 ml-auto">
+                                Total <b>£{planTotal(slaPlan).toLocaleString('en-GB')}</b>
+                                {planTotal(slaPlan) < 3000 && <span className="text-emerald-700 font-semibold"> · discount −£{(3000 - planTotal(slaPlan)).toLocaleString('en-GB')} shown on the agreement</span>}
+                                {planTotal(slaPlan) > 3000 && <span className="text-amber-700 font-semibold"> · above the £3,000 standard</span>}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 pt-0.5 border-t border-border/70">
+                              <button
+                                onClick={() => setSlaPlan(null)}
                                 disabled={sendingEmail !== null}
                                 className="px-2.5 py-1.5 rounded-lg text-[12.5px] text-muted hover:bg-surface-2 transition-all disabled:opacity-50"
                               >
-                                Cancel
+                                Cancel — back to standard
                               </button>
-                              <button
-                                onClick={() => setDocEditor({ type: 'sla', discount: Math.min(Math.max(Number(slaDiscount) || 0, 0), 1500) })}
-                                disabled={sendingEmail !== null}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-ink-2 bg-white border border-border hover:bg-surface-2 transition-all disabled:opacity-50"
-                              >
-                                <Eye className="w-3.5 h-3.5" /> Review &amp; edit
-                              </button>
-                              <button
-                                onClick={() => sendEmail('sla', Math.min(Math.max(Number(slaDiscount) || 0, 0), 1500))}
-                                disabled={sendingEmail !== null}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
-                              >
-                                <Send className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : 'Send with discount'}
-                              </button>
+                              <div className="ml-auto flex items-center gap-2">
+                                <button
+                                  onClick={() => setDocEditor({ type: 'sla', plan: toApiPlan(slaPlan) })}
+                                  disabled={sendingEmail !== null || toApiPlan(slaPlan).length === 0}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-ink-2 bg-white border border-border hover:bg-surface-2 transition-all disabled:opacity-50"
+                                >
+                                  <Eye className="w-3.5 h-3.5" /> Review &amp; edit
+                                </button>
+                                <button
+                                  onClick={() => sendEmail('sla', undefined, toApiPlan(slaPlan))}
+                                  disabled={sendingEmail !== null || toApiPlan(slaPlan).length === 0 || planTotal(slaPlan) <= 0}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white bg-[#4F46E5] hover:bg-[#4338CA] transition-all disabled:opacity-50"
+                                >
+                                  <Send className="w-3.5 h-3.5" /> {sendingEmail === 'sla' ? 'Sending…' : `Send — ${slaPlan.length} instalments, £${planTotal(slaPlan).toLocaleString('en-GB')}`}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         )}

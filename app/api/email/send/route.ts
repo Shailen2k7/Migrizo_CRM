@@ -26,6 +26,10 @@ export async function POST(req: Request) {
 
   let body: {
     type?: string; leadId?: string; paymentId?: string; force?: boolean; discount?: number;
+    // SLA only: a custom milestone plan (e.g. 3 instalments of 500/1000/500).
+    // Replaces the standard 4-row fee schedule; the agreement shows the
+    // difference to the £3,000 standard fee as the discount line.
+    plan?: { label?: string; amount?: number }[];
     // Editable documents: preview returns the rendered html without sending;
     // the override fields carry the user's edited version back for sending.
     preview?: boolean; overrideHtml?: string; overrideSubject?: string;
@@ -119,8 +123,23 @@ export async function POST(req: Request) {
     email = renderProcess(lead as Lead);
   } else if (type === 'sla') {
     const discount = typeof body.discount === "number" && body.discount > 0 ? Math.min(body.discount, 1500) : 0;
-    email = renderSLA(lead as Lead, discount);
-    if (discount) meta = { ...meta, discount };
+    // Custom plan: 1-6 milestones, each a short label + whole-pound amount.
+    let plan: { label: string; amount: number }[] | undefined;
+    if (Array.isArray(body.plan) && body.plan.length > 0) {
+      if (body.plan.length > 6) return NextResponse.json({ ok: false, reason: 'bad_plan' }, { status: 400 });
+      plan = body.plan.map((m) => ({
+        label: String(m?.label || '').trim().slice(0, 300),
+        amount: Math.round(Number(m?.amount)),
+      }));
+      if (plan.some((m) => !m.label || !Number.isFinite(m.amount) || m.amount < 0 || m.amount > 20000)) {
+        return NextResponse.json({ ok: false, reason: 'bad_plan' }, { status: 400 });
+      }
+    }
+    email = renderSLA(lead as Lead, discount, plan);
+    if (plan) {
+      const total = plan.reduce((t, m) => t + m.amount, 0);
+      meta = { ...meta, plan: plan.map((m) => m.amount), net_fee: total, ...(total < 3000 ? { discount: 3000 - total } : {}) };
+    } else if (discount) meta = { ...meta, discount };
   } else {
     const { data: ws } = await supabase
       .from('workspaces')

@@ -25,6 +25,11 @@ const BG = '#F2F4F8';
 const LOGO_URL = 'https://crm.migrizo.com/migrizo-email-logo.png';
 const SIGNATURE_URL = 'https://crm.migrizo.com/migrizo-signature.png';
 
+/** One row of the SLA fee schedule. The team can customise these per send. */
+export interface SlaMilestone { label: string; amount: number }
+const COUNT_WORD = ['zero', 'one', 'two', 'three', 'four', 'five', 'six'];
+const countWord = (n: number) => COUNT_WORD[n] || String(n);
+
 const CURRENCY_SYMBOL: Record<string, string> = { INR: '₹', GBP: '£', USD: '$' };
 const CURRENCY_LOCALE: Record<string, string> = { INR: 'en-IN', GBP: 'en-GB', USD: 'en-US' };
 function money(n: number, currency: string): string {
@@ -221,14 +226,14 @@ export function renderOnboarding(lead: Pick<Lead, 'full_name' | 'visa_type'>, ca
 //    branding (logo, layout) is Migrizo. M4 references are part of the
 //    contract's legal content and are intentionally preserved.
 // ---------------------------------------------------------------------------
-export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone' | 'visa_type'>, discount = 0): { subject: string; html: string; text: string } {
-  // Dispatch on the visa route. The GTV path below is untouched, so existing
-  // clients receive exactly the agreement they always did.
-  if (visaKindOf(lead.visa_type) === 'ifv') return renderSLAIFV(lead, discount);
-  return renderSLAGTV(lead, discount);
+export function renderSLA(lead: Pick<Lead, 'full_name' | 'email' | 'phone' | 'visa_type'>, discount = 0, plan?: SlaMilestone[]): { subject: string; html: string; text: string } {
+  // Dispatch on the visa route. With no custom plan, both paths render exactly
+  // the agreement they always did.
+  if (visaKindOf(lead.visa_type) === 'ifv') return renderSLAIFV(lead, discount, plan);
+  return renderSLAGTV(lead, discount, plan);
 }
 
-function renderSLAGTV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discount = 0): { subject: string; html: string; text: string } {
+function renderSLAGTV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discount = 0, plan?: SlaMilestone[]): { subject: string; html: string; text: string } {
   const name = esc(lead.full_name);
   const email = esc(lead.email || '—');
   const phone = esc(lead.phone || '—');
@@ -240,14 +245,30 @@ function renderSLAGTV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discoun
   // each — they are the two payments that open and close the engagement, and
   // keeping them whole means every client pays the same to start and to file.
   // Whole pounds only: an odd discount puts the extra pound on Phase 1.
-  const d = Math.max(0, Math.min(Math.round(discount || 0), 1500));
-  const r2 = Math.ceil(d / 2), r3 = d - r2;
-  const M1 = 500, M2 = 1000 - r2, M3 = 1000 - r3, M4 = 500;
-  const netFee = M1 + M2 + M3 + M4; // === 3000 - d
+  const custom = Array.isArray(plan) && plan.length > 0;
+  // Standard plan: discount (max £1,500) comes off the two Profile Building
+  // phases, split evenly — exactly as before. A custom plan replaces the rows
+  // wholesale; the discount line is then simply (standard £3,000 − plan total).
+  const d0 = Math.max(0, Math.min(Math.round(discount || 0), 1500));
+  const r2 = Math.ceil(d0 / 2), r3 = d0 - r2;
+  const rows: SlaMilestone[] = custom
+    ? plan!.map((m) => ({ label: m.label, amount: Math.max(0, Math.round(m.amount || 0)) }))
+    : [
+        { label: 'Kickstart — Eligibility assessment, endorsing-body strategy and your personalised roadmap', amount: 500 },
+        { label: 'Profile Building — Phase 1 — UK-style CV, LinkedIn, personal statement and the first evidence required' + (r2 > 0 ? ' (discount applied)' : ''), amount: 1000 - r2 },
+        { label: 'Profile Building — Phase 2 — Recommendation letters, PR coordination and the criteria-mapped evidence portfolio' + (r3 > 0 ? ' (discount applied)' : ''), amount: 1000 - r3 },
+        { label: 'Endorsement Submission — Final review and submission of the endorsement application. Payable before submission', amount: 500 },
+      ];
+  const netFee = rows.reduce((t, m) => t + m.amount, 0);
+  const d = custom ? Math.max(0, 3000 - netFee) : d0;
+  const nWord = countWord(rows.length);
   const gbp = (n: number) => `\u00A3${n.toLocaleString('en-GB')}`;
+  const payable = `<b>The professional fee is payable in full before Migrizo submits the endorsement application.</b> Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`;
   const feeIntro = d > 0
-    ? `The standard professional fee for the end-to-end Global Talent Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as four instalments below. As a special arrangement, a discount of ${gbp(d)} has been applied — adjusted across the two Profile Building phases as shown below — bringing your net professional fee to <b>${gbp(netFee)}</b>. <b>The professional fee is payable in full before Migrizo submits the endorsement application.</b> Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`
-    : `The total professional fee payable to Migrizo for the end-to-end Global Talent Visa service is <b>\u00A33,000</b> (Three Thousand Pounds Sterling), structured as four instalments as detailed below. <b>The professional fee is payable in full before Migrizo submits the endorsement application.</b> Certain government and third-party costs are payable directly by the Client and are not included in Migrizo's professional fee.`;
+    ? `The standard professional fee for the end-to-end Global Talent Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as ${nWord} instalments below. As a special arrangement, a discount of ${gbp(d)} has been applied${custom ? '' : ' — adjusted across the two Profile Building phases as shown below —'}, bringing your net professional fee to <b>${gbp(netFee)}</b>. ${payable}`
+    : netFee === 3000
+      ? `The total professional fee payable to Migrizo for the end-to-end Global Talent Visa service is <b>\u00A33,000</b> (Three Thousand Pounds Sterling), structured as ${nWord} instalments as detailed below. ${payable}`
+      : `The total professional fee payable to Migrizo for the end-to-end Global Talent Visa service is <b>${gbp(netFee)}</b>, structured as ${nWord} instalments as detailed below. ${payable}`;
 
   const kv = (k: string, v: string) => `
     <tr>
@@ -343,16 +364,13 @@ function renderSLAGTV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discoun
         <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;" align="right">Amount</td>
         <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;">Paid By</td>
       </tr>
-      ${feeRow('1', 'Kickstart — Eligibility assessment, endorsing-body strategy and your personalised roadmap', gbp(M1), 'Client → Migrizo')}
-      ${feeRow('2', 'Profile Building — Phase 1 — UK-style CV, LinkedIn, personal statement and the first evidence required' + (r2 > 0 ? ' (discount applied)' : ''), gbp(M2), 'Client → Migrizo')}
-      ${feeRow('3', 'Profile Building — Phase 2 — Recommendation letters, PR coordination and the criteria-mapped evidence portfolio' + (r3 > 0 ? ' (discount applied)' : ''), gbp(M3), 'Client → Migrizo')}
-      ${feeRow('4', 'Endorsement Submission — Final review and submission of the endorsement application. Payable before submission', gbp(M4), 'Client → Migrizo')}
+      ${rows.map((m, i) => feeRow(String(i + 1), esc(m.label), gbp(m.amount), 'Client → Migrizo')).join('')}
       ${d > 0 ? `
       <tr style="background:#E6F7EE;">
         <td style="padding:8px 10px;"></td>
         <td style="padding:8px 10px;font-size:12px;font-weight:700;color:#047857;">Special Discount Applied</td>
         <td style="padding:8px 10px;font-size:12.5px;font-weight:800;color:#047857;" align="right">\u2212 ${gbp(d)}</td>
-        <td style="padding:8px 10px;font-size:11px;color:#047857;">Adjusted in milestones above</td>
+        <td style="padding:8px 10px;font-size:11px;color:#047857;">${custom ? 'Off the standard \u00A33,000 fee' : 'Adjusted in milestones above'}</td>
       </tr>` : ''}
       <tr style="background:#FBF7DE;">
         <td style="padding:8px 10px;"></td>
@@ -360,12 +378,12 @@ function renderSLAGTV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discoun
         <td style="padding:8px 10px;font-size:13px;font-weight:800;color:${NAVY};" align="right">${gbp(netFee)}</td>
         <td style="padding:8px 10px;"></td>
       </tr>
-      ${feeRow('5', 'Profile Building / PR Agency Costs — Applicable on a case-by-case basis only. Whether this is required for your profile will be confirmed in your roadmap after you kickstart the process. Paid directly to third-party PR agencies; Migrizo manages content and coordination.', '£500', 'Client → PR Agency (Direct)')}
-      ${feeRow('6', 'UK Government: Endorsement Application Fee', '£561', 'Client → UKVI')}
-      ${feeRow('7', 'UK Government: Visa Application Fee', '£205', 'Client → UKVI')}
-      ${feeRow('8', 'UK Government: Immigration Health Surcharge (IHS) — £1,035 per person per year (e.g., 3-year visa ≈ £3,105)', '£1,035/yr/person', 'Client → UKVI')}
+      ${feeRow(String(rows.length + 1), 'Profile Building / PR Agency Costs — Applicable on a case-by-case basis only. Whether this is required for your profile will be confirmed in your roadmap after you kickstart the process. Paid directly to third-party PR agencies; Migrizo manages content and coordination.', '£500', 'Client → PR Agency (Direct)')}
+      ${feeRow(String(rows.length + 2), 'UK Government: Endorsement Application Fee', '£561', 'Client → UKVI')}
+      ${feeRow(String(rows.length + 3), 'UK Government: Visa Application Fee', '£205', 'Client → UKVI')}
+      ${feeRow(String(rows.length + 4), 'UK Government: Immigration Health Surcharge (IHS) — £1,035 per person per year (e.g., 3-year visa ≈ £3,105)', '£1,035/yr/person', 'Client → UKVI')}
     </table>
-    ${p(`All four instalments must be received before the endorsement application is submitted. Releasing each instalment on time keeps the work moving without interruption; a delay in payment may pause the engagement, and Migrizo will not be liable for any consequence of that delay on the application.`)}
+    ${p(`All ${nWord} instalments must be received before the endorsement application is submitted. Releasing each instalment on time keeps the work moving without interruption; a delay in payment may pause the engagement, and Migrizo will not be liable for any consequence of that delay on the application.`)}
     <div style="font-size:13px;font-weight:700;color:${NAVY};margin:12px 0 4px;">Important Notes on Fees</div>
     <ul style="margin:0 0 10px;padding-left:20px;">
       ${li(`All payments to Migrizo (India) OR M4 Investment Ltd. (UK) must be made via bank transfer — or, for clients in India, via UPI (grownmind@icici) — to the account details provided in the invoice issued at each milestone. Receipts will be issued for every payment received.`)}
@@ -475,23 +493,34 @@ function renderSLAGTV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discoun
 //     Plan Stage first, then All Document Delivery, then both equally,
 //     capped at 1,500 — Kickstart and Submission are never discounted.
 // ---------------------------------------------------------------------------
-function renderSLAIFV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discount = 0): { subject: string; html: string; text: string } {
+function renderSLAIFV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discount = 0, plan?: SlaMilestone[]): { subject: string; html: string; text: string } {
   const name = esc(lead.full_name);
   const email = esc(lead.email || '—');
   const phone = esc(lead.phone || '—');
 
-  const d = Math.max(0, Math.min(discount || 0, 1500));
+  const custom = Array.isArray(plan) && plan.length > 0;
+  const d0 = Math.max(0, Math.min(discount || 0, 1500));
   let r2 = 0, r3 = 0;
-  if (d <= 500) { r2 = d; }
-  else if (d <= 1000) { r2 = 500; r3 = d - 500; }
-  else { r2 = 500 + (d - 1000) / 2; r3 = 500 + (d - 1000) / 2; }
-  const M1 = 500, M2 = 1000 - r2, M3 = 1000 - r3, M4 = 500;
-  const netFee = M1 + M2 + M3 + M4; // === 3000 - d
+  if (d0 <= 500) { r2 = d0; }
+  else if (d0 <= 1000) { r2 = 500; r3 = d0 - 500; }
+  else { r2 = 500 + (d0 - 1000) / 2; r3 = 500 + (d0 - 1000) / 2; }
+  const rows: SlaMilestone[] = custom
+    ? plan!.map((m) => ({ label: m.label, amount: Math.max(0, Math.round(m.amount || 0)) }))
+    : [
+        { label: 'Kickstart Fee (Idea) — Engagement commencement, founder profile and business idea development', amount: 500 },
+        { label: 'Business Plan Stage — Due when business plan work starts: business structuring plan, business plan and financials' + (r2 > 0 ? ' (discount applied)' : ''), amount: 1000 - r2 },
+        { label: 'All Document Delivery — Due on delivery of the complete document pack: business plan, financial forecast, pitch deck and founder statement' + (r3 > 0 ? ' (discount applied)' : ''), amount: 1000 - r3 },
+        { label: 'Endorsement Application Submission — Due at the time of submission to the endorsing body', amount: 500 },
+      ];
+  const netFee = rows.reduce((t, m) => t + m.amount, 0);
+  const d = custom ? Math.max(0, 3000 - netFee) : d0;
   const gbp = (n: number) => `\u00A3${n.toLocaleString('en-GB')}`;
 
   const feeIntro = d > 0
-    ? `The standard professional fee for the end-to-end Innovator Founder Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as milestone-based payments below. As a special arrangement, a discount of ${gbp(d)} has been applied — adjusted across the Business Plan Stage and All Document Delivery milestones as shown below — bringing your net professional fee to <b>${gbp(netFee)}</b>.`
-    : `The total professional fee payable to Migrizo for the end-to-end Innovator Founder Visa service is <b>\u00A33,000</b> (Three Thousand Pounds Sterling). This is structured as milestone-based payments as detailed below.`;
+    ? `The standard professional fee for the end-to-end Innovator Founder Visa service is \u00A33,000 (Three Thousand Pounds Sterling), structured as milestone-based payments below. As a special arrangement, a discount of ${gbp(d)} has been applied${custom ? '' : ' — adjusted across the Business Plan Stage and All Document Delivery milestones as shown below —'}, bringing your net professional fee to <b>${gbp(netFee)}</b>.`
+    : netFee === 3000
+      ? `The total professional fee payable to Migrizo for the end-to-end Innovator Founder Visa service is <b>\u00A33,000</b> (Three Thousand Pounds Sterling). This is structured as milestone-based payments as detailed below.`
+      : `The total professional fee payable to Migrizo for the end-to-end Innovator Founder Visa service is <b>${gbp(netFee)}</b>. This is structured as milestone-based payments as detailed below.`;
 
   const kv = (k: string, v: string) => `
     <tr>
@@ -562,16 +591,13 @@ function renderSLAIFV(lead: Pick<Lead, 'full_name' | 'email' | 'phone'>, discoun
         <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;" align="right">Amount</td>
         <td style="padding:8px 10px;font-size:11px;font-weight:700;color:#fff;">Paid By</td>
       </tr>
-      ${feeRow('1', 'Kickstart Fee (Idea) — Engagement commencement, founder profile and business idea development', gbp(M1), 'Client → Migrizo')}
-      ${feeRow('2', 'Business Plan Stage — Due when business plan work starts: business structuring plan, business plan and financials' + (r2 > 0 ? ' (discount applied)' : ''), gbp(M2), 'Client → Migrizo')}
-      ${feeRow('3', 'All Document Delivery — Due on delivery of the complete document pack: business plan, financial forecast, pitch deck and founder statement' + (r3 > 0 ? ' (discount applied)' : ''), gbp(M3), 'Client → Migrizo')}
-      ${feeRow('4', 'Endorsement Application Submission — Due at the time of submission to the endorsing body', gbp(M4), 'Client → Migrizo')}
+      ${rows.map((m, i) => feeRow(String(i + 1), esc(m.label), gbp(m.amount), 'Client → Migrizo')).join('')}
       ${d > 0 ? `
       <tr style="background:#E6F7EE;">
         <td style="padding:8px 10px;"></td>
         <td style="padding:8px 10px;font-size:12px;font-weight:700;color:#047857;">Special Discount Applied</td>
         <td style="padding:8px 10px;font-size:12.5px;font-weight:800;color:#047857;" align="right">\u2212 ${gbp(d)}</td>
-        <td style="padding:8px 10px;font-size:11px;color:#047857;">Adjusted in milestones above</td>
+        <td style="padding:8px 10px;font-size:11px;color:#047857;">${custom ? 'Off the standard \u00A33,000 fee' : 'Adjusted in milestones above'}</td>
       </tr>` : ''}
       <tr style="background:#FBF7DE;">
         <td style="padding:8px 10px;"></td>
