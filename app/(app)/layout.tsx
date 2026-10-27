@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { AppShell } from '@/components/shared/app-shell';
+import { LEAD_LIST_COLS } from '@/lib/lead-cache';
 import { AuthStatusScreen } from '@/components/auth-status-screen';
 import type { Workspace, Lead, Payment, Activity } from '@/lib/types';
 
@@ -67,8 +68,13 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   // Admins always see payments; members depend on their flag (default true)
   const canViewPayments = role === 'admin' ? true : ((member as { can_view_payments?: boolean }).can_view_payments ?? true);
 
+  // FAST BOOT: send only the ~400 most recently touched leads (slim columns —
+  // no CV text) so the first paint is ~100 KB instead of ~10 MB. The browser
+  // then loads the full list from its on-device cache + a tiny delta fetch
+  // (components/shared/app-provider.tsx). count:'exact' keeps the sidebar
+  // badge honest while the rest streams in.
   const [leadsRes, paymentsRes, activityRes] = await Promise.all([
-    supabase.from('leads').select('*').order('updated_at', { ascending: false }),
+    supabase.from('leads').select(LEAD_LIST_COLS, { count: 'exact' }).order('updated_at', { ascending: false }).limit(400),
     supabase.from('payments').select('*').order('created_at', { ascending: false }),
     supabase.from('activity').select('*').order('created_at', { ascending: false }).limit(30),
   ]);
@@ -79,7 +85,8 @@ export default async function ProtectedLayout({ children }: { children: React.Re
       workspace={workspace}
       role={role}
       canViewPayments={canViewPayments}
-      initialLeads={(leadsRes.data || []) as Lead[]}
+      initialLeads={(leadsRes.data || []) as unknown as Lead[]}
+      initialLeadsCount={leadsRes.count ?? (leadsRes.data || []).length}
       initialPayments={(paymentsRes.data || []) as Payment[]}
       initialActivity={(activityRes.data || []) as Activity[]}
     >

@@ -36,12 +36,13 @@ interface Props {
   role: 'admin' | 'member';
   canViewPayments: boolean;
   initialLeads: Lead[];
+  initialLeadsCount: number;
   initialPayments: Payment[];
   initialActivity: Activity[];
   children: React.ReactNode;
 }
 
-export function AppShell({ user, workspace, role, canViewPayments, initialLeads, initialPayments, initialActivity, children }: Props) {
+export function AppShell({ user, workspace, role, canViewPayments, initialLeads, initialLeadsCount, initialPayments, initialActivity, children }: Props) {
   const pathname = usePathname();
   const [addLeadOpen, setAddLeadOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -104,7 +105,7 @@ export function AppShell({ user, workspace, role, canViewPayments, initialLeads,
           </button>
         </header>
 
-        <Sidebar user={user} workspaceName={workspace.name} leadsCount={initialLeads.length} onAddLead={() => { setMobileNav(false); ui.openAddLead(); }} mobileOpen={mobileNav} onClose={() => setMobileNav(false)} collapsed={navCollapsed} onToggleCollapse={toggleNav} />
+        <Sidebar user={user} workspaceName={workspace.name} leadsCount={initialLeadsCount} onAddLead={() => { setMobileNav(false); ui.openAddLead(); }} mobileOpen={mobileNav} onClose={() => setMobileNav(false)} collapsed={navCollapsed} onToggleCollapse={toggleNav} />
 
         <main className={`pt-14 md:pt-0 transition-[margin] duration-300 ease-out ${navCollapsed ? 'md:ml-[68px]' : 'md:ml-[240px]'}`}>
           {/* The greeting banner belongs on pages you READ. Master Leads is a

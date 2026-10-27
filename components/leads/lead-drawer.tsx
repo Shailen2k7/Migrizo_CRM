@@ -73,7 +73,7 @@ const toApiPlan = (rows: PlanRow[]) => rows
   .filter((r) => r.label);
 
 export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
-  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, setLeadOffer, setLeadQualification, addNote, getNotes, createFollowUp, role, memberNameById, canViewPayments, canSendEmails, workspace, user: appUser } = useApp();
+  const { leads, payments, followUps, updateLead, deleteLead, toggleSpotlight, setLeadOffer, setLeadQualification, addNote, getNotes, createFollowUp, refreshLead, role, memberNameById, canViewPayments, canSendEmails, workspace, user: appUser } = useApp();
   const pl = usePipelines(workspace.id);
   const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups' | 'emails' | 'roadmap' | 'route'>('overview');
   const [emailLog, setEmailLog] = useState<EmailLogEntry[] | null>(null);
@@ -178,7 +178,10 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
     if (!leadId) { setPendingLead({}); return; }
     setTab('overview'); setNewNote('');
     getNotes(leadId).then(setNotes);
-  }, [leadId, getNotes]);
+    // List loads skip the heavy CV fields (lib/lead-cache.ts); pull this one
+    // lead's full row so the CV section and profile modal have their text.
+    void refreshLead(leadId);
+  }, [leadId, getNotes, refreshLead]);
 
   // Load this lead's email history (from the activity log) when the drawer opens.
   useEffect(() => {

@@ -55,7 +55,10 @@ interface Props {
 }
 
 export function Sidebar({ user, workspaceName, leadsCount, mobileOpen = false, onClose, collapsed = false, onToggleCollapse }: Props) {
-  const { cases, followUps, canViewPayments, role } = useApp();
+  const { cases, followUps, canViewPayments, role, leads } = useApp();
+  // The server passes the exact total; once the full list has streamed in,
+  // the live length takes over so adds/deletes reflect immediately.
+  leadsCount = Math.max(leads.length, leadsCount);
   const casesCount = cases.filter((c) => c.status === 'active' && !c.archived_at).length;
   const urgentFollowUps = followUps.filter((f) => isFollowUpOverdue(f) || isFollowUpToday(f)).length;
   const path = usePathname();

@@ -1,8 +1,9 @@
 'use client';
 
 import { DEFAULT_CASE_OWNER } from '@/lib/case-stages';
-import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { LEAD_LIST_COLS, cacheRead, cacheWrite, stripHeavy, mergeLeads } from '@/lib/lead-cache';
 import type { Lead, Payment, Activity, Workspace, Note, Case, CaseChecklistItem, CaseActivity, CaseStage, ChecklistStatus, FollowUp, OfferType } from '@/lib/types';
 import type { CaseJourneyState } from '@/lib/journey';
 import { buildSampleLeads } from '@/lib/sample-data';
@@ -118,6 +119,9 @@ function friendlyLeadError(message: string): string {
 }
 
 export function AppProvider({ user, workspace, role, initialCanViewPayments, initialLeads, initialPayments, initialActivity, children }: ProviderProps) {
+  // FAST BOOT (lib/lead-cache.ts): the server sends ~400 recent leads; the full
+  // slim list streams in below — instantly from the on-device cache when one
+  // exists, then a delta fetch brings it current.
   const supabase = useMemo(() => createClient(), []);
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [payments, setPayments] = useState<Payment[]>(initialPayments);
@@ -134,11 +138,11 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
     setLoading(true);
     try {
       const [{ data: l }, { data: p }, { data: a }] = await Promise.all([
-        supabase.from('leads').select('*').order('updated_at', { ascending: false }).range(0, 9999),
+        supabase.from('leads').select(LEAD_LIST_COLS).order('updated_at', { ascending: false }).range(0, 9999),
         supabase.from('payments').select('*').order('created_at', { ascending: false }).range(0, 9999),
         supabase.from('activity').select('*').order('created_at', { ascending: false }).limit(50),
       ]);
-      if (l) setLeads(l as Lead[]);
+      if (l) setLeads(l as unknown as Lead[]);
       if (p) setPayments(p as Payment[]);
       if (a) setActivity(a as Activity[]);
     } finally {
@@ -201,6 +205,55 @@ export function AppProvider({ user, workspace, role, initialCanViewPayments, ini
   }, [supabase, workspace.id]);
 
   // Load members + cases + follow-ups on mount and when window regains focus (throttled)
+  // ── Fast boot: cache-first full list, then a delta of what changed ─────────
+  const booted = useRef(false);
+  useEffect(() => {
+    if (booted.current) return;
+    booted.current = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const cached = await cacheRead(workspace.id, user.id);
+        if (cached && cached.leads.length > 0) {
+          // Paint the full list from the device immediately…
+          setLeads((prev) => mergeLeads(prev, cached.leads));
+          if (cached.payments?.length) setPayments((prev) => (prev.length >= cached.payments.length ? prev : cached.payments));
+          // …then fetch only what changed since the cache was written
+          // (2-minute overlap for clock skew), refresh the small tables, and
+          // sweep ids so leads deleted while we were away disappear too.
+          const since = new Date(Math.max(0, cached.savedAt - 120_000)).toISOString();
+          const [{ data: fresh }, { data: p }, { data: ids }] = await Promise.all([
+            supabase.from('leads').select(LEAD_LIST_COLS).gte('updated_at', since).order('updated_at', { ascending: false }).range(0, 9999),
+            supabase.from('payments').select('*').order('created_at', { ascending: false }).range(0, 9999),
+            supabase.from('leads').select('id').range(0, 19999),
+          ]);
+          if (fresh && fresh.length) setLeads((prev) => mergeLeads(fresh as unknown as Lead[], prev));
+          if (p) setPayments(p as Payment[]);
+          if (ids && ids.length) {
+            const live = new Set((ids as { id: string }[]).map((r) => r.id));
+            setLeads((prev) => (prev.length === live.size ? prev : prev.filter((l) => live.has(l.id))));
+          }
+        } else {
+          // First visit on this device: one full (slim) fetch.
+          await refresh();
+        }
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Write the slim snapshot back to the device whenever data settles, so the
+  // NEXT load paints instantly. Debounced; CV text never enters the cache.
+  useEffect(() => {
+    if (leads.length === 0) return;
+    const t = setTimeout(() => {
+      void cacheWrite(workspace.id, user.id, { leads: stripHeavy(leads), payments, savedAt: Date.now() });
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [leads, payments, workspace.id, user.id]);
+
   useEffect(() => {
     refreshMembers();
     refreshCases();
