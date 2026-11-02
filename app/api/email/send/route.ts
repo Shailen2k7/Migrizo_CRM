@@ -187,14 +187,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, reason: 'send_failed' }, { status: 502 });
   }
 
-  // Log to the lead's activity feed (best-effort, never blocks the response).
+  // Log to the lead's activity feed, then keep an exact copy of what was sent
+  // so it can be opened from the drawer (best-effort, never blocks the response).
   try {
-    await supabase.from('activity').insert({
+    const { data: logged } = await supabase.from('activity').insert({
       workspace_id: lead.workspace_id,
       user_id: user.id,
       lead_id: leadId,
       action: 'email_sent',
       meta,
+    }).select('id').single();
+    await supabase.from('sent_documents').insert({
+      workspace_id: lead.workspace_id,
+      lead_id: leadId,
+      activity_id: (logged as { id: string } | null)?.id ?? null,
+      email_type: type,
+      to_email: lead.email,
+      subject: email.subject,
+      html: email.html,
+      created_by: user.id,
     });
   } catch { /* noop */ }
 

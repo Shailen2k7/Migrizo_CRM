@@ -23,6 +23,8 @@ import { Modal } from '@/components/shared/modal';
 import { toast } from 'sonner';
 import { DocEditorModal } from '@/components/leads/doc-editor-modal';
 import { VisaRouteTab } from '@/components/leads/visa-route-tab';
+import { SentDocViewer } from '@/components/leads/sent-doc-viewer';
+import { SLA_PLANS, type PlanRow } from '@/lib/email/sla-plans';
 import { FollowUpScheduler } from '@/components/leads/followup-scheduler';
 import { playChime } from '@/lib/chime';
 
@@ -33,40 +35,8 @@ interface Props {
 }
 
 // ---------------------------------------------------------------------------
-// SLA milestone plans. "Standard" mirrors lib/email/branded.ts exactly; the
-// 3-instalment preset merges the two Profile Building phases (500/1000/500,
-// net £2,000 — the agreement shows the £1,000 difference as a discount).
-// Rows stay fully editable, so any structure the client agreed is 30 seconds away.
+// SLA milestone plans live in lib/email/sla-plans.ts (shared with the server).
 // ---------------------------------------------------------------------------
-interface PlanRow { label: string; amount: string }
-const SLA_PLANS: Record<'gtv' | 'ifv', { standard: PlanRow[]; three: PlanRow[] }> = {
-  gtv: {
-    standard: [
-      { label: 'Kickstart — Eligibility assessment, endorsing-body strategy and your personalised roadmap', amount: '500' },
-      { label: 'Profile Building — Phase 1 — UK-style CV, LinkedIn, personal statement and the first evidence required', amount: '1000' },
-      { label: 'Profile Building — Phase 2 — Recommendation letters, PR coordination and the criteria-mapped evidence portfolio', amount: '1000' },
-      { label: 'Endorsement Submission — Final review and submission of the endorsement application. Payable before submission', amount: '500' },
-    ],
-    three: [
-      { label: 'Kickstart — Eligibility assessment, endorsing-body strategy and your personalised roadmap', amount: '500' },
-      { label: 'Profile Building — UK-style CV, LinkedIn, personal statement, recommendation letters, PR coordination and the criteria-mapped evidence portfolio', amount: '1000' },
-      { label: 'Endorsement Submission — Final review and submission of the endorsement application. Payable before submission', amount: '500' },
-    ],
-  },
-  ifv: {
-    standard: [
-      { label: 'Kickstart Fee (Idea) — Engagement commencement, founder profile and business idea development', amount: '500' },
-      { label: 'Business Plan Stage — Due when business plan work starts: business structuring plan, business plan and financials', amount: '1000' },
-      { label: 'All Document Delivery — Due on delivery of the complete document pack: business plan, financial forecast, pitch deck and founder statement', amount: '1000' },
-      { label: 'Endorsement Application Submission — Due at the time of submission to the endorsing body', amount: '500' },
-    ],
-    three: [
-      { label: 'Kickstart Fee (Idea) — Engagement commencement, founder profile and business idea development', amount: '500' },
-      { label: 'Business Plan & Document Delivery — business structuring plan, business plan, financials, pitch deck and founder statement', amount: '1000' },
-      { label: 'Endorsement Application Submission — Due at the time of submission to the endorsing body', amount: '500' },
-    ],
-  },
-};
 const planTotal = (rows: PlanRow[]) => rows.reduce((t, r) => t + (Math.round(Number(r.amount)) || 0), 0);
 const toApiPlan = (rows: PlanRow[]) => rows
   .map((r) => ({ label: r.label.trim(), amount: Math.max(0, Math.round(Number(r.amount)) || 0) }))
@@ -78,6 +48,9 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   const [tab, setTab] = useState<'overview' | 'notes' | 'payments' | 'followups' | 'emails' | 'roadmap' | 'route'>('overview');
   const [emailLog, setEmailLog] = useState<EmailLogEntry[] | null>(null);
   const [leadEmails, setLeadEmails] = useState<LeadEmailRow[] | null>(null);
+  // Which sent emails have a saved copy (migration 128), and the one being viewed.
+  const [keptDocs, setKeptDocs] = useState<Set<string>>(new Set());
+  const [viewing, setViewing] = useState<EmailLogEntry | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
@@ -133,6 +106,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
       if (j?.ok) {
         toast.success(`${docEditor.type === 'sla' ? 'Agreement' : '"How it works" email'} sent to ${lead.email}`);
         if (docEditor.type === 'sla') { setSlaConfigOpen(false); setSlaPlan(null); }
+        refreshEmails();
         return true;
       }
       toast.error(`Send failed${j?.reason ? `: ${j.reason}` : ''}`);
@@ -159,7 +133,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
         });
         j = await res.json().catch(() => null);
       }
-      if (j?.ok) { toast.success(type === 'sla' ? `SLA sent to ${lead.email}` : type === 'process' ? `"How it works" email sent to ${lead.email}` : `Onboarding email sent to ${lead.email}`); if (type === 'sla') { setSlaConfigOpen(false); setSlaPlan(null); } }
+      if (j?.ok) { toast.success(type === 'sla' ? `SLA sent to ${lead.email}` : type === 'process' ? `"How it works" email sent to ${lead.email}` : `Onboarding email sent to ${lead.email}`); if (type === 'sla') { setSlaConfigOpen(false); setSlaPlan(null); } refreshEmails(); }
       else toast.error(`Send failed${j?.reason ? `: ${j.reason}` : ''}`);
     } catch {
       toast.error('Send failed — check your connection');
@@ -203,6 +177,11 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
       .order('created_at', { ascending: false })
       .limit(50)
       .then(({ data }) => { if (!cancelled) setLeadEmails((data as LeadEmailRow[]) || []); });
+    supabase
+      .from('sent_documents')
+      .select('activity_id')
+      .eq('lead_id', leadId)
+      .then(({ data }) => { if (!cancelled) setKeptDocs(new Set(((data as { activity_id: string | null }[]) || []).map((d) => d.activity_id || '').filter(Boolean))); });
     return () => { cancelled = true; };
   }, [leadId]);
 
@@ -255,6 +234,8 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
       .eq('lead_id', leadId).eq('action', 'email_sent')
       .order('created_at', { ascending: false }).limit(50)
       .then(({ data }) => setEmailLog((data as EmailLogEntry[]) || []));
+    void supabase.from('sent_documents').select('activity_id').eq('lead_id', leadId)
+      .then(({ data }) => setKeptDocs(new Set(((data as { activity_id: string | null }[]) || []).map((d) => d.activity_id || '').filter(Boolean))));
   };
 
   const handleClose = () => {
@@ -1117,7 +1098,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-2">Conversation</div>
                     <LeadEmailThread rows={leadEmails} />
                     <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-2">Template email history</div>
-                    <EmailHistory log={emailLog} memberNameById={memberNameById} />
+                    <EmailHistory log={emailLog} memberNameById={memberNameById} kept={keptDocs} onView={setViewing} />
                   </div>
                 )}
 
@@ -1250,6 +1231,13 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
       {showProfile && effectiveLead?.profile_text && (
         <ProfileModal lead={effectiveLead} onClose={() => setShowProfile(false)} />
       )}
+
+      <SentDocViewer
+        activityId={viewing?.id ?? null}
+        label={EMAIL_KINDS[viewing?.meta?.email_type || '']?.label || 'Email'}
+        sentAt={viewing?.created_at ?? null}
+        onClose={() => setViewing(null)}
+      />
 
       <DocEditorModal
         open={docEditor !== null}
@@ -1425,7 +1413,13 @@ const EMAIL_KINDS: Record<string, { label: string; sub: string; bg: string; fg: 
   campaign:   { label: 'Campaign Email', sub: 'Marketing / nurture', bg: '#F3EEFF', fg: '#7C3AED', icon: 'send' },
 };
 
-function EmailHistory({ log, memberNameById }: { log: EmailLogEntry[] | null; memberNameById: (id: string | null) => string }) {
+function EmailHistory({ log, memberNameById, kept, onView }: {
+  log: EmailLogEntry[] | null;
+  memberNameById: (id: string | null) => string;
+  /** Activity ids with a saved copy of the email (migration 128). */
+  kept: Set<string>;
+  onView: (e: EmailLogEntry) => void;
+}) {
   if (log === null) {
     return <div className="py-10 text-center text-[12.5px] text-muted">Loading email history…</div>;
   }
@@ -1466,6 +1460,13 @@ function EmailHistory({ log, memberNameById }: { log: EmailLogEntry[] | null; me
                   <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: kind.bg, color: kind.fg }}>SENT</span>
                   {typeof disc === 'number' && disc > 0 && (
                     <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: '#E6F7EE', color: '#047857' }}>−£{disc.toLocaleString('en-GB')} discount</span>
+                  )}
+                  {/* SLAs can always be shown (older ones are rebuilt); other emails only when a copy was kept. */}
+                  {(kept.has(e.id) || e.meta?.email_type === 'sla') && (
+                    <button onClick={() => onView(e)} title="See the content of this email"
+                      className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11.5px] font-medium text-[#506BD8] border border-[#C7D0F0] hover:bg-[#EEF2FF] transition-all">
+                      <Eye className="w-3 h-3" /> View
+                    </button>
                   )}
                 </div>
                 <div className="text-[11.5px] text-muted mt-0.5">
