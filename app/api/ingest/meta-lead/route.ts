@@ -22,7 +22,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { renderProcess } from '@/lib/email/branded';
-import { flattenAnswer, mapExpertise, mapReadiness, detectAnswers } from '@/lib/intake';
+import { flattenAnswer, mapExpertise, mapReadiness, detectAnswers, visaFromAd } from '@/lib/intake';
 
 // Core fields the route understands. Anything else in the body is treated as an
 // extra ad-form answer and kept verbatim in leads.intake.
@@ -30,7 +30,7 @@ const CORE_KEYS = new Set([
   'token', 'full_name', 'phone', 'email', 'visa_type', 'source',
   // Optional attribution Make can send from "Get Lead Details". All are
   // optional — the endpoint works exactly as before when they are absent.
-  'meta_lead_id', 'created_time', 'ad_name', 'form_name', 'campaign_name', 'platform',
+  'meta_lead_id', 'created_time', 'ad_name', 'form_name', 'form_id', 'campaign_name', 'platform',
   // Lets a non-Meta caller (the website popup) label itself. Absent = Meta.
   'tags',
 ]);
@@ -135,6 +135,8 @@ export async function POST(req: Request) {
   if (detected.readinessRaw && !intake.investment_readiness) intake.investment_readiness = detected.readinessRaw;
   const industry = mapExpertise(detected.expertiseRaw);
   const readiness = mapReadiness(detected.readinessRaw);
+  // An explicit visa wins; otherwise an Innovator Founder ad identifies itself.
+  const visaType = body.visa_type || visaFromAd(body) || null;
 
   // ---- service-role client (bypasses RLS) ----------------------------------
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -189,13 +191,13 @@ export async function POST(req: Request) {
   //
   // Exact match errs towards showing you a lead. That is the right way to be
   // wrong: a visible duplicate can be merged, an invisible lead is lost.
-  let prev: { id: string; industry: string | null; investment_readiness: string | null;
+  let prev: { id: string; industry: string | null; investment_readiness: string | null; visa_type: string | null;
               intake: Record<string, unknown> | null; form_submission_count: number | null } | null = null;
 
   if (phone) {
     const { data } = await admin
       .from('leads')
-      .select('id, industry, investment_readiness, intake, form_submission_count')
+      .select('id, industry, investment_readiness, visa_type, intake, form_submission_count')
       .eq('workspace_id', ws.id)
       .eq('phone', phone)
       .limit(1);
@@ -218,6 +220,7 @@ export async function POST(req: Request) {
     // overwritten by an old ad-form answer.
     if (industry && !prev.industry) patch.industry = industry;
     if (readiness && !prev.investment_readiness) patch.investment_readiness = readiness;
+    if (visaType && !prev.visa_type) patch.visa_type = visaType;
 
     await admin.from('leads').update(patch).eq('id', prev.id);
 
@@ -260,7 +263,7 @@ export async function POST(req: Request) {
       email,
       source: body.source || 'Meta Ads',
       stage: 'cold',
-      visa_type: body.visa_type || null,
+      visa_type: visaType,
       // Defaults to ['meta-lead'] so the Make.com scenario is unchanged. The
       // website popup sends ['website-popup'] so the two channels stay
       // distinguishable in the drawer and in any per-source reporting.
@@ -331,7 +334,7 @@ export async function POST(req: Request) {
       const from = process.env.NOTIFY_FROM;
       const replyTo = process.env.REPLY_TO || 'info@migrizo.com';
       if (apiKey && from) {
-        const mail = renderProcess({ full_name: fullName, visa_type: body.visa_type || 'gtv' });
+        const mail = renderProcess({ full_name: fullName, visa_type: visaType || 'gtv' });
         const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -354,7 +357,7 @@ export async function POST(req: Request) {
   // later as a gap in a report.
   return NextResponse.json({
     ok: true, id: lead.id, welcomed, queued, duplicate: false, returning: false,
-    industry, investment_readiness: readiness,
+    industry, investment_readiness: readiness, visa_type: visaType,
     // Where each answer was found — visible in Make's execution history, so a
     // remapped form shows up there instead of weeks later in a report.
     expertise_from: detected.expertiseFrom, readiness_from: detected.readinessFrom,

@@ -50,6 +50,23 @@ export function flattenAnswer(v: unknown): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// AD -> visa route
+//
+// Make sends no visa field, so an Innovator Founder ad is recognised from where
+// the lead came from: a known form, or "IFV" / "Innovator" in the campaign, ad
+// or form name ("Founder" alone is not enough: a GTV ad can target founders). Only a positive match says anything. No match
+// returns null and the lead is handled exactly as it was before, because a
+// missing name is "nobody has said", not "this is a Global Talent lead".
+// ---------------------------------------------------------------------------
+const IFV_FORM_IDS = new Set<string>(['2451529082034626', '1723725182037743']);
+const IFV_NAME = /(^|[^a-z])ifv([^a-z]|$)|innovator/i;
+
+export function visaFromAd(ad: Record<string, unknown>): 'ifv' | null {
+  if (IFV_FORM_IDS.has(String(ad.form_id ?? '').trim())) return 'ifv';
+  return [ad.campaign_name, ad.ad_name, ad.form_name].some((n) => IFV_NAME.test(String(n ?? ''))) ? 'ifv' : null;
+}
+
+// ---------------------------------------------------------------------------
 // EXPERTISE -> industry
 //
 // Order matters. The first bucket whose keywords appear wins, so the more
