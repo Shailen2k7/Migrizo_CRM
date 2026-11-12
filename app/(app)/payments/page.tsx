@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { PaymentsDashboard } from '@/components/payments/payments-dashboard';
 import { PaymentRegister } from '@/components/payments/payment-register';
+import { CaseInstalments } from '@/components/payments/case-instalments';
 
 type PaySegment = 'all' | 'active' | 'overdue' | 'completed';
 
@@ -138,6 +139,8 @@ export default function PaymentsPage() {
         </div>
       </div>
 
+      {/* Every case, every instalment — who has paid what, where they stopped. */}
+      <CaseInstalments onOpenLead={ui.openLeadDrawer} />
       <PaymentsDashboard onFilter={setDashFilter} activeFilter={dashFilter} onOpenLead={ui.openLeadDrawer} />
 
       {/* The named, dated ledger behind the dashboard's aggregates. */}
