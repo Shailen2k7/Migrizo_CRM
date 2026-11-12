@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 function LeadsPageInner() {
   const params = useSearchParams();
   const seg = (params.get('segment') as 'all' | 'spotlight' | 'not_responding' | 'hot' | 'cold' | 'mr_coming_soon' | 'invoice_sent' | 'won' | 'junk') || 'all';
+  const page = Math.max(1, parseInt(params.get('page') || '1', 10) || 1);
   const { leads, payments } = useApp();
   const ui = useUI();
   const [dashFilter, setDashFilter] = useState<DashFilter | null>(null);
@@ -64,7 +65,7 @@ function LeadsPageInner() {
         </div>
       </div>
       <LeadsDashboard onFilter={setDashFilter} activeFilter={dashFilter} />
-      <LeadsTable initialSegment={seg} onRowClick={ui.openLeadDrawer}
+      <LeadsTable initialSegment={seg} initialPage={page} onRowClick={ui.openLeadDrawer}
         dashFilter={dashFilter} onClearDashFilter={() => setDashFilter(null)} />
     </div>
   );

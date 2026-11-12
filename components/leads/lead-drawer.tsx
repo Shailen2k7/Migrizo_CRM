@@ -1098,7 +1098,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                     <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-2">Conversation</div>
                     <LeadEmailThread rows={leadEmails} />
                     <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-2">Template email history</div>
-                    <EmailHistory log={emailLog} memberNameById={memberNameById} kept={keptDocs} onView={setViewing} />
+                    <EmailHistory log={emailLog} memberNameById={memberNameById} kept={keptDocs} onView={setViewing} visaType={effectiveLead.visa_type} />
                   </div>
                 )}
 
@@ -1413,12 +1413,20 @@ const EMAIL_KINDS: Record<string, { label: string; sub: string; bg: string; fg: 
   campaign:   { label: 'Campaign Email', sub: 'Marketing / nurture', bg: '#F3EEFF', fg: '#7C3AED', icon: 'send' },
 };
 
-function EmailHistory({ log, memberNameById, kept, onView }: {
+// The "How it works" email differs by visa. Trust the subject logged at send
+// time; rows without one were rendered from the lead's visa, so fall back to it.
+function processLabel(subject: string | undefined, visaType: string | null | undefined): string {
+  const ifv = subject ? /innovator/i.test(subject) : /ifv|innovator|founder/i.test(visaType || '');
+  return ifv ? 'How It Works (IFV)' : 'How It Works (GTV)';
+}
+
+function EmailHistory({ log, memberNameById, kept, onView, visaType }: {
   log: EmailLogEntry[] | null;
   memberNameById: (id: string | null) => string;
   /** Activity ids with a saved copy of the email (migration 128). */
   kept: Set<string>;
   onView: (e: EmailLogEntry) => void;
+  visaType?: string | null;
 }) {
   if (log === null) {
     return <div className="py-10 text-center text-[12.5px] text-muted">Loading email history…</div>;
@@ -1456,7 +1464,7 @@ function EmailHistory({ log, memberNameById, kept, onView }: {
               {/* card */}
               <div className="flex-1 min-w-0 bg-surface border border-border rounded-[10px] px-3.5 py-2.5 -mt-0.5">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[13px] font-semibold text-ink">{kind.label}</span>
+                  <span className="text-[13px] font-semibold text-ink">{e.meta?.email_type === 'process' ? processLabel(e.meta?.subject, visaType) : kind.label}</span>
                   <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: kind.bg, color: kind.fg }}>SENT</span>
                   {typeof disc === 'number' && disc > 0 && (
                     <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: '#E6F7EE', color: '#047857' }}>−£{disc.toLocaleString('en-GB')} discount</span>

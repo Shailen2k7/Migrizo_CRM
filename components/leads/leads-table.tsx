@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel,
-  flexRender, type ColumnDef, type SortingState
+  flexRender, type ColumnDef, type SortingState, type PaginationState
 } from '@tanstack/react-table';
 import { ChevronDown, Phone, Mail, ArrowUp, ArrowDown, Filter, Star, Copy, Check, Tag } from 'lucide-react';
 import { DealTag } from '@/components/shared/deal-tag';
@@ -60,6 +60,8 @@ function isNotResponding(l: Lead): boolean {
 
 interface Props {
   initialSegment?: Segment;
+  /** 1-based page from the URL (?page=), so Back returns to the same page. */
+  initialPage?: number;
   onRowClick: (id: string) => void;
   /**
    * Restriction set by a dashboard card: only these lead ids are shown, on top
@@ -71,13 +73,38 @@ interface Props {
   onClearDashFilter?: () => void;
 }
 
-export function LeadsTable({ initialSegment = 'all', onRowClick, dashFilter = null, onClearDashFilter }: Props) {
+export function LeadsTable({ initialSegment = 'all', initialPage = 1, onRowClick, dashFilter = null, onClearDashFilter }: Props) {
   const { leads, updateLead, toggleSpotlight } = useApp();
   const [segment, setSegment] = useState<Segment>(initialSegment);
   const [sorting, setSorting] = useState<SortingState>([{ id: 'updated_at', desc: true }]);
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: Math.max(0, initialPage - 1), pageSize: 25 });
   const [stageMenu, setStageMenu] = useState<{ leadId: string; x: number; y: number } | null>(null);
 
   useEffect(() => setSegment(initialSegment), [initialSegment]);
+
+  // Picking a chip starts that list from page 1. Only a deliberate pick does —
+  // background refreshes and lead edits leave the page where it is.
+  const pickSegment = (s: Segment) => { setSegment(s); setPagination((p) => ({ ...p, pageIndex: 0 })); };
+
+  // A new dashboard drill-in is a new list, so it starts on page 1 too.
+  // Compared with the last value (not a "first run" flag) so a remount, e.g.
+  // coming Back to this page, never counts as a change.
+  const lastDash = useRef(dashFilter);
+  useEffect(() => {
+    if (lastDash.current === dashFilter) return;
+    lastDash.current = dashFilter;
+    setPagination((p) => ({ ...p, pageIndex: 0 }));
+  }, [dashFilter]);
+
+  // Keep the chip and page in the address bar (?segment=spotlight&page=3).
+  // Without this they lived only in memory: open a lead's link, press Back,
+  // and the list came back on All, page 1.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (segment === 'all') url.searchParams.delete('segment'); else url.searchParams.set('segment', segment);
+    if (pagination.pageIndex === 0) url.searchParams.delete('page'); else url.searchParams.set('page', String(pagination.pageIndex + 1));
+    if (url.href !== window.location.href) window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+  }, [segment, pagination.pageIndex]);
 
   const segmented = useMemo(() => {
     let base = leads;
@@ -224,14 +251,26 @@ export function LeadsTable({ initialSegment = 'all', onRowClick, dashFilter = nu
     // Search lives in the page Topbar, which already covers name, phone, email
     // and notes — a second box on the same screen was two places to type the
     // same thing. Rows are narrowed by the chips above and nothing else.
-    state: { sorting },
-    onSortingChange: setSorting,
+    state: { sorting, pagination },
+    onSortingChange: (u) => { setSorting(u); setPagination((p) => ({ ...p, pageIndex: 0 })); },
+    onPaginationChange: setPagination,
+    // TanStack jumps back to page 1 whenever the rows change. Leads refresh in
+    // the background (cache, then live sync) and on every edit, which threw you
+    // off your page. Page resets are handled above, only when you change view.
+    autoResetPageIndex: false,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 25 }, columnVisibility: { updated_at: false } },
+    initialState: { columnVisibility: { updated_at: false } },
   });
+
+  // If the list shrank (or the URL asked for a page that no longer exists),
+  // land on the last real page instead of an empty one.
+  const pageCount = table.getPageCount();
+  useEffect(() => {
+    if (pageCount > 0 && pagination.pageIndex > pageCount - 1) setPagination((p) => ({ ...p, pageIndex: pageCount - 1 }));
+  }, [pageCount, pagination.pageIndex]);
 
   useEffect(() => {
     if (!stageMenu) return;
@@ -268,7 +307,7 @@ const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter(
         {/* chips — horizontal scroll on mobile, wrap on desktop */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 sm:pb-0 sm:flex-wrap sm:contents">
         <button
-          onClick={() => setSegment('spotlight')}
+          onClick={() => pickSegment('spotlight')}
           className={cn('filter-chip', segment === 'spotlight' && 'active')}
           style={segment === 'spotlight'
             ? { background: '#F59E0B', color: '#fff', borderColor: '#F59E0B' }
@@ -280,7 +319,7 @@ const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter(
         {/* Special offer. Violet keeps it clearly apart from the stage colours,
             because it is not a stage — these leads still live in Hot or Cold. */}
         <button
-          onClick={() => setSegment('offer')}
+          onClick={() => pickSegment('offer')}
           className={cn('filter-chip', segment === 'offer' && 'active')}
           title="Leads given a discounted (£500) or free quote"
           style={segment === 'offer'
@@ -291,7 +330,7 @@ const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter(
           <span className="count" style={segment === 'offer' ? { background: 'rgba(255,255,255,0.25)', color: '#fff' } : undefined}>{counts.offer}</span>
         </button>
         <button
-          onClick={() => setSegment('not_responding')}
+          onClick={() => pickSegment('not_responding')}
           className={cn('filter-chip', segment === 'not_responding' && 'active')}
           title={`Marked Not Responding, or still open and untouched for ${NOT_RESPONDING_DAYS}+ days`}
           style={segment === 'not_responding'
@@ -305,7 +344,7 @@ const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter(
           const meta = s === 'all' ? null : STAGE_META[s];
           const label = s === 'all' ? 'All' : meta!.label;
           return (
-            <button key={s} onClick={() => setSegment(s)} className={cn('filter-chip', segment === s && 'active')}>
+            <button key={s} onClick={() => pickSegment(s)} className={cn('filter-chip', segment === s && 'active')}>
               {meta && <span className="chip-dot" style={{ background: meta.dot, marginRight: 4 }} />}{label}
               <span className="count">{counts[s]}</span>
             </button>
@@ -319,7 +358,7 @@ const segments: ('all' | LeadStage)[] = ['all', ...STAGE_ORDER.filter(
           <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-surface-2"><Filter className="w-7 h-7 text-faint" /></div>
           <h3 className="text-[15px] font-semibold mb-1">No leads match this view</h3>
           <p className="text-[12.5px] text-muted mb-5">Try a different tag or import leads</p>
-          <button onClick={() => setSegment('all')} className="btn btn-outline">Show all leads</button>
+          <button onClick={() => pickSegment('all')} className="btn btn-outline">Show all leads</button>
         </div>
       ) : (
         <div className="panel overflow-hidden">
