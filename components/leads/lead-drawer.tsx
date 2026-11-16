@@ -22,6 +22,7 @@ import { initials, avatarColor, formatMoney, timeAgo, scoreColor, cn, fxStanding
 import { Modal } from '@/components/shared/modal';
 import { toast } from 'sonner';
 import { DocEditorModal } from '@/components/leads/doc-editor-modal';
+import { ChecklistEmailModal } from '@/components/leads/checklist-email-modal';
 import { VisaRouteTab } from '@/components/leads/visa-route-tab';
 import { SentDocViewer } from '@/components/leads/sent-doc-viewer';
 import { SLA_PLANS, type PlanRow } from '@/lib/email/sla-plans';
@@ -75,6 +76,8 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
   // The formatted CV text (076) — the durable copy of a file that was read
   // once and deleted. Opens in a full modal, not squeezed into a Row.
   const [showProfile, setShowProfile] = useState(false);
+  // Document checklist email: editable template + live preview + send.
+  const [checklistOpen, setChecklistOpen] = useState(false);
 
   const fetchDocPreview = async (): Promise<{ subject: string; html: string } | null> => {
     if (!lead || !docEditor) return null;
@@ -313,9 +316,11 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
 
               {/* Tab strip. Labels must NEVER wrap — "Visa route" breaking onto
                   two lines is what made this read as unfinished. Counts sit in
-                  proper pills instead of loose "· 7" text, and on a narrow
-                  drawer the strip scrolls sideways rather than stacking. */}
-              <div className="mx-6 mt-5 flex w-fit max-w-[calc(100%-3rem)] items-center gap-0.5 overflow-x-auto rounded-lg bg-surface-2 p-1 no-scrollbar">
+                  proper pills instead of loose "· 7" text. On a narrow drawer
+                  whole tabs wrap to a second row. (It used to scroll sideways
+                  with a hidden scrollbar, which a mouse cannot do — tabs past
+                  the edge, like Roadmap, were simply unreachable.) */}
+              <div className="mx-6 mt-5 flex w-fit max-w-[calc(100%-3rem)] flex-wrap items-center gap-0.5 rounded-lg bg-surface-2 p-1">
                 {(['overview', 'route', 'notes', 'followups', ...(canViewPayments ? ['payments'] as const : []), ...(canSendEmails ? (['emails', 'roadmap'] as const) : [])] as const).map((t) => {
                   const count =
                     t === 'notes' ? notes.length
@@ -327,7 +332,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                   return (
                     <button key={t} onClick={() => setTab(t)}
                       className={cn(
-                        'flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-[12.5px] font-semibold transition-colors',
+                        'flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[12.5px] font-semibold transition-colors',
                         active ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:bg-surface hover:text-ink-2'
                       )}>
                       {t === 'followups' ? 'Follow-ups' : t === 'emails' ? 'Emails' : t === 'roadmap' ? 'Roadmap' : t === 'route' ? 'Visa route' : t.charAt(0).toUpperCase() + t.slice(1)}
@@ -928,7 +933,7 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                   <div>
                     <div className="space-y-1 mb-4">
                     {canSendEmails && (
-                    <div className="flex items-center gap-2 pb-3 mb-1 border-b border-border">
+                    <div className="flex items-center gap-2 flex-wrap pb-3 mb-1 border-b border-border">
                       <span className="text-[11px] font-semibold text-muted uppercase tracking-wide mr-1">Client emails</span>
                       <button
                         onClick={() => { setSlaConfigOpen((o) => !o); setSlaPlan(null); }}
@@ -961,6 +966,14 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
                         className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-[#506BD8] bg-white border border-[#C7D0F0] hover:bg-[#EEF2FF] transition-all disabled:opacity-50"
                       >
                         <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setChecklistOpen(true)}
+                        disabled={sendingEmail !== null || !effectiveLead.email}
+                        title={effectiveLead.email ? 'Edit, preview and send the list of documents we need to start the case' : 'Add an email address first'}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-[#0369A1] bg-[#E0F2FE] hover:bg-[#0369A1] hover:text-white transition-all disabled:opacity-50"
+                      >
+                        <ClipboardList className="w-3.5 h-3.5" /> Document checklist
                       </button>
                     </div>
                     )}
@@ -1239,6 +1252,18 @@ export function LeadDrawer({ leadId, onClose, onRecordPayment }: Props) {
         onClose={() => setViewing(null)}
       />
 
+      {lead && (
+        <ChecklistEmailModal
+          open={checklistOpen}
+          onClose={() => setChecklistOpen(false)}
+          onSent={refreshEmails}
+          lead={{ id: lead.id, full_name: lead.full_name, email: lead.email }}
+          initialVisa={slaVisaKind}
+          workspaceId={workspace.id}
+          userId={appUser.id}
+        />
+      )}
+
       <DocEditorModal
         open={docEditor !== null}
         onClose={() => setDocEditor(null)}
@@ -1410,6 +1435,7 @@ const EMAIL_KINDS: Record<string, { label: string; sub: string; bg: string; fg: 
   sla:        { label: 'Service Agreement (SLA)', sub: 'Sent for acceptance', bg: '#EEF2FF', fg: '#4338CA', icon: 'file' },
   invoice:    { label: 'Invoice / Receipt', sub: 'Payment document', bg: '#FEF3C7', fg: '#B45309', icon: 'rupee' },
   process:    { label: 'How It Works (GTV)', sub: 'Process & pricing explainer', bg: '#FEF6E7', fg: '#B45309', icon: 'send' },
+  checklist:  { label: 'Document Checklist', sub: 'Documents needed to start the case', bg: '#E0F2FE', fg: '#0369A1', icon: 'file' },
   campaign:   { label: 'Campaign Email', sub: 'Marketing / nurture', bg: '#F3EEFF', fg: '#7C3AED', icon: 'send' },
 };
 
