@@ -29,6 +29,8 @@ import path from 'node:path';
 
 const COMMIT = process.argv.includes('--commit');
 const SEVEN_DAYS = 7 * 24 * 60 * 60;
+// Moves INTO these stages count as `contacted`. Junk / lost / cold / not_responding never do.
+const FORWARD_STAGES = ['hot', 'warm', 'highly_eligible', 'eligible', 'mr_coming_soon', 'invoice_sent', 'won'];
 const now = Math.floor(Date.now() / 1000);
 const since = now - SEVEN_DAYS;
 
@@ -103,8 +105,10 @@ for (const l of leads) {
   const existing = new Set((await get(`meta_capi_events?select=event_name&lead_id=eq.${l.id}`)).map((r) => r.event_name));
   const stages = [];
   stages.push({ event_name: 'lead', at: sec(l.created_at) });
-  const moves = await get(`activity?select=created_at&lead_id=eq.${l.id}&action=eq.moved_stage&user_id=not.is.null&order=created_at.asc&limit=1`);
-  if (moves[0]) stages.push({ event_name: 'contacted', at: sec(moves[0].created_at) });
+  // contacted = first FORWARD move by a team member (same allow-list as migration 132).
+  const moves = await get(`activity?select=created_at,meta&lead_id=eq.${l.id}&action=eq.moved_stage&user_id=not.is.null&order=created_at.asc&limit=50`);
+  const fwd = moves.find((m) => FORWARD_STAGES.includes(m.meta?.to));
+  if (fwd) stages.push({ event_name: 'contacted', at: sec(fwd.created_at) });
   if (['eligible', 'highly_eligible'].includes(l.eligibility) && l.eligibility_source === 'manual' && l.eligibility_at) {
     stages.push({ event_name: 'qualified', at: sec(l.eligibility_at) });
   }

@@ -6,8 +6,8 @@ Sends three stages for every Meta lead, so the campaign can optimise for
 | Event       | When it is queued                                                        |
 |-------------|--------------------------------------------------------------------------|
 | `lead`      | The lead arrives from Meta (gets its Meta lead id)                       |
-| `contacted` | First stage change made by a team member (automations don't count)       |
-| `qualified` | A team member marks the lead **Eligible** or **Highly eligible**         |
+| `contacted` | A team member moves the lead forward: Hot, Warm, Eligible, Highly eligible, Mr. Coming Soon, Invoice Sent or Converted. Never for Cold, Not Responding, Junk or Lost |
+| `qualified` | A team member picks **Eligible** or **Highly eligible** in the Eligibility dropdown. WhatsApp / rule / AI / derived tags never count |
 
 ## How it works
 
